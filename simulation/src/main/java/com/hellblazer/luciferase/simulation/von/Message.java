@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import javax.vecmath.Point3d;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -164,15 +165,15 @@ public sealed interface Message
      * <p>
      * <b>Example Usage:</b>
      * <pre>{@code
-     * // Simple content (String)
-     * var ghost = new TransportGhost("entity-1", position, "String", "hello", treeId, epoch, version, timestamp);
+     * // Simple content (String), stationary entity
+     * var ghost = new TransportGhost("entity-1", position, "String", "hello", treeId, epoch, version, timestamp, new Vector3f(0,0,0));
      *
-     * // Enum content
-     * var ghost = new TransportGhost("entity-2", position, "EntityType", EntityType.PLAYER.name(), treeId, epoch, version, timestamp);
+     * // Enum content, moving entity
+     * var ghost = new TransportGhost("entity-2", position, "EntityType", EntityType.PLAYER.name(), treeId, epoch, version, timestamp, velocity);
      *
      * // Complex content (JSON serialization)
      * var json = objectMapper.writeValueAsString(complexObject);
-     * var ghost = new TransportGhost("entity-3", position, "ComplexEntity", json, treeId, epoch, version, timestamp);
+     * var ghost = new TransportGhost("entity-3", position, "ComplexEntity", json, treeId, epoch, version, timestamp, velocity);
      * }</pre>
      *
      * @param entityId     Entity identifier as string
@@ -183,6 +184,7 @@ public sealed interface Message
      * @param epoch        Authority epoch for stale detection
      * @param version      Entity version within epoch
      * @param timestamp    Creation timestamp
+     * @param velocity     Entity velocity for dead-reckoning (units/s); (0,0,0) if not moving
      */
     record TransportGhost(
         String entityId,
@@ -192,7 +194,8 @@ public sealed interface Message
         String sourceTreeId,
         long epoch,
         long version,
-        long timestamp
+        long timestamp,
+        Vector3f velocity
     ) {
     }
 

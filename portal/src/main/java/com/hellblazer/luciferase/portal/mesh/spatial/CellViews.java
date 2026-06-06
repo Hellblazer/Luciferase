@@ -30,6 +30,9 @@ import javafx.scene.shape.TriangleMesh;
 import javafx.scene.transform.Affine;
 import javafx.scene.transform.Rotate;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.vecmath.Point3i;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -44,6 +47,9 @@ import java.util.Map;
  * @author hal.hildebrand
  */
 public class CellViews {
+
+    private static final Logger log = LoggerFactory.getLogger(CellViews.class);
+
     // Standard tetrahedron edges (vertex indices)
     private static final int[][] EDGES = { { 0, 1 }, { 0, 2 }, { 0, 3 },  // Edges from vertex 0
                                            { 1, 2 }, { 1, 3 },          // Edges from vertex 1
@@ -116,7 +122,7 @@ public class CellViews {
         TriangleMesh referenceMesh = referenceMeshes[(int) tet.type()];
 
         if (referenceMesh == null) {
-            System.err.println("ERROR: No reference mesh for type " + tet.type());
+            log.error("No reference mesh for type {}", tet.type());
             return null;
         }
 
@@ -139,7 +145,7 @@ public class CellViews {
         Group referenceWireframe = referenceWireframes[(int) tet.type()];
 
         if (referenceWireframe == null) {
-            System.err.println("ERROR: No reference wireframe for type " + tet.type());
+            log.error("No reference wireframe for type {}", tet.type());
             return null;
         }
 

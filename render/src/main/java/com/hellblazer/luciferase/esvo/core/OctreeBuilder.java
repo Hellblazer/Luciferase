@@ -189,6 +189,18 @@ public class OctreeBuilder implements AutoCloseable {
                 // Store INDEX into farPointers array (not the offset itself)
                 int farIndex = farPointersList.size();
 
+                // Far-pointer table overflow guard (mirrors ESVTBuilder — Luciferase-8putk pattern).
+                // The 14-bit childPtr field that holds the far-array index caps the table at
+                // MAX_CHILD_PTR entries. Fail loud here rather than silently overflowing the
+                // bit-field and producing wrong child indices on the GPU.
+                if (farIndex >= MAX_CHILD_PTR) {
+                    throw new IllegalStateException(
+                        "ESVO far-pointer table overflow: " + (farIndex + 1) + " far pointers needed but "
+                        + "the 14-bit far index caps at " + MAX_CHILD_PTR + ". Node " + currentIndex
+                        + " (relativeOffset=" + relativeOffset + "). The tree is too wide for the current "
+                        + "far-pointer encoding; a wider index or paged layout is required.");
+                }
+
                 // Add the actual relative offset to the far pointers array
                 farPointersList.add(relativeOffset);
 

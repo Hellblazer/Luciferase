@@ -247,7 +247,8 @@ class MessageConverterTest {
             "tree-1",
             1L,
             1L,
-            System.currentTimeMillis()
+            System.currentTimeMillis(),
+            new javax.vecmath.Vector3f(0f, 0f, 0f)
         );
         ghosts.add(ghost1);
 
@@ -272,6 +273,31 @@ class MessageConverterTest {
         assertEquals(42L, recoveredGhostSync.bucket());
         assertEquals(1, recoveredGhostSync.ghosts().size());
         assertEquals("entity-1", recoveredGhostSync.ghosts().get(0).entityId());
+    }
+
+    @Test
+    void testGhostSyncVelocityRoundTrip() {
+        // Acceptance test for Luciferase-chmxx: velocity must survive MessageConverter round-trip.
+        var sourceBubbleId = UUID.randomUUID();
+        var vel = new javax.vecmath.Vector3f(1.5f, -2.3f, 0.7f);
+        var ghost = new Message.TransportGhost(
+            "entity-vel",
+            new javax.vecmath.Point3f(1.0f, 2.0f, 3.0f),
+            "String",
+            "value",
+            "tree-1",
+            1L, 1L,
+            System.currentTimeMillis(),
+            vel
+        );
+        var originalGhostSync = factory.createGhostSync(sourceBubbleId, java.util.List.of(ghost), 77L);
+
+        var recovered = (Message.GhostSync) MessageConverter.fromTransport(MessageConverter.toTransport(originalGhostSync));
+
+        var recoveredGhost = recovered.ghosts().get(0);
+        assertEquals(1.5f, recoveredGhost.velocity().x, 0.0001f, "velX must round-trip");
+        assertEquals(-2.3f, recoveredGhost.velocity().y, 0.0001f, "velY must round-trip");
+        assertEquals(0.7f, recoveredGhost.velocity().z, 0.0001f, "velZ must round-trip");
     }
 
     @Test
@@ -489,7 +515,8 @@ class MessageConverterTest {
                 "tree-" + i,
                 (long) i,
                 (long) i,
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                new javax.vecmath.Vector3f(0f, 0f, 0f)
             ));
         }
 

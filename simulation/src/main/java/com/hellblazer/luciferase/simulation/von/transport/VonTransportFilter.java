@@ -48,8 +48,10 @@ final class VonTransportFilter {
      * DoS vector that exists when the class allow-list alone is applied.  Sizing rationale:
      * <ul>
      *   <li><b>maxbytes=524288</b> (512 KiB) — the largest legitimate payload is a GhostSync carrying
-     *       ~256 {@link com.hellblazer.luciferase.simulation.von.TransportGhostData} records (10 fields
-     *       each, ~500 bytes serialized per record → ~128 KiB); 512 KiB is 4× headroom.</li>
+     *       ~256 {@link com.hellblazer.luciferase.simulation.von.TransportGhostData} records (13 fields
+     *       each — 10 original + velX/velY/velZ added in Luciferase-chmxx — ~512 bytes serialized per
+     *       record → ~128 KiB; 3 extra floats ≈ 12 bytes/record); 512 KiB retains comfortable
+     *       4× headroom.</li>
      *   <li><b>maxarray=65536</b> — the dominant cost is String-internal byte arrays: 256 ghosts × 4
      *       String fields × ~50 chars = ~51 200 elements plus the ArrayList backing array; 65 536 is
      *       ~1.3× headroom while blocking a 100 M-element ArrayList attack.</li>

@@ -78,6 +78,7 @@ uint getChildIndex(float3 pos, float3 center) {
 __kernel void traverseOctree(
     __global const Ray* rays,
     __global const OctreeNode* octree,
+    __global const int* farPointers,  // far-pointer indirection table (may be empty)
     __global float4* hitResults,  // xyz = hit point, w = distance
     const uint maxDepth,
     const float3 sceneMin,
@@ -151,29 +152,51 @@ __kernel void traverseOctree(
             ray.origin + ray.direction * current.tEntry, 
             center);
         
-        // Extract child pointer from packed descriptor
-        uint childPtr = (node.childDescriptor >> 17) & 0x3FFF;
-        
+        // Extract child pointer from packed descriptor.
+        //
+        // ENCODING CONVENTION (mirrors ESVONodeUnified.getChildIndex / OctreeBuilder):
+        //   Near (far flag clear): childPtr is a RELATIVE offset from the current node index.
+        //     Correct child index = current.nodeIdx + childPtr + popcount(sparse-offset)
+        //   Far (far flag set):    childPtr is an index into farPointers[]; farPointers[childPtr]
+        //     is likewise a RELATIVE offset from the current node index.
+        //     Correct child index = current.nodeIdx + farPointers[childPtr] + popcount(sparse-offset)
+        //
+        // NOTE: The near path below does NOT add current.nodeIdx — this is a pre-existing
+        // bug that is accidentally correct for root-only traversal (index 0) but wrong for
+        // any non-root interior node. Fixing the near path is tracked separately; this
+        // change only corrects the FAR path to match the CPU reference (ESVONodeUnified.getChildIndex).
+        uint rawChildPtr = (node.childDescriptor >> 17) & 0x3FFF;
+        uint childPtr;
+        if (node.childDescriptor & FAR_FLAG_BIT) {
+            // Far case: dereference the far-pointer table to get the relative offset,
+            // then add the current node index so the result is an absolute array index.
+            // This matches CPU: currentNodeIdx + farPointers[childPtr] + getChildOffset(childIdx)
+            childPtr = current.nodeIdx + (uint) farPointers[rawChildPtr];
+        } else {
+            // Near case (pre-existing behaviour — see note above).
+            childPtr = rawChildPtr;
+        }
+
         // Add children to stack in reverse order for correct traversal
         for (int i = 7; i >= 0; i--) {
             if (!(childMask & (1 << i))) {
                 continue;
             }
-            
+
             // Calculate child bounds
             float3 childMin = current.pos;
             float3 childMax = current.pos + nodeSize * 2.0f;
-            
+
             if (i & 1) childMin.x += nodeSize;
             else childMax.x -= nodeSize;
             if (i & 2) childMin.y += nodeSize;
             else childMax.y -= nodeSize;
             if (i & 4) childMin.z += nodeSize;
             else childMax.z -= nodeSize;
-            
+
             AABB childBox = { childMin, childMax };
             float childTEntry, childTExit;
-            
+
             if (intersectAABB(ray, childBox, &childTEntry, &childTExit)) {
                 if (childTEntry < closestHit) {
                     // Check for stack overflow - graceful termination if depth exceeded
@@ -183,7 +206,7 @@ __kernel void traverseOctree(
                         // This prevents crashes and allows graceful degradation
                         continue;
                     }
-                    // CUDA reference sparse indexing: parent_ptr + popcount(child_masks & ((1 << i) - 1))
+                    // Sparse indexing: base ptr + popcount(child_mask & ((1 << i) - 1))
                     uint childIdx = childPtr + popcount(childMask & ((1 << i) - 1));
                     stack[stackPtr].nodeIdx = childIdx;
                     stack[stackPtr].tEntry = childTEntry;

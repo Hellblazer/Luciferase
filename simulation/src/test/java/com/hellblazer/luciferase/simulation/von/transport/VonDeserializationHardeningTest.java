@@ -106,7 +106,7 @@ class VonDeserializationHardeningTest {
     @Test
     void filterAcceptsTransportVonMessageRoundTrip() throws IOException, ClassNotFoundException {
         var ghosts = new ArrayList<>(List.of(
-            new TransportGhostData("e1", 1f, 2f, 3f, "java.lang.String", "payload", "tree-1", 1L, 2L, 3L)));
+            new TransportGhostData("e1", 1f, 2f, 3f, "java.lang.String", "payload", "tree-1", 1L, 2L, 3L, 0f, 0f, 0f)));
         var neighbors = new ArrayList<>(List.of(
             new TransportNeighborInfo("n1", 10.0, 20.0, 30.0)));
         var original = new TransportVonMessage(
@@ -131,7 +131,8 @@ class VonDeserializationHardeningTest {
      */
     @Test
     void filterAcceptsEveryConverterProducedMessageType() throws IOException {
-        var ghost = new Message.TransportGhost("e1", new Point3f(1, 2, 3), "java.lang.String", "v", "tree-1", 1L, 2L, 3L);
+        var ghost = new Message.TransportGhost("e1", new Point3f(1, 2, 3), "java.lang.String", "v", "tree-1", 1L, 2L, 3L,
+                                               new javax.vecmath.Vector3f(0f, 0f, 0f));
         // Non-null bounds (Luciferase-vzyrf) so the TransportBubbleBounds wire type is exercised
         // against the strict RDR-004 allow-list (ends in !*).
         var bounds = com.hellblazer.luciferase.simulation.bubble.BubbleBounds.fromEntityPositions(
@@ -241,7 +242,8 @@ class VonDeserializationHardeningTest {
             ghosts.add(new TransportGhostData(
                 UUID.randomUUID().toString(), (float) i, (float) i, (float) i,
                 "java.lang.String", "value-" + i, UUID.randomUUID().toString(),
-                1L, 2L, System.currentTimeMillis()));
+                1L, 2L, System.currentTimeMillis(),
+                0f, 0f, 0f));
         }
         var msg = new TransportVonMessage(
             "GHOST_SYNC", UUID.randomUUID().toString(), UUID.randomUUID().toString(),

@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 import java.io.Serializable;
 
 /**
@@ -26,6 +27,17 @@ import java.io.Serializable;
  * Decomposes Point3f into individual float components (posX, posY, posZ)
  * for reliable Java Serialization over network sockets. This is the wire format
  * used in TransportMessage for cross-process ghost synchronization.
+ *
+ * <h3>BREAKING wire-format change — serialVersionUID 1 → 2 (Luciferase-chmxx)</h3>
+ * <p>
+ * Three velocity fields ({@code velX}, {@code velY}, {@code velZ}) were added in the
+ * Luciferase-chmxx bead, changing the record from 10 fields to 13 fields.
+ * The {@code serialVersionUID} was bumped from {@code 1L} to {@code 2L} to reflect this.
+ * <p>
+ * This is a <strong>BREAKING</strong> change: a v1 receiver that deserializes a v2
+ * record (or vice versa) will throw {@link java.io.InvalidClassException}. Rolling
+ * upgrades and mixed-version clusters are <strong>NOT</strong> supported for this record.
+ * A <strong>full cluster restart</strong> is required when upgrading across this change.
  *
  * @author hal.hildebrand
  */
@@ -39,18 +51,28 @@ public record TransportGhostData(
     String sourceTreeId,
     long epoch,
     long version,
-    long timestamp
+    long timestamp,
+    float velX,
+    float velY,
+    float velZ
 ) implements Serializable {
 
-    private static final long serialVersionUID = 1L;
+    /**
+     * Wire-format version 2: added velX, velY, velZ (Luciferase-chmxx).
+     * Version 1 had 10 fields; version 2 has 13 fields.
+     * INCOMPATIBLE with version 1 — mixed-version deserialization throws
+     * {@link java.io.InvalidClassException}.
+     */
+    private static final long serialVersionUID = 2L;
 
     /**
      * Create TransportGhostData from a Message.TransportGhost.
      *
      * @param ghost TransportGhost to convert
-     * @return TransportGhostData with decomposed position
+     * @return TransportGhostData with decomposed position and velocity
      */
     public static TransportGhostData from(Message.TransportGhost ghost) {
+        var vel = ghost.velocity();
         return new TransportGhostData(
             ghost.entityId(),
             ghost.position().x,
@@ -61,14 +83,17 @@ public record TransportGhostData(
             ghost.sourceTreeId(),
             ghost.epoch(),
             ghost.version(),
-            ghost.timestamp()
+            ghost.timestamp(),
+            vel.x,
+            vel.y,
+            vel.z
         );
     }
 
     /**
      * Convert back to Message.TransportGhost.
      *
-     * @return TransportGhost with reconstructed Point3f
+     * @return TransportGhost with reconstructed Point3f and Vector3f velocity
      */
     public Message.TransportGhost toTransportGhost() {
         return new Message.TransportGhost(
@@ -79,7 +104,8 @@ public record TransportGhostData(
             sourceTreeId,
             epoch,
             version,
-            timestamp
+            timestamp,
+            new Vector3f(velX, velY, velZ)
         );
     }
 }

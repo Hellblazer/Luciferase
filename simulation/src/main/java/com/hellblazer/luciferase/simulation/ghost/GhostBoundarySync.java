@@ -7,6 +7,7 @@ import com.hellblazer.luciferase.simulation.bubble.*;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 
+import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -86,16 +87,19 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
         final GhostEntityHalo<ID, Content> ghost;
         final UUID sourceBubbleId;
         final long bucket;
+        /** Entity velocity for dead-reckoning (units/s). Defensive copy on construction. */
+        final Vector3f velocity;
         /**
          * Bucket at which this entry was last transmitted to its neighbor, or -1 if never sent.
          * Used to suppress redundant re-broadcast of unchanged ghosts (Luciferase-0frcy.101).
          */
         volatile long lastSentBucket = -1L;
 
-        GhostEntry(GhostEntityHalo<ID, Content> ghost, UUID sourceBubbleId, long bucket) {
+        GhostEntry(GhostEntityHalo<ID, Content> ghost, UUID sourceBubbleId, long bucket, Vector3f velocity) {
             this.ghost = ghost;
             this.sourceBubbleId = sourceBubbleId;
             this.bucket = bucket;
+            this.velocity = new Vector3f(velocity); // defensive copy — Vector3f is mutable
         }
     }
 
@@ -127,9 +131,37 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
     }
 
     /**
-     * Add or update a ghost entity for a neighbor.
+     * Add or update a ghost entity for a neighbor with real entity velocity.
      * <p>
      * Call when entity is near boundary: ghost zone overlaps with neighbor.
+     *
+     * @param ghostEntity    Ghost entity halo (GhostEntityHalo)
+     * @param sourceBubbleId Source bubble ID (for VON discovery)
+     * @param neighborId     Neighbor to send ghost to
+     * @param bucket         Current bucket number
+     * @param velocity       Entity velocity for dead-reckoning (units/s); use (0,0,0) if not moving
+     */
+    public void addGhost(
+        GhostEntityHalo<ID, Content> ghostEntity,
+        UUID sourceBubbleId,
+        UUID neighborId,
+        long bucket,
+        Vector3f velocity
+    ) {
+        var entry = new GhostEntry<>(ghostEntity, sourceBubbleId, bucket, velocity);
+
+        ghostsByNeighbor.computeIfAbsent(neighborId, k -> new ConcurrentHashMap<>())
+                       .put(ghostEntity.getEntityId(), entry);
+
+        // Enforce memory limit per neighbor
+        enforceMemoryLimit(neighborId);
+    }
+
+    /**
+     * Add or update a ghost entity for a neighbor with zero velocity.
+     * <p>
+     * Backward-compatible overload for call sites where velocity is not available.
+     * Dead-reckoning will be inactive for ghosts added via this overload.
      *
      * @param ghostEntity    Ghost entity halo (GhostEntityHalo)
      * @param sourceBubbleId Source bubble ID (for VON discovery)
@@ -142,13 +174,7 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
         UUID neighborId,
         long bucket
     ) {
-        var entry = new GhostEntry<>(ghostEntity, sourceBubbleId, bucket);
-
-        ghostsByNeighbor.computeIfAbsent(neighborId, k -> new ConcurrentHashMap<>())
-                       .put(ghostEntity.getEntityId(), entry);
-
-        // Enforce memory limit per neighbor
-        enforceMemoryLimit(neighborId);
+        addGhost(ghostEntity, sourceBubbleId, neighborId, bucket, new Vector3f(0f, 0f, 0f));
     }
 
     /**
@@ -180,19 +206,17 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
                 continue;
             }
 
-            // NOTE: velocity is (0,0,0) here because GhostEntityHalo carries no velocity and
-            // neither addGhost's callers (TetreeGhostSyncAdapter, GridGhostSyncAdapter) nor the
-            // notifyEntityNearBoundary API carry velocity. Wiring requires adding velocity to
-            // addGhost(), GhostEntry, and the adapter call-sites — tracked in Luciferase-chmxx
-            // (.186 completion, 2026-06-04). Dead-reckoning is inactive on this
-            // outbound path until that schema plumbing is complete.
+            // Velocity is now carried in GhostEntry (Luciferase-chmxx): adapters pass real
+            // entity velocity via the 5-arg addGhost() when they have a physics manager,
+            // or zero via the 4-arg backward-compatible overload.
             var ghostBatch = toSend.stream()
                 .map(e -> new SimulationGhostEntity<>(
                     e.ghost,
                     e.sourceBubbleId,
                     e.bucket,
                     deriveEpoch(e.bucket),           // epoch from bucket
-                    versionCounter.incrementAndGet() // monotonic version
+                    versionCounter.incrementAndGet(), // monotonic version
+                    e.velocity                        // real velocity (Luciferase-chmxx)
                 ))
                 .collect(Collectors.toList());
 
@@ -323,8 +347,9 @@ public class GhostBoundarySync<ID extends EntityID, Content> {
                 e.ghost,
                 e.sourceBubbleId,
                 e.bucket,
-                deriveEpoch(e.bucket),           // epoch from bucket
-                versionCounter.incrementAndGet() // monotonic version
+                deriveEpoch(e.bucket),            // epoch from bucket
+                versionCounter.incrementAndGet(), // monotonic version
+                e.velocity                         // real velocity (Luciferase-chmxx)
             ))
             .collect(Collectors.toList());
     }

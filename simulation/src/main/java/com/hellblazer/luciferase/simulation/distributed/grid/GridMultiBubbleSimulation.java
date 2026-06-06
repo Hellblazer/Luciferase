@@ -11,6 +11,7 @@ package com.hellblazer.luciferase.simulation.distributed.grid;
 import com.hellblazer.luciferase.simulation.behavior.EntityBehavior;
 import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.EntityPhysicsManager;
 import com.hellblazer.luciferase.simulation.config.SimulationMetrics;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.common.time.Clock;
@@ -62,8 +63,8 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
     private final EntityBehavior behavior;
     private final GridGhostSyncAdapter ghostSyncAdapter;
     private final MultiDirectionalMigration migration;
-
-    private final Map<String, javax.vecmath.Vector3f> velocities = new ConcurrentHashMap<>();
+    /** Physics manager: single source of truth for entity velocities (Luciferase-chmxx Finding 1). */
+    private final EntityPhysicsManager physicsManager;
 
     // Serializes the cross-bubble migration commit phase against cross-bubble entity snapshots
     // (getAllEntities). A migration moves an entity between two bubbles (add to target, then remove
@@ -118,8 +119,13 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
         // Create ghost sync adapter (Inc 5C integration)
         this.ghostSyncAdapter = new GridGhostSyncAdapter(gridConfig, bubbleGrid);
 
+        // Physics manager: owns all entity velocities; wired into ghostSyncAdapter so outbound
+        // ghosts carry real velocity for dead-reckoning (Luciferase-chmxx Finding 1).
+        this.physicsManager = new EntityPhysicsManager(behavior, worldBounds);
+        ghostSyncAdapter.setPhysicsManager(this.physicsManager);
+
         // Create multi-directional migration (Inc 5D integration)
-        this.migration = new MultiDirectionalMigration(gridConfig, bubbleGrid, velocities);
+        this.migration = new MultiDirectionalMigration(gridConfig, bubbleGrid, physicsManager.getVelocities());
 
         // Distribute entities spatially
         populateEntities(entityCount);
@@ -178,7 +184,7 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
     public void close() {
         stop();
 
-        velocities.clear();
+        physicsManager.getVelocities().clear();
 
         scheduler.shutdownNow();
         try {
@@ -345,7 +351,7 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
     }
 
     private void initializeVelocities() {
-        velocities.clear();
+        physicsManager.getVelocities().clear();
         // Luciferase-0frcy.98: seed deterministically so velocity-dependent behaviour (migration
         // counts, boundary crossings) is reproducible across runs, matching populateEntities()'s
         // seeded placement. Derive from gridConfig so different grids still get distinct streams.
@@ -356,7 +362,7 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
             for (int col = 0; col < gridConfig.columns(); col++) {
                 var bubble = bubbleGrid.getBubble(new BubbleCoordinate(row, col));
                 for (var entity : bubble.getAllEntityRecords()) {
-                    velocities.put(entity.id(), randomVelocity(random, behavior.getMaxSpeed()));
+                    physicsManager.setVelocity(entity.id(), randomVelocity(random, behavior.getMaxSpeed()));
                 }
             }
         }
@@ -434,7 +440,8 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
     ) {
         for (var entity : bubble.getAllEntityRecords()) {
             try {
-                var velocity = velocities.computeIfAbsent(entity.id(), k -> new javax.vecmath.Vector3f());
+                var existing = physicsManager.getVelocity(entity.id());
+                var velocity = existing != null ? existing : new javax.vecmath.Vector3f();
 
                 var newVelocity = behavior.computeVelocity(
                     entity.id(),
@@ -444,7 +451,7 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
                     deltaTime
                 );
 
-                velocities.put(entity.id(), newVelocity);
+                physicsManager.setVelocity(entity.id(), newVelocity);
 
                 var newPosition = new Point3f(entity.position());
                 newPosition.x += newVelocity.x * deltaTime;

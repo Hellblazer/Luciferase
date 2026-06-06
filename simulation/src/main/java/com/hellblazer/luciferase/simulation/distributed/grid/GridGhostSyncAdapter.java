@@ -10,6 +10,7 @@ package com.hellblazer.luciferase.simulation.distributed.grid;
 
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.EntityPhysicsManager;
 import com.hellblazer.luciferase.simulation.bubble.ExternalBubbleTracker;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.ghost.GhostBoundarySync;
@@ -19,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -47,6 +49,13 @@ public class GridGhostSyncAdapter {
     private final BubbleGrid<EnhancedBubble> bubbleGrid;
     private final GridBoundaryDetector boundaryDetector;
 
+    /**
+     * Optional physics manager for entity velocity lookup (Luciferase-chmxx).
+     * When non-null, real entity velocity is included in ghosts enabling dead-reckoning.
+     * When null, ghosts carry zero velocity (dead-reckoning inactive for this adapter).
+     */
+    private volatile EntityPhysicsManager physicsManager = null;
+
     // Per-bubble ghost sync infrastructure
     private final Map<UUID, GhostBoundarySync<StringEntityID, Object>> ghostSyncByBubble;
     private final Map<UUID, ExternalBubbleTracker> trackerByBubble;
@@ -54,6 +63,18 @@ public class GridGhostSyncAdapter {
 
     // Ghost storage: bubbleId -> (entityId -> SimulationGhostEntity)
     private final Map<UUID, Map<String, SimulationGhostEntity<StringEntityID, Object>>> ghostsByBubble;
+
+    /**
+     * Inject an EntityPhysicsManager for real entity velocity lookup (Luciferase-chmxx).
+     * <p>
+     * When set, ghosts produced by this adapter carry real velocity enabling dead-reckoning.
+     * Without this, ghosts carry zero velocity.
+     *
+     * @param physicsManager the physics manager to use for velocity lookup (may be null to disable)
+     */
+    public void setPhysicsManager(EntityPhysicsManager physicsManager) {
+        this.physicsManager = physicsManager;
+    }
 
     /**
      * Create a ghost sync adapter for the grid.
@@ -229,6 +250,9 @@ public class GridGhostSyncAdapter {
             return;
         }
 
+        // Snapshot physics manager (volatile read; consistent for this call)
+        var pm = this.physicsManager;
+
         // Check all entities in this bubble
         for (var entityRecord : bubble.getAllEntityRecords()) {
             var position = entityRecord.position();
@@ -250,11 +274,20 @@ public class GridGhostSyncAdapter {
                 bubbleId.toString()
             );
 
+            // Resolve velocity: use physics manager if available, else zero (Luciferase-chmxx)
+            Vector3f velocity;
+            if (pm != null) {
+                var v = pm.getVelocity(entityRecord.id());
+                velocity = v != null ? v : new Vector3f(0f, 0f, 0f);
+            } else {
+                velocity = new Vector3f(0f, 0f, 0f);
+            }
+
             // Add ghost for each neighbor
             for (var neighborCoord : neighborsNeedingGhosts) {
                 var neighborBubble = bubbleGrid.getBubble(neighborCoord);
                 if (neighborBubble != null) {
-                    ghostSync.addGhost(ghostEntity, bubbleId, neighborBubble.id(), currentBucket);
+                    ghostSync.addGhost(ghostEntity, bubbleId, neighborBubble.id(), currentBucket, velocity);
                 }
             }
         }

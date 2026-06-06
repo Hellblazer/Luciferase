@@ -27,6 +27,9 @@ import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
 import javafx.util.Duration;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.LinkedList;
 
@@ -37,6 +40,8 @@ import java.util.LinkedList;
  * @author hal.hildebrand
  */
 public class PerformanceVisualization extends BorderPane {
+
+    private static final Logger log = LoggerFactory.getLogger(PerformanceVisualization.class);
     
     private static final int MAX_DATA_POINTS = 100;
     private static final double UPDATE_INTERVAL_MS = 100;
@@ -447,9 +452,7 @@ public class PerformanceVisualization extends BorderPane {
         
         // In a real application, you'd use FileChooser to save to file
         // For now, just copy to clipboard or print to console
-        System.out.println("=== EXPORTED PERFORMANCE REPORT ===");
-        System.out.println(report);
-        System.out.println("=== END REPORT ===");
+        log.info("=== EXPORTED PERFORMANCE REPORT ===\n{}", report);
         
         // Show confirmation
         var alert = new Alert(Alert.AlertType.INFORMATION);
