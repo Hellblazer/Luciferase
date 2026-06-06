@@ -130,6 +130,8 @@ class TetreeBubbleGridPartitionTest {
 
     @Test
     void noBubbleBoundsNestAnother() {
+        // Same-level tets have equal-sized RDG AABBs, so one can never strictly contain another; this guards
+        // against any mixed-level regression (a coarser cell whose AABB swallows a finer one — the legacy bug).
         var grid = partitionGrid();
         var bounds = new ArrayList<BubbleBounds>();
         for (var key : grid.getBubblesWithKeys().keySet()) {
@@ -143,6 +145,32 @@ class TetreeBubbleGridPartitionTest {
                 }
                 assertFalse(strictlyContains(bounds.get(i), bounds.get(j)),
                             "no bubble's bounds may nest/contain another's (mixed-level nesting)");
+            }
+        }
+    }
+
+    @Test
+    void partitionCoversTheWorldDomainIncludingBoundary() {
+        var grid = partitionGrid();
+        byte level = grid.getPartitionLevel();
+        var spatial = grid.getSpatialIndex();
+
+        // Sample a dense grid of in-bounds points (interior, faces, edges, corners). Every entity position
+        // (clamped to the world domain by physics) must fall in a partition cell, else migration routes to
+        // null and the entity is silently stuck. Boundary points are the at-risk case (RDR-015 review).
+        float lo = WORLD.min();
+        float hi = WORLD.max();
+        int steps = 6;
+        for (int i = 0; i <= steps; i++) {
+            for (int j = 0; j <= steps; j++) {
+                for (int k = 0; k <= steps; k++) {
+                    float x = lo + (hi - lo) * i / steps;
+                    float y = lo + (hi - lo) * j / steps;
+                    float z = lo + (hi - lo) * k / steps;
+                    var tet = spatial.locateTetrahedron(new javax.vecmath.Point3f(x, y, z), level);
+                    assertTrue(tet != null && grid.containsBubble(tet.tmIndex()),
+                               "world point (" + x + "," + y + "," + z + ") must fall in a partition bubble");
+                }
             }
         }
     }

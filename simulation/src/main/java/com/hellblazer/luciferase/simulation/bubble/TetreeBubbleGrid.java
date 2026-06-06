@@ -229,14 +229,32 @@ public class TetreeBubbleGrid {
         if (targetFrameMs <= 0) {
             throw new IllegalArgumentException("Target frame time must be positive, got: " + targetFrameMs);
         }
+        // The Tetree coordinate domain is non-negative ([0, 2^21)); WorldBounds-Cartesian entity positions are
+        // placed directly into it without rescaling (RDR-015 F1/F5). A negative world bound would yield entity
+        // positions that fail Tetree.locateTetrahedron at distribution/migration time — fail loud at setup.
+        if (worldBounds.min() < 0f) {
+            throw new IllegalArgumentException(
+                "WorldBounds.min must be >= 0 for a Tetree partition (non-negative coordinate domain), got: "
+                + worldBounds.min());
+        }
 
         var level = choosePartitionLevel(worldBounds, targetBubbleCount);
 
         // Seed from the level-L tet containing the world centre.
         var centre = worldBounds.center();
         var seed = Tet.locatePointBeyRefinementFromRoot(centre, centre, centre, level);
+        if (seed == null) {
+            throw new IllegalArgumentException(
+                "World centre " + centre + " is outside the Tetree domain [0, 2^21); check WorldBounds");
+        }
 
-        // BFS over same-level reciprocal face neighbors whose centroid lies inside the world domain.
+        // NOTE: construction is not thread-safe; callers must build the partition before exposing the grid to
+        // concurrent readers. partitionLevel is published last, so a racing reader could transiently observe an
+        // empty/partial grid with partitionLevel == -1 (legacy fallback). Acceptable: MultiBubbleSimulation
+        // builds the grid in its constructor, single-threaded, before tick().
+        //
+        // BFS over same-level reciprocal face neighbors whose CELL overlaps the world domain (so the tiling
+        // covers the WorldBounds boundary shell, not just cells whose centroid is interior).
         var partition = new LinkedHashMap<TetreeKey<?>, Tet>();
         var queue = new ArrayDeque<Tet>();
         partition.put(seed.tmIndex(), seed);
@@ -255,7 +273,7 @@ public class TetreeBubbleGrid {
                     continue;
                 }
                 var neighbor = fn.tet();
-                if (!centroidInBounds(neighbor, worldBounds)) {
+                if (!cellOverlapsBounds(neighbor, worldBounds)) {
                     continue;
                 }
                 var key = neighbor.tmIndex();
@@ -292,8 +310,10 @@ public class TetreeBubbleGrid {
     }
 
     /**
-     * Choose the finest partition level whose cell-edge is no coarser than
-     * {@code WorldBounds.size() / cbrt(targetBubbleCount)} (RDR-015 AC2). Clamped to
+     * Choose the coarsest partition level whose cell-edge is no larger than
+     * {@code WorldBounds.size() / cbrt(targetBubbleCount)} (RDR-015 AC2) — i.e. cells are no coarser than the
+     * requested granularity. Iterates from level 1 upward (coarse → fine) and returns the first level that
+     * fits, so the partition uses the fewest cells satisfying the granularity bound. Clamped to
      * {@code [1, MAX_REFINEMENT_LEVEL]} so the partition is never the L0 root.
      */
     private static byte choosePartitionLevel(WorldBounds worldBounds, int targetBubbleCount) {
@@ -308,14 +328,24 @@ public class TetreeBubbleGrid {
         return maxLevel;
     }
 
-    /** True iff the tetrahedral centroid of {@code tet} lies within the world bounds (raw coordinates). */
-    private static boolean centroidInBounds(Tet tet, WorldBounds worldBounds) {
+    /**
+     * True iff the tetrahedral cell's axis-aligned bounding box overlaps the world bounds. Used as the BFS
+     * inclusion criterion so the partition covers the entire WorldBounds domain — including the boundary shell,
+     * where a cell can contain in-bounds points (reachable by entities clamped to the world wall) while its
+     * centroid lies just outside. AABB-overlap is a superset of "the cell contains an in-bounds point", so it
+     * guarantees coverage (at the cost of a few empty boundary cells).
+     */
+    private static boolean cellOverlapsBounds(Tet tet, WorldBounds worldBounds) {
         var c = tet.coordinates();
-        double cx = (c[0].x + c[1].x + c[2].x + c[3].x) / 4.0;
-        double cy = (c[0].y + c[1].y + c[2].y + c[3].y) / 4.0;
-        double cz = (c[0].z + c[1].z + c[2].z + c[3].z) / 4.0;
-        return worldBounds.contains((float) cx) && worldBounds.contains((float) cy)
-               && worldBounds.contains((float) cz);
+        int minX = Math.min(Math.min(c[0].x, c[1].x), Math.min(c[2].x, c[3].x));
+        int maxX = Math.max(Math.max(c[0].x, c[1].x), Math.max(c[2].x, c[3].x));
+        int minY = Math.min(Math.min(c[0].y, c[1].y), Math.min(c[2].y, c[3].y));
+        int maxY = Math.max(Math.max(c[0].y, c[1].y), Math.max(c[2].y, c[3].y));
+        int minZ = Math.min(Math.min(c[0].z, c[1].z), Math.min(c[2].z, c[3].z));
+        int maxZ = Math.max(Math.max(c[0].z, c[1].z), Math.max(c[2].z, c[3].z));
+        float lo = worldBounds.min();
+        float hi = worldBounds.max();
+        return maxX >= lo && minX <= hi && maxY >= lo && minY <= hi && maxZ >= lo && minZ <= hi;
     }
 
     /**

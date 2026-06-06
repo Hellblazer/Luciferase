@@ -34,11 +34,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Directed-migration regression for RDR-015 (AC5) — <b>non-vacuous and end-to-end</b>.
  * <p>
  * Drives the full migration subsystem ({@link TetrahedralMigration#checkMigrations}: containment →
- * routing → two-phase execute) and asserts a known entity, placed inside a specific face-neighbor
- * bubble {@code B} of its source bubble {@code S}, actually <b>migrates to {@code B} specifically</b> —
- * it leaves {@code S} and arrives in {@code B}, with exactly one successful migration recorded. This is
- * the load-bearing guarantee the RDR exists to restore; asserting merely
+ * routing → two-phase execute) and asserts a known entity, placed at a position that escapes its source
+ * cell {@code S} and lies in a specific other partition cell {@code B}, actually <b>migrates to {@code B}
+ * specifically</b> — it leaves {@code S} and arrives in {@code B}, with exactly one successful migration
+ * recorded. This is the load-bearing, anti-catch-all guarantee the RDR exists to restore; asserting merely
  * {@code getTotalMigrations() > 0} would be satisfied by a catch-all router routing to the wrong bubble.
+ * <p>
+ * <b>Limitation (tracked follow-up):</b> {@code B} is the cell that geometrically contains the escaped
+ * position, not necessarily the immediate face-adjacent neighbor of {@code S}. Escape is currently tested
+ * against the cell's RDG-AABB (an outer approximation of the tetrahedron), so a point inside the immediate
+ * face neighbor still lies within {@code S}'s AABB and does not register as escaped; only points ~1.5
+ * cell-edges out escape, landing a cell or two away. Asserting strict face-adjacency requires switching the
+ * escape test to exact tetrahedral containment ({@code locateTetrahedron(pos,L) != cellKey}), filed as a
+ * follow-up (it also reworks the spatial-hysteresis gate). The anti-catch-all guarantee here is unaffected.
  * <p>
  * The migration path was dead through three independent causes, all resolved across RDR-015 P1–P3:
  * (1) entity coordinates decoupled from the bubble-grid domain; (2) a mixed-level non-partition grid
@@ -76,6 +84,9 @@ class DirectedMigrationRegressionTest {
             var sc = centroid(key.toTet());
             for (var offset : displacements(edge)) {
                 var p = new Point3f(sc.x + offset[0], sc.y + offset[1], sc.z + offset[2]);
+                if (p.x < 0 || p.y < 0 || p.z < 0) {
+                    continue; // Tetree coordinate domain is non-negative
+                }
                 if (cell.contains(p)) {
                     continue; // not escaped from S's fixed cell
                 }
