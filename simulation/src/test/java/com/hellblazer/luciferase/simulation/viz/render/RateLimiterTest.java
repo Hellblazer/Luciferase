@@ -12,6 +12,13 @@ import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -39,6 +46,46 @@ class RateLimiterTest {
             assertTrue(rateLimiter.allowRequest("192.168.1.1"),
                        "Request " + (i + 1) + " should be allowed");
         }
+    }
+
+    /**
+     * Luciferase-csdn1 (0frcy.121): under a concurrent flood from ONE ip, the per-IP synchronized critical
+     * section in allowRequest must admit at most maxRequestsPerMinute. The clock is fixed (one window), and a
+     * CyclicBarrier releases all threads at once to maximize the TOCTOU window; without the synchronized
+     * prune-check-offer, multiple threads could each observe size<max and all offer, overshooting the limit.
+     */
+    @Test
+    void concurrentAllowRequest_sameIp_neverExceedsLimit() throws Exception {
+        int max = 5; // matches the RateLimiter(5, ...) built in setUp
+        int threads = 64;
+        var ip = "10.0.0.7";
+
+        var barrier = new CyclicBarrier(threads);
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        var allowed = new AtomicInteger(0);
+        var done = new CountDownLatch(threads);
+
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                try {
+                    barrier.await();
+                    if (rateLimiter.allowRequest(ip)) {
+                        allowed.incrementAndGet();
+                    }
+                } catch (Exception ignored) {
+                    // barrier/interrupt — irrelevant to the invariant
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+
+        assertTrue(done.await(10, TimeUnit.SECONDS), "all request threads must finish");
+        pool.shutdownNow();
+
+        assertEquals(max, allowed.get(),
+                     "exactly maxRequestsPerMinute requests may be accepted for one IP in a single window under "
+                     + "concurrency (no TOCTOU overflow); accepted=" + allowed.get());
     }
 
     @Test
