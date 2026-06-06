@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.consensus.committee;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
@@ -48,6 +50,8 @@ import static org.mockito.Mockito.when;
  * @author hal.hildebrand
  */
 class CommitteeVotingProtocolTest {
+    // Fixed-base clock for proposal/vote timestamps (determinism mandate, Luciferase-ze0eq).
+    private static final TestClock ZE0EQ_CLOCK = new TestClock(1_000L);
 
     private DynamicContext<Member> mockContext;
     private CommitteeConfig config;
@@ -188,7 +192,7 @@ class CommitteeVotingProtocolTest {
             DigestAlgorithm.DEFAULT.digest("source"),
             DigestAlgorithm.DEFAULT.digest("target"),
             oldViewId,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
         var committee = createCommittee(3);
 
@@ -306,7 +310,7 @@ class CommitteeVotingProtocolTest {
             DigestAlgorithm.DEFAULT.digest("source"),
             DigestAlgorithm.DEFAULT.digest("target"),
             oldViewId,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
         // committee of 3: quorum = (3-1)/2 + 1 = 2 votes needed
         var committee = createCommittee(3);
@@ -384,7 +388,7 @@ class CommitteeVotingProtocolTest {
             DigestAlgorithm.DEFAULT.digest("source"),
             DigestAlgorithm.DEFAULT.digest("target"),
             viewId,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
     }
 

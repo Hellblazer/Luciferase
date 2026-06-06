@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.consensus.committee;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
@@ -54,6 +56,8 @@ import static org.mockito.Mockito.when;
  * @author hal.hildebrand
  */
 public class VirtualSynchronyTest {
+    // Fixed-base clock for proposal/vote timestamps (determinism mandate, Luciferase-ze0eq).
+    private static final TestClock ZE0EQ_CLOCK = new TestClock(1_000L);
 
     private DynamicContext<Member> context;
     private ViewCommitteeSelector selector;
@@ -165,7 +169,7 @@ public class VirtualSynchronyTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         // Submit proposal in view1
@@ -203,7 +207,7 @@ public class VirtualSynchronyTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var proposal2 = new MigrationProposal(
@@ -212,7 +216,7 @@ public class VirtualSynchronyTest {
             members.get(0).getId(),
             members.get(2).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         // Submit two proposals in view1

@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.consensus.committee;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
@@ -58,6 +60,8 @@ import static org.mockito.Mockito.when;
  * @author hal.hildebrand
  */
 public class ViewIdRaceConditionTest {
+    // Fixed-base clock for proposal/vote timestamps (determinism mandate, Luciferase-ze0eq).
+    private static final TestClock ZE0EQ_CLOCK = new TestClock(1_000L);
 
     private DynamicContext<Member> context;
     private ViewCommitteeSelector selector;
@@ -135,7 +139,7 @@ public class ViewIdRaceConditionTest {
             source,
             targetA,
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future1 = consensus.requestConsensus(proposal1);
@@ -161,7 +165,7 @@ public class ViewIdRaceConditionTest {
             source,
             targetB,
             view2,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future2 = consensus.requestConsensus(proposal2);
@@ -191,7 +195,7 @@ public class ViewIdRaceConditionTest {
             members.get(0).getId(),  // source
             members.get(1).getId(),  // target
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -220,7 +224,7 @@ public class ViewIdRaceConditionTest {
             members.get(0).getId(),  // source
             members.get(1).getId(),  // target
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -256,7 +260,7 @@ public class ViewIdRaceConditionTest {
             members.get(0).getId(),  // source
             members.get(1).getId(),  // target
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
