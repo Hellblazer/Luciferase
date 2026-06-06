@@ -3,6 +3,7 @@ package com.hellblazer.luciferase.simulation.viz.render;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
+import com.github.benmanes.caffeine.cache.Ticker;
 import com.github.benmanes.caffeine.cache.Weigher;
 import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
@@ -67,6 +68,19 @@ public class RegionCache implements AutoCloseable {
      * @param ttl Time-to-live for unpinned regions (expireAfterAccess)
      */
     public RegionCache(long maxMemoryBytes, Duration ttl) {
+        this(maxMemoryBytes, ttl, Ticker.systemTicker());
+    }
+
+    /**
+     * Create RegionCache with an explicit Caffeine {@link Ticker} driving {@code expireAfterAccess}, so TTL
+     * eviction can be tested deterministically by advancing virtual time instead of sleeping on the wall clock
+     * (Luciferase-h0hk7). Production passes {@link Ticker#systemTicker()}, so behavior is unchanged.
+     *
+     * @param maxMemoryBytes Maximum total memory (90% for unpinned, 10% headroom for pinned)
+     * @param ttl            Time-to-live for unpinned regions (expireAfterAccess)
+     * @param ticker         Time source for Caffeine expiry; {@link Ticker#systemTicker()} in production
+     */
+    public RegionCache(long maxMemoryBytes, Duration ttl, Ticker ticker) {
         this.maxMemoryBytes = maxMemoryBytes;
         this.ttl = ttl;
         this.pinnedMemoryBytes = new AtomicLong(0);
@@ -83,6 +97,7 @@ public class RegionCache implements AutoCloseable {
                 .weigher((Weigher<CacheKey, CachedRegion>) (key, value) ->
                     (int) Math.min(value.sizeBytes(), Integer.MAX_VALUE))
                 .expireAfterAccess(ttl)
+                .ticker(ticker)
                 .removalListener((CacheKey key, CachedRegion value, RemovalCause cause) -> {
                     if (value != null) {
                         log.debug("Evicted region {} LOD {} ({} bytes, cause: {})",
@@ -99,9 +114,10 @@ public class RegionCache implements AutoCloseable {
     /**
      * Set clock for deterministic testing.
      * <p>
-     * Note: Caffeine's expireAfterAccess() uses system time internally and cannot be overridden.
-     * This clock only affects lastAccessedMs tracking for pinned regions. For fully deterministic
-     * cache expiration tests, consider using short TTL values and Thread.sleep() instead.
+     * Note: this clock only affects lastAccessedMs tracking for pinned regions; it does NOT drive Caffeine's
+     * expireAfterAccess (which reads its own {@link Ticker}). For deterministic TTL-eviction tests, construct
+     * the cache with the {@link #RegionCache(long, Duration, Ticker)} overload and advance the ticker instead
+     * of sleeping (Luciferase-h0hk7).
      *
      * @param clock Clock instance
      */

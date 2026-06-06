@@ -1,10 +1,12 @@
 package com.hellblazer.luciferase.simulation.viz.render;
 
+import com.github.benmanes.caffeine.cache.Ticker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,6 +45,29 @@ class RegionCacheTest {
 
         assertTrue(retrieved.isPresent(), "Region should be cached");
         assertEquals(cachedRegion, retrieved.get());
+    }
+
+    /**
+     * Luciferase-h0hk7: TTL eviction must be testable by advancing virtual time, not the wall clock. The
+     * {@code RegionCache(long, Duration, Ticker)} overload wires a Caffeine {@link Ticker} into
+     * {@code expireAfterAccess}, so advancing the ticker past the TTL expires the entry with no Thread.sleep.
+     */
+    @Test
+    void ttlEvictionIsDeterministicWithInjectedTicker() {
+        var nanos = new AtomicLong(0);
+        Ticker ticker = nanos::get;
+        try (var tickedCache = new RegionCache(10_000, Duration.ofSeconds(1), ticker)) {
+            var regionId = new RegionId(1L, 0);
+            var key = new RegionCache.CacheKey(regionId, 0);
+            tickedCache.put(key, RegionCache.CachedRegion.from(createTestRegion(regionId, 1000), 0L));
+            assertTrue(tickedCache.get(key).isPresent(), "entry must be present before the TTL elapses");
+
+            // Advance virtual time past the 1s TTL — purely via the injected ticker, no real sleep.
+            nanos.addAndGet(Duration.ofSeconds(2).toNanos());
+
+            assertFalse(tickedCache.get(key).isPresent(),
+                        "entry must be evicted by expireAfterAccess once the injected ticker passes the TTL");
+        }
     }
 
     @Test
