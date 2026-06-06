@@ -145,13 +145,13 @@ public class TetreeEdgeNeighborTest {
         var tet = tetree.locateTetrahedron(p1, (byte) 2);
         var tetKey = tet.tmIndex();
 
-        // Edge-to-face mapping (from TetreeNeighborFinder):
-        // Edge 0 (v0-v1): faces 0, 2
-        // Edge 1 (v0-v2): faces 0, 3
-        // Edge 2 (v0-v3): faces 1, 3
-        // Edge 3 (v1-v2): faces 0, 1
-        // Edge 4 (v1-v3): faces 1, 2
-        // Edge 5 (v2-v3): faces 2, 3
+        // Canonical edge-to-face mapping (TetreeConnectivity.EDGE_FACES, RDR-014 F4):
+        // Edge 0 (v0-v1): faces 2, 3
+        // Edge 1 (v0-v2): faces 1, 3
+        // Edge 2 (v0-v3): faces 1, 2
+        // Edge 3 (v1-v2): faces 0, 3
+        // Edge 4 (v1-v3): faces 0, 2
+        // Edge 5 (v2-v3): faces 0, 1
 
         // Get face neighbors
         List<TetreeKey<? extends TetreeKey<?>>> face0Neighbors = new ArrayList<>();
@@ -179,28 +179,29 @@ public class TetreeEdgeNeighborTest {
             face3Neighbors.add(face3);
         }
 
-        // Get edge neighbors
-        var edge0Neighbors = tetree.findEdgeNeighbors(tetKey, 0); // shares faces 0,2
-        var edge3Neighbors = tetree.findEdgeNeighbors(tetKey, 3); // shares faces 0,1
+        // Get edge neighbors (canonical EDGE_FACES: edge 0 -> faces {2,3}, edge 3 -> faces {0,3})
+        var edge0Neighbors = tetree.findEdgeNeighbors(tetKey, 0); // shares faces 2,3
+        var edge3Neighbors = tetree.findEdgeNeighbors(tetKey, 3); // shares faces 0,3
 
-        // Edge neighbors should include at least the face neighbors of the faces that share the edge
+        // Edge neighbors must include the same-level face neighbors of the two faces bounding the edge.
         Set<TetreeKey<? extends TetreeKey<?>>> edge0Expected = new HashSet<>();
-        edge0Expected.addAll(face0Neighbors);
         edge0Expected.addAll(face2Neighbors);
+        edge0Expected.addAll(face3Neighbors);
 
         Set<TetreeKey<? extends TetreeKey<?>>> edge3Expected = new HashSet<>();
         edge3Expected.addAll(face0Neighbors);
-        edge3Expected.addAll(face1Neighbors);
+        edge3Expected.addAll(face3Neighbors);
 
-        // Edge neighbors should include at least the face neighbors
+        // Edge neighbors must include the bounding-face neighbors (no isEmpty() escape: the canonical
+        // table is now authoritative, so a present face neighbor MUST appear as an edge neighbor).
         for (var neighbor : edge0Expected) {
-            assertTrue(edge0Neighbors.contains(neighbor) || edge0Neighbors.isEmpty(),
-                       "Edge 0 neighbors should include face neighbors from faces 0 and 2");
+            assertTrue(edge0Neighbors.contains(neighbor),
+                       "Edge 0 neighbors must include face neighbors from faces 2 and 3");
         }
 
         for (var neighbor : edge3Expected) {
-            assertTrue(edge3Neighbors.contains(neighbor) || edge3Neighbors.isEmpty(),
-                       "Edge 3 neighbors should include face neighbors from faces 0 and 1");
+            assertTrue(edge3Neighbors.contains(neighbor),
+                       "Edge 3 neighbors must include face neighbors from faces 0 and 3");
         }
     }
 
@@ -248,5 +249,65 @@ public class TetreeEdgeNeighborTest {
 
         // Note: With standard refinement, entities that were edge neighbors under Freudenthal
         // subdivision may not be edge neighbors anymore due to different spatial organization
+    }
+
+    // ===== RDR-014 Phase 1 (TDD-first, AC3/AC4): cross-level edge neighbor harness =====
+    // Written BEFORE the Phase 2 implementation of findEdgeNeighborsAtLevel; the exact-ring fixture is the
+    // load-bearing TDD red. Validation = symmetric-membership reciprocity (AC3) + an INDEPENDENT geometric
+    // CONTRACT (A) oracle (RDR-014 F3 and the "Implementation-time decision" section), NOT a re-derivation
+    // of the connectivity tables the implementation uses, and NOT a dualFace involution / vertex-count
+    // heuristic.
+
+    /**
+     * AC3 — symmetric-membership reciprocity. For every full edge-neighbor {@code n} of {@code t}
+     * (aggregated over all 6 edges) across a refined tet tree, {@code t} must appear in {@code n}'s full
+     * edge-neighbor set. Correct validation for a one-to-many ring relation; guards Phase 2/3 against a
+     * dropped or spurious cross-level neighbor.
+     */
+    @Test
+    void crossLevelEdgeNeighborReciprocitySweep() {
+        var finder = new TetreeNeighborFinder();
+        int checked = 0;
+        for (var t : CrossLevelNeighborOracle.refinedTets(4)) {
+            var tKey = t.tmIndex();
+            for (var n : CrossLevelNeighborOracle.fullEdgeNeighbors(finder, t)) {
+                assertTrue(CrossLevelNeighborOracle.fullEdgeNeighbors(finder, Tet.tetrahedron(n)).contains(tKey),
+                           "edge-neighbor relation must be reciprocal: " + tKey + " -> " + n
+                           + " but the reverse set does not contain " + tKey);
+                checked++;
+            }
+        }
+        assertTrue(checked >= 20, "expected a broad edge reciprocity sweep, only checked " + checked);
+    }
+
+    /**
+     * AC4 — non-vacuous EXACT-ring fixture for the FINER (level+1) edge contribution under CONTRACT (A).
+     * The level-(L+1) slice of {@code findEdgeNeighbors} must equal EXACTLY the adjacency ring computed by
+     * the independent geometric oracle: the children of {@code t}'s two same-level bounding-face neighbors
+     * that lie along the shared edge — adjacency neighbors, never {@code t}'s own nested children. Run for
+     * two types whose child incidence differs so a wrong type-selection in Phase 2 is caught. Fails against
+     * the empty stub (finer slice currently absent), and would fail a contract-(B) impl (t's own children
+     * would appear in the finer slice instead of the neighbors' children). {@code assertTrue(count>=0)} is
+     * forbidden (RDR-014 AC4).
+     */
+    @Test
+    void edgeFinerRingExactCountContractA() {
+        var finder = new TetreeNeighborFinder();
+        byte level = 5;
+        int cell = Constants.lengthAtLevel(level);
+        for (byte type : new byte[] { 0, 5 }) {
+            var t = new Tet(cell * 4, cell * 4, cell * 4, level, type);
+            int edge = 0;
+            var expected = CrossLevelNeighborOracle.finerEdgeRingPlusMinus1(finder, t, edge);
+            assertFalse(expected.isEmpty(),
+                        "fixture must be non-vacuous: interior type " + type + " edge 0 must have a finer ring");
+            var result = new HashSet<TetreeKey<?>>(finder.findEdgeNeighbors(t.tmIndex(), edge));
+            var finer = CrossLevelNeighborOracle.finerSlice(result, level);
+            assertEquals(expected, finer,
+                         "type " + type + " edge 0: the level-" + (level + 1) + " slice of findEdgeNeighbors must "
+                         + "equal exactly the contract-(A) adjacency ring (children of the two bounding-face "
+                         + "neighbors along the edge). Empty = unimplemented finer stub (RDR-014 Phase 2); t's "
+                         + "own children appearing = wrong contract (B)");
+        }
     }
 }

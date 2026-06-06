@@ -265,3 +265,23 @@ t8code parity of the edge→face table is an acceptance gate (below).
 1. The specific numeric ring/star counts for the criterion-4 fixtures — mechanically derivable from the
    now-authoritative tables during implementation; the *requirement* (assert an exact count for ≥1 edge
    and ≥1 vertex case) is locked above, only the literal numbers are derived in-code.
+
+## Implementation-time decision — cross-level neighbor contract (resolved 2026-06-05, Phase 1)
+
+During Phase 1 (`Luciferase-ij6zm`) the stacked review (substantive-critic) surfaced that the cross-level
+*finer* contribution has two coherent interpretations that change Phase 2/3's algorithm:
+
+- **(A) Adjacency ring:** finer neighbors of tet `T` at level `L+1` = the level-`L+1` tets that share the
+  edge/vertex AND are *adjacent* to `T` (children of `T`'s same-level edge/vertex ring), **excluding `T`'s
+  own nested children**.
+- **(B) Self-children:** finer neighbors = `T`'s own children touching the edge/vertex (what the existing
+  `findEdgeNeighborsAtLevel(tet, …, level+1)` skeleton structurally yields).
+
+**Decision: (A), confirmed by the user (2026-06-05).** Rationale: (A) is *forced* by the locked AC3 —
+under (B), `T` lists its own child `C` but `C` cannot symmetrically list `T` (a parent is the container, not
+an adjacency neighbor), so reciprocity is unsatisfiable; and the live collision/kNN BFS callers require
+*adjacency* neighbors to expand to, not nested sub-elements. Phase 2 (`findEdgeNeighborsAtLevel`) must
+traverse the same-level ring's descendants (via `findDescendantsAtLevel` on the face-neighbors), **not**
+`tet`'s own children; Phase 1's exact-count fixtures pin (A) via an independent geometric incidence oracle
+(`Tet.coordinates()` collinearity/vertex-coincidence), not a table re-derivation, so they cannot be
+satisfied by a self-children-only or table-tautological implementation.

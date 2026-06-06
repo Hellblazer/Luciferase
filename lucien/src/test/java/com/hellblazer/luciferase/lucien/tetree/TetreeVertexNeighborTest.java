@@ -324,4 +324,62 @@ public class TetreeVertexNeighborTest {
             }
         }
     }
+
+    // ===== RDR-014 Phase 1 (TDD-first, AC3/AC4): cross-level vertex neighbor harness =====
+    // Written BEFORE the Phase 3 implementation of findVertexNeighborsAtLevel /
+    // findVertexNeighborsAtFinerLevels. Validation = symmetric-membership reciprocity (AC3) + an
+    // INDEPENDENT geometric CONTRACT (A) oracle (RDR-014 "Implementation-time decision"). The vertex
+    // oracle uses pure vertex-coincidence on Tet.coordinates(), so it is NOT tautological against the
+    // CHILD_VERTEX_PARENT_VERTEX table the implementation consumes (that table gets its own parity test).
+
+    /**
+     * AC3 — symmetric-membership reciprocity for the vertex STAR relation over a refined tet tree. For
+     * every full vertex-neighbor {@code n} of {@code t}, {@code t} must appear in {@code n}'s full
+     * vertex-neighbor set. One-to-many star relation, validated by reciprocity — not involution, not a
+     * vertex-count heuristic (RDR-014 F3).
+     */
+    @Test
+    void crossLevelVertexNeighborReciprocitySweep() {
+        var finder = new TetreeNeighborFinder();
+        int checked = 0;
+        for (var t : CrossLevelNeighborOracle.refinedTets(4)) {
+            var tKey = t.tmIndex();
+            for (var n : CrossLevelNeighborOracle.fullVertexNeighbors(finder, t)) {
+                assertTrue(CrossLevelNeighborOracle.fullVertexNeighbors(finder, Tet.tetrahedron(n)).contains(tKey),
+                           "vertex-neighbor relation must be reciprocal: " + tKey + " -> " + n
+                           + " but the reverse set does not contain " + tKey);
+                checked++;
+            }
+        }
+        assertTrue(checked >= 20, "expected a broad vertex reciprocity sweep, only checked " + checked);
+    }
+
+    /**
+     * AC4 — non-vacuous EXACT-star fixture for the FINER (level+1) vertex contribution under CONTRACT (A).
+     * The level-(L+1) slice of {@code findVertexNeighbors} must equal EXACTLY the adjacency star computed by
+     * the independent geometric oracle: every level-(L+1) tet that carries the shared vertex, EXCLUDING
+     * {@code t}'s own nested children. Fails against the empty stub (finer slice absent) and against a
+     * contract-(B) impl (which would surface t's own children instead). Run for two types to catch a wrong
+     * type-selection in Phase 3.
+     */
+    @Test
+    void vertexFinerStarExactCountContractA() {
+        var finder = new TetreeNeighborFinder();
+        byte level = 5;
+        int cell = com.hellblazer.luciferase.lucien.Constants.lengthAtLevel(level);
+        for (byte type : new byte[] { 0, 5 }) {
+            var t = new Tet(cell * 4, cell * 4, cell * 4, level, type);
+            int vertex = 0;
+            var expected = CrossLevelNeighborOracle.finerVertexStarPlus1(t, vertex);
+            assertFalse(expected.isEmpty(),
+                        "fixture must be non-vacuous: interior type " + type + " vertex 0 must have a finer star");
+            var result = new HashSet<TetreeKey<?>>(finder.findVertexNeighbors(t.tmIndex(), vertex));
+            var finer = CrossLevelNeighborOracle.finerSlice(result, level);
+            assertEquals(expected, finer,
+                         "type " + type + " vertex 0: the level-" + (level + 1) + " slice of findVertexNeighbors "
+                         + "must equal exactly the contract-(A) adjacency star (level-" + (level + 1) + " tets "
+                         + "carrying the vertex, excluding t's own children). Empty = unimplemented finer stub "
+                         + "(RDR-014 Phase 3); t's own children appearing = wrong contract (B)");
+        }
+    }
 }
