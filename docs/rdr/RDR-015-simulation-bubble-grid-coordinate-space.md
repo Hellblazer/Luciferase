@@ -126,7 +126,66 @@ to the all-containing L0 root.
 
 ## Remaining Open Questions (for research)
 
-- Is the simulation intended to support genuine bubble-to-bubble migration in production, or is it a
-  test/demo scaffold? (Determines whether Option A is acceptable.)
-- What is the authoritative coordinate space for entities — and does any renderer/ghost/query consumer depend
-  on the current WorldBounds-scale positions?
+- ~~Is the simulation intended to support genuine bubble-to-bubble migration in production?~~ **Resolved: F3.**
+- ~~What is the authoritative coordinate space for entities, and which consumers depend on WorldBounds-scale
+  positions?~~ **Resolved: F1, F2.**
+
+## Research Findings (2026-06-06, code-verified)
+
+Investigation via `codebase-deep-analyzer` over the `simulation` module. All findings high-confidence with
+file:line evidence (F4 partition-construction medium). **Net: Option B is strongly preferred; Option C is
+structurally blocked.** The Decision section above is updated accordingly.
+
+**F1 — Authoritative coordinate space is WorldBounds-scale Cartesian.** The `EntitySpec.position` "RDGCS
+coordinates" javadoc (`EntityDistribution.java:67`) is aspirational and was never implemented. Physics
+(`EntityPhysicsManager.updateBubbleEntities` clamps to `worldBounds`) and `RandomWalkBehavior` (bounces at
+`worldBounds.min()/max()`) treat positions as WorldBounds-scale Cartesian. `BubbleBounds.contains`
+(`BubbleBounds.java:235`) DOES call `toRDG(position)` — but `toRDG` is a coordinate-basis ROTATION
+(`(-x+y+z)/√2, …`), not a scale change, so a WorldBounds point (50,50,50) → RDGCS ≈ (0,35,35), still
+microscopic vs the ±741 K bubble bounds. **The scale mismatch is the fatal defect; there is no scale transform
+anywhere.** Critically, `toRDG` produces NEGATIVE values (e.g. `toRDG(1,0,0)=(-1,1,1)`), and the Tetree
+requires non-negative coordinates (`SpatialNeighborIndex.java:84-87`) — so RDGCS entity positions are
+structurally incompatible with Tetree insertion.
+
+**F2 — Every non-test consumer uses WorldBounds-scale Cartesian.** Rescaling entity positions into RDGCS
+(Option C) would break: `EntityVisualizationServer.getEntityDTOs` (`:478`) and
+`MultiBubbleVisualizationServer.getAllEntityDTOs` (`:478`) (JSON/WebSocket emission to render clients),
+`SimulationQueryService.getAllEntities` (EntitySnapshot), `EntityStreamConsumer.onMessage` →
+`regionManager.updateEntity`, `TetreeGhostSyncAdapter.isNearBounds` (Cartesian distance vs ~20-unit
+aoiRadius), and `SpatialNeighborIndex.insert` (`:146`, Tetree non-negative constraint). Option C's transform
+must propagate through the rendering pipeline — the draft's "smaller surface" framing was wrong.
+
+**F3 — Migration is a production feature, not a scaffold.** Wired into two production tick loops
+(`MultiBubbleSimulation.tick` → `migration.checkMigrations`; `GridMultiBubbleSimulation.java:408`), exposed via
+public observability (`getMigrationMetrics()` on both), and exercised by a dedicated benchmark
+(`SimpleMigrationNode`). No `main()` runs it end-to-end today (the demos `PredatorPreyGridDemo` /
+`EntityVisualizationServer` predate `MultiBubbleSimulation` integration), but it is clearly intended-live.
+**Option A (fence/abandon) is therefore not acceptable.**
+
+**F4 — `createBubbles` cannot produce a spatial partition (secondary defect confirmed).** It iterates
+`level = 0..numLevels-1`, creating bubbles at MULTIPLE levels: `createTetAtLevel(0,0)` always returns the L0
+root `Tet(0,0,0,0,0)` whose bounds cover the entire positive octant; L1+ bubbles are topological children
+nested inside it. So any entity that locates into an L1 child also locates into L0, and
+`TetrahedralContainmentChecker`'s level-0-first scan resolves almost everything to the all-containing root.
+The `usedKeys` HashSet only blocks bit-identical keys, not the structural nesting. **`PredatorPreyGridDemo`
+already side-steps `createBubbles`** with the correct Option-B pattern (fixed level, world-position → Morton
+conversion, direct `grid.addBubble(bubble, key)`) — evidence the author knew `createBubbles` isn't a
+partition. Option B's construction uses `TetreeNeighborFinder.findFaceNeighbor`/`findNeighborsAtLevel` (the
+RDR-014 work) to enumerate adjacent same-level tets via reciprocity-correct BFS (validate adjacency by
+involution, NOT shared-vertex count — the Bey-SFC face neighbor is non-conforming).
+
+**F5 — RDR-003 reinforces Option B and conflicts with Option C.** RDR-003's `SpatialLevelHeuristic` is built
+on the explicit premise that "VoN entity positions are placed directly into [Tetree absolute coordinate
+space] without rescaling, so AoI radii are comparable to cell-edges 1:1" — i.e. WorldBounds-scale Cartesian.
+Its RD/FCC overlay (`RDView`) is a **query-time** construct over a Cartesian-coordinate Tetree, not a
+storage-time coordinate. Option B (entities stay Cartesian) is fully compatible; Option C (entities in RDGCS)
+contradicts both the heuristic and the Tetree non-negative constraint (F1).
+
+### Decision (updated post-research — proposed for gate)
+
+**Option B — build the bubble grid as a same-level adjacent spatial partition tiling the entity (WorldBounds
+Cartesian) domain.** Entity positions remain WorldBounds-scale Cartesian (the de-facto authoritative space,
+F1/F2/F5); `createBubbles` is reworked to emit a single-level, non-overlapping, no-duplicate-key partition
+sized to the world domain (formalizing the `PredatorPreyGridDemo` pattern, F4), so a face crossing routes to a
+real neighbor bubble. Option A is rejected (F3: production feature); Option C is rejected (F1/F2/F5:
+Tetree non-negative blocker + rendering blast radius + RDR-003 conflict).
