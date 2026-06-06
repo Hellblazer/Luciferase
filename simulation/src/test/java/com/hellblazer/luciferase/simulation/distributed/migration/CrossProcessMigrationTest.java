@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -71,6 +72,32 @@ class CrossProcessMigrationTest {
         dedup = new IdempotencyStore(300_000); // 5 min TTL
         metrics = new MigrationMetrics();
         migration = new CrossProcessMigration(dedup, metrics);
+    }
+
+    /**
+     * Luciferase-rr07g: CrossProcessMigration implements AutoCloseable so try-with-resources cleans up the
+     * RealTimeController thread + cleanupScheduler even on the exception path. Asserts deterministically that
+     * close()->stop() shut the cleanup scheduler when the try block throws (reflection on the scheduler;
+     * {@code shutdown()} sets {@code isShutdown()} synchronously, no thread-count race).
+     */
+    @Test
+    void close_runsCleanupOnExceptionPath() throws Exception {
+        var m = new CrossProcessMigration(new IdempotencyStore(300_000), new MigrationMetrics());
+        var schedulerField = CrossProcessMigration.class.getDeclaredField("cleanupScheduler");
+        schedulerField.setAccessible(true);
+        var scheduler = (ExecutorService) schedulerField.get(m);
+        assertFalse(scheduler.isShutdown(), "cleanup scheduler must be running before close()");
+
+        // try-with-resources over an existing resource; the body throws so close() runs on the exception path.
+        assertThrows(IllegalStateException.class, () -> {
+            try (m) {
+                throw new IllegalStateException("boom inside try-with-resources");
+            }
+        });
+
+        assertTrue(scheduler.isShutdown(),
+                   "try-with-resources must invoke close()->stop() and shut the cleanup scheduler on the "
+                   + "exception path");
     }
 
     @AfterEach

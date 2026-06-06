@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
@@ -37,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @author hal.hildebrand
  */
 class DynamicTopologyDemo {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private static final int SPLIT_THRESHOLD = 5000;
     private static final int MERGE_THRESHOLD = 500;
@@ -92,7 +95,7 @@ class DynamicTopologyDemo {
             bubble0.id(),
             splitPlane0,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         System.out.println("Executing split proposal...");
@@ -122,7 +125,7 @@ class DynamicTopologyDemo {
             bubble1.id(),
             splitPlane1,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         System.out.println("Executing split proposal...");
@@ -159,7 +162,7 @@ class DynamicTopologyDemo {
                     bubble2.id(),
                     bubble3.id(),
                     DigestAlgorithm.DEFAULT.getOrigin(),
-                    System.currentTimeMillis()
+                    JC1KH_CLOCK.currentTimeMillis()
                 );
 
                 // Note: This will fail validation if bubble2 is still above threshold
@@ -206,7 +209,7 @@ class DynamicTopologyDemo {
                 newCenter,
                 clusterCentroid,
                 DigestAlgorithm.DEFAULT.getOrigin(),
-                System.currentTimeMillis()
+                JC1KH_CLOCK.currentTimeMillis()
             );
 
             System.out.println("Executing move proposal...");
@@ -276,7 +279,7 @@ class DynamicTopologyDemo {
                     bubble.id(),
                     splitPlane,
                     DigestAlgorithm.DEFAULT.getOrigin(),
-                    System.currentTimeMillis()
+                    JC1KH_CLOCK.currentTimeMillis()
                 );
 
                 var result = executor.execute(proposal);

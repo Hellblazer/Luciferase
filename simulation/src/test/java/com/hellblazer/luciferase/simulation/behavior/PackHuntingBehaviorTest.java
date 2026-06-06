@@ -9,6 +9,8 @@
 package com.hellblazer.luciferase.simulation.behavior;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
+import com.hellblazer.luciferase.simulation.entity.EntityType;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -86,5 +88,43 @@ class PackHuntingBehaviorTest {
         var out2 = b2.computeVelocity(id, pos, vel, bubble, 0.016f);
 
         assertThat(out1).isEqualTo(out2);
+    }
+
+    /**
+     * Luciferase-w0fo8 (0frcy): the speed limit must be {@code maxSpeed} (patrol), not {@code pursuitSpeed},
+     * when prey is present-but-out-of-range. The hunting branch is gated on
+     * {@code targetPrey != null && distance < chaseRange}, but the speed-limit predicate was previously
+     * recomputed as {@code targetPrey != null} alone — so a pack member patrolling toward a far prey burst at
+     * pursuitSpeed. Mirrors the PredatorBehavior fix (BehaviorRemediationWave3Test.predatorDoesNotWander...).
+     *
+     * <p>The scenario uses the pack-cohesion patrol path (a second predator inside packRadius) with a high
+     * initial velocity: {@code computeWander} self-caps to maxSpeed, so a SOLO scenario would be vacuous, but
+     * {@code computePackCohesion} adds to the input velocity, leaving the pre-clamp speed above pursuitSpeed so
+     * the speed-limit clamp is genuinely exercised.
+     */
+    @Test
+    void packDoesNotWanderAtPursuitSpeedWhenPreyOutsideChaseRange() {
+        float aoi = 100f;
+        float maxSpeed = 5f;
+        float pursuitSpeed = 20f;
+        var pack = new PackHuntingBehavior(aoi, maxSpeed, pursuitSpeed, 1.0f,
+                                           WorldBounds.DEFAULT, new Random(42L));
+
+        var bubble = new EnhancedBubble(UUID.randomUUID(), (byte) 10, 16L);
+        var focalPos = new Point3f(50f, 50f, 50f);
+        bubble.addEntity("pred", focalPos, EntityType.PREDATOR);
+        // Second predator well inside packRadius (aoi*0.4 = 40) → pack-cohesion patrol path.
+        bubble.addEntity("pack2", new Point3f(55f, 50f, 50f), EntityType.PREDATOR);
+        // Prey present in k-NN but FAR outside chaseRange (aoi*0.95 = 95) → hunting branch NOT taken,
+        // yet determinePackRole still returns a non-null targetPrey (no distance filter on prey).
+        bubble.addEntity("prey", new Point3f(50f, 50f, 50f + (aoi * 0.96f)), EntityType.PREY);
+
+        // High initial speed (> pursuitSpeed) so the pre-clamp velocity exceeds both limits and the clamp bites.
+        var result = pack.computeVelocity("pred", focalPos, new Vector3f(25f, 0f, 0f), bubble, 0.016f);
+
+        assertThat(result.length())
+            .as("patrol velocity with prey out of chaseRange must be capped at maxSpeed (%s), not pursuitSpeed (%s)",
+                maxSpeed, pursuitSpeed)
+            .isLessThanOrEqualTo(maxSpeed + 1e-3f);
     }
 }

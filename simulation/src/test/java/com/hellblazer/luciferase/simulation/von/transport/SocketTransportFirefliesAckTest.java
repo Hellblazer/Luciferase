@@ -26,6 +26,7 @@ import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
 import com.hellblazer.luciferase.simulation.delos.fireflies.FirefliesMembershipView;
 import com.hellblazer.luciferase.simulation.delos.mock.MockFirefliesView;
 import com.hellblazer.luciferase.simulation.von.Message;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import com.hellblazer.luciferase.simulation.von.MessageFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -156,6 +157,25 @@ class SocketTransportFirefliesAckTest {
         var ack = ackFuture.get(500, TimeUnit.MILLISECONDS);
         assertNotNull(ack, "ACK should complete when view is stable");
         assertTrue(ackFuture.isDone(), "ACK future should be done");
+    }
+
+    /**
+     * Luciferase-fy8ff: SocketTransport's MessageFactory was hardwired to {@code MessageFactory.system()}, so
+     * ACK timestamps were wall-clock only. {@code setClock} now rebuilds the factory with an injectable clock;
+     * the ACK produced on the send path must carry the injected clock's time.
+     */
+    @Test
+    void ackTimestampUsesInjectedClock() throws Exception {
+        long base = 123_456_789L;
+        transport1.setClock(new TestClock(base)); // rebuilds transport1's MessageFactory with the test clock
+
+        var message = factory.createAck(UUID.randomUUID(), transport2BubbleId);
+        var ackFuture = transport1.sendToNeighborAsync(transport2BubbleId, message);
+
+        var ack = ackFuture.get(500, TimeUnit.MILLISECONDS);
+        assertNotNull(ack, "ACK should complete when view is stable");
+        assertEquals(base, ack.timestamp(),
+                     "ACK timestamp must be stamped by the injected clock (Luciferase-fy8ff), not wall-clock");
     }
 
     /**

@@ -66,9 +66,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * metrics.incrementConcurrent();
  * try {
- *     long startTime = System.currentTimeMillis();
+ *     long startTime = clock.currentTimeMillis(); // inject a Clock (determinism mandate), not System.*
  *     // ... perform migration ...
- *     long latency = System.currentTimeMillis() - startTime;
+ *     long latency = clock.currentTimeMillis() - startTime;
  *     metrics.recordSuccess(latency);  // Logs warning if latency > 500ms
  * } catch (Exception e) {
  *     metrics.recordFailure(e.getMessage());

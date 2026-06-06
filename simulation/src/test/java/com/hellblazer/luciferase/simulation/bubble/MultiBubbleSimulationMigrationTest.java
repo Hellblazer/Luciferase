@@ -73,51 +73,62 @@ class MultiBubbleSimulationMigrationTest {
         assertEquals(0, metrics.getActiveCooldownCount());
     }
 
-    @Test
-    void testSimulationRunsWithMigration() {
-        // Start simulation
-        simulation.start();
-
-        // Let it run for a bit
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    /** Drive N deterministic single-step ticks (no start()/Thread.sleep) — fully reproducible (seeded behavior). */
+    private void tickDeterministically(int ticks) {
+        for (int i = 0; i < ticks; i++) {
+            simulation.tick();
         }
+    }
 
-        // Stop simulation
-        simulation.stop();
-
-        // Verify simulation ran
-        assertTrue(simulation.getTickCount() > 0);
-
-        // Migration metrics should exist (may or may not have migrations)
-        var metrics = simulation.getMigrationMetrics();
-        assertNotNull(metrics);
-        assertTrue(metrics.getTotalMigrations() >= 0);
+    /** Assert exact real-entity conservation and that no entity id resides in more than one bubble. */
+    private void assertConservedAndUnique(int expectedRealCount) {
+        var realEntities = simulation.getRealEntities();
+        assertEquals(expectedRealCount, realEntities.size(),
+                     "real entity count must be exactly conserved (no loss / no creation)");
+        var bubblesById = new java.util.HashMap<String, java.util.Set<Object>>();
+        for (var e : realEntities) {
+            bubblesById.computeIfAbsent(e.id(), k -> new java.util.HashSet<>()).add(e.bubbleKey());
+        }
+        for (var entry : bubblesById.entrySet()) {
+            assertEquals(1, entry.getValue().size(),
+                         "entity " + entry.getKey() + " must reside in exactly one bubble (no duplication), "
+                         + "found in " + entry.getValue());
+        }
     }
 
     @Test
+    void testSimulationRunsWithMigration() {
+        // Deterministic single-stepping instead of start()+Thread.sleep (Luciferase-j6ybd).
+        int initialReal = simulation.getRealEntities().size();
+        tickDeterministically(2000);
+
+        assertTrue(simulation.getTickCount() >= 2000, "simulation must have advanced the driven ticks");
+        assertNotNull(simulation.getMigrationMetrics());
+        // Invariant that holds whether or not a migration commits: the per-tick migration CHECK must never lose
+        // or duplicate an entity. (The old assertTrue(getTotalMigrations() >= 0) was trivially true.)
+        assertConservedAndUnique(initialReal);
+    }
+
+    /**
+     * Exact entity conservation across a long deterministic run (replaces the RDR-004 D3-class vacuous
+     * {@code finalEntities >= initialEntities * 0.9}, which tolerated dropping up to 10% of entities every run,
+     * and the non-deterministic Thread.sleep). Asserts no loss AND no duplication (Luciferase-j6ybd).
+     *
+     * <p><b>Finding (not silent scope reduction):</b> the original AC also asked for a positive-migration
+     * assertion ({@code getTotalMigrations() > 0}). That is NOT asserted here because this simulation commits
+     * ZERO successful migrations through normal {@code tick()} operation — verified across fixtures up to 600
+     * entities in a 15-unit world over 20,000 ticks (all yielded 0). Asserting a migration would be either
+     * impossible or contrived. The likely-dead migration-commit path is filed as a separate defect bead; this
+     * test pins the conservation/uniqueness invariants, which is the load-bearing guarantee regardless.
+     */
+    @Test
     void testNoEntityLossDuringMigration() {
-        var initialEntities = simulation.getAllEntities().size();
+        int initialReal = simulation.getRealEntities().size();
+        assertTrue(initialReal > 0, "fixture must start with real entities");
 
-        // Run simulation
-        simulation.start();
+        tickDeterministically(2000);
 
-        try {
-            Thread.sleep(200);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        simulation.stop();
-
-        var finalEntities = simulation.getAllEntities().size();
-
-        // Entity count should remain stable (no loss)
-        // NOTE: May not be exact due to ghost entities, but real entities should be preserved
-        assertTrue(finalEntities >= initialEntities * 0.9,
-            "Entity count should not drop significantly");
+        assertConservedAndUnique(initialReal);
     }
 
     @Test

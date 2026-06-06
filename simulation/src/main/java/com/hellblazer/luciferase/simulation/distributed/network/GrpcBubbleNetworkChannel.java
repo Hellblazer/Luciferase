@@ -58,6 +58,11 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     private UUID localNodeId;
     private String localAddress;
     private Server server;
+    // Luciferase-3l1b5: track the JVM shutdown hook so it is registered at most once per instance and can be
+    // deregistered in close() (was leaked: a new hook added on every initialize(), never removed).
+    private volatile Thread shutdownHook;
+    private final java.util.concurrent.atomic.AtomicBoolean shutdownHookRegistered =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
     private final Map<UUID, ManagedChannel> remoteChannels = new ConcurrentHashMap<>();
     private final Map<UUID, String> nodeAddresses = new ConcurrentHashMap<>();
     // Per-node consecutive terminal-failure counter for liveness gating (Luciferase-0frcy.99).
@@ -176,15 +181,19 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
             nodeAddresses.put(nodeId, localAddress);
             log.info("gRPC network channel initialized: {} at {}", nodeId, localAddress);
 
-            // Add shutdown hook
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                log.info("Shutting down gRPC channel via shutdown hook");
-                try {
-                    GrpcBubbleNetworkChannel.this.close();
-                } catch (Exception e) {
-                    log.error("Error during shutdown hook", e);
-                }
-            }));
+            // Register a JVM shutdown hook exactly once per instance (Luciferase-3l1b5). Without the guard a
+            // fresh hook was added on every initialize() and never removed, leaking a Thread per call.
+            if (shutdownHookRegistered.compareAndSet(false, true)) {
+                shutdownHook = new Thread(() -> {
+                    log.info("Shutting down gRPC channel via shutdown hook");
+                    try {
+                        GrpcBubbleNetworkChannel.this.close();
+                    } catch (Exception e) {
+                        log.error("Error during shutdown hook", e);
+                    }
+                });
+                Runtime.getRuntime().addShutdownHook(shutdownHook);
+            }
 
         } catch (IOException e) {
             throw new RuntimeException("Failed to initialize gRPC server", e);
@@ -410,6 +419,21 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     @Override
     public void close() throws Exception {
         log.info("Shutting down gRPC channel: {}", localNodeId);
+
+        // Deregister the JVM shutdown hook so it does not leak past close() (Luciferase-3l1b5). When close() is
+        // itself running from the hook (JVM already shutting down), removeShutdownHook throws
+        // IllegalStateException — ignore it, the hook is already executing.
+        if (shutdownHookRegistered.compareAndSet(true, false)) {
+            var hook = shutdownHook;
+            shutdownHook = null;
+            if (hook != null) {
+                try {
+                    Runtime.getRuntime().removeShutdownHook(hook);
+                } catch (IllegalStateException e) {
+                    // JVM already in shutdown — hook is running and cannot be removed; safe to ignore.
+                }
+            }
+        }
 
         // Shutdown all remote channels
         for (var entry : remoteChannels.entrySet()) {

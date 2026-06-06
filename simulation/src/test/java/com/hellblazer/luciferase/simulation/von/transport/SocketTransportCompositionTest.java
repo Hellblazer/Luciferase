@@ -23,8 +23,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
-import java.io.IOException;
-import java.net.ServerSocket;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -66,25 +64,30 @@ class SocketTransportCompositionTest {
         // Create two transports with Fireflies infrastructure
         var uuid1 = UUID.randomUUID();
         var uuid2 = UUID.randomUUID();
-        var addr1 = ProcessAddress.localhost("p1", findAvailablePort());
-        var addr2 = ProcessAddress.localhost("p2", findAvailablePort());
+        // Bind to an ephemeral port (0) and read back the OS-assigned address — no find-then-bind TOCTOU
+        // window (Luciferase-fehvz). createTestTransport does not listen, so myAddress is only a hint.
+        var bind1 = ProcessAddress.localhost("p1", 0);
+        var bind2 = ProcessAddress.localhost("p2", 0);
 
-        transport1 = TestTransportFactory.createTestTransport(uuid1, addr1);
-        transport2 = TestTransportFactory.createTestTransport(uuid2, addr2);
+        transport1 = TestTransportFactory.createTestTransport(uuid1, bind1);
+        transport2 = TestTransportFactory.createTestTransport(uuid2, bind2);
 
-        // Phase 1: Verify MemberDirectory works (register and lookup)
+        // Phase 2: Verify ConnectionManager works (listen, then read the actual bound address for routing)
+        assertFalse(transport1.isConnected(), "Not running before listenOn/connectTo");
+
+        transport1.listenOn(bind1);
+        assertTrue(transport1.isConnected(), "Running after listenOn (bug fix)");
+        transport2.listenOn(bind2);
+
+        var addr1 = transport1.getBoundAddress();
+        var addr2 = transport2.getBoundAddress();
+
+        // Phase 1: Verify MemberDirectory works (register and lookup) against the actual bound address
         transport1.registerMember(uuid2, addr2);
         var memberInfo = transport1.lookupMember(uuid2);
         assertTrue(memberInfo.isPresent(), "Member should be registered");
         assertEquals(uuid2, memberInfo.get().nodeId(), "Member ID should match");
 
-        // Phase 2: Verify ConnectionManager works (listen and connect)
-        assertFalse(transport1.isConnected(), "Not running before listenOn/connectTo");
-
-        transport1.listenOn(addr1);
-        assertTrue(transport1.isConnected(), "Running after listenOn (bug fix)");
-
-        transport2.listenOn(addr2);
         transport1.connectTo(addr2);
         assertTrue(transport1.isConnected(), "Still running after connectTo");
 
@@ -118,30 +121,23 @@ class SocketTransportCompositionTest {
     @Test
     void testComponentIsolation() throws Exception {
         var uuid1 = UUID.randomUUID();
-        var addr1 = ProcessAddress.localhost("p1", findAvailablePort());
+        // Bind ephemeral port 0; no find-then-bind TOCTOU (Luciferase-fehvz).
+        var bind1 = ProcessAddress.localhost("p1", 0);
 
-        transport1 = TestTransportFactory.createTestTransport(uuid1, addr1);
+        transport1 = TestTransportFactory.createTestTransport(uuid1, bind1);
 
-        // MemberDirectory operation should work before connection
+        // MemberDirectory operation should work before connection. addr2 is a routing entry only — uuid2 is
+        // never bound/connected here — so a fixed placeholder port is fine (no port allocation needed).
         var uuid2 = UUID.randomUUID();
-        var addr2 = ProcessAddress.localhost("p2", findAvailablePort());
+        var addr2 = ProcessAddress.localhost("p2", 1);
         transport1.registerMember(uuid2, addr2);
 
         assertTrue(transport1.lookupMember(uuid2).isPresent(), "Member registration independent of connection");
         assertFalse(transport1.isConnected(), "Not connected yet");
 
         // ConnectionManager operation should work without members
-        transport1.listenOn(addr1);
+        transport1.listenOn(bind1);
         assertTrue(transport1.isConnected(), "Connection independent of members");
         assertTrue(transport1.lookupMember(uuid2).isPresent(), "Member still registered");
-    }
-
-    private int findAvailablePort() {
-        try (var socket = new ServerSocket(0)) {
-            socket.setReuseAddress(true);
-            return socket.getLocalPort();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to find available port", e);
-        }
     }
 }

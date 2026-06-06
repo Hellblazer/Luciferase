@@ -73,7 +73,7 @@ import java.util.function.LongSupplier;
  *
  * @author hal.hildebrand
  */
-public class CrossProcessMigration {
+public class CrossProcessMigration implements AutoCloseable {
 
     private static final Logger                log                   = LoggerFactory.getLogger(
     CrossProcessMigration.class);
@@ -181,6 +181,15 @@ public class CrossProcessMigration {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    /**
+     * Delegates to {@link #stop()} so callers can manage the controller thread and cleanup scheduler with
+     * try-with-resources; cleanup then runs on exception paths too (Luciferase-rr07g).
+     */
+    @Override
+    public void close() {
+        stop();
     }
 
     /**

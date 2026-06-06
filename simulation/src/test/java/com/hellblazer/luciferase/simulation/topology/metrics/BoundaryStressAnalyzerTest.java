@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology.metrics;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +31,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 class BoundaryStressAnalyzerTest {
+    // Per-instance injected clock (determinism mandate, Luciferase-jc1kh). The analyzer's sliding-window "now"
+    // and the recorded migration timestamps must share one virtual clock — the recorded timestamps are
+    // load-bearing here (window math), so a fixed base alone would fall outside the analyzer's real-time window.
+    private TestClock testClock;
 
     private BoundaryStressAnalyzer analyzer;
     private UUID bubble1;
@@ -36,14 +42,16 @@ class BoundaryStressAnalyzerTest {
 
     @BeforeEach
     void setUp() {
+        testClock = new TestClock(1_000L);
         analyzer = new BoundaryStressAnalyzer(60000); // 60-second window
+        analyzer.setClock(testClock);
         bubble1 = UUID.randomUUID();
         bubble2 = UUID.randomUUID();
     }
 
     @Test
     void testMigrationRateCalculation() {
-        long now = System.currentTimeMillis();
+        long now = testClock.currentTimeMillis();
 
         // Record 20 migrations over 2 seconds (10 per second)
         for (int i = 0; i < 20; i++) {
@@ -56,7 +64,7 @@ class BoundaryStressAnalyzerTest {
 
     @Test
     void testSlidingWindowExpiration() {
-        long now = System.currentTimeMillis();
+        long now = testClock.currentTimeMillis();
 
         // Record migrations at T=0
         for (int i = 0; i < 10; i++) {
@@ -77,7 +85,7 @@ class BoundaryStressAnalyzerTest {
 
     @Test
     void testHotspotDetection() {
-        long now = System.currentTimeMillis();
+        long now = testClock.currentTimeMillis();
 
         // Bubble 1: High stress (15 migrations/second)
         for (int i = 0; i < 150; i++) {
@@ -97,7 +105,7 @@ class BoundaryStressAnalyzerTest {
 
     @Test
     void testMultipleBubbleTracking() {
-        long now = System.currentTimeMillis();
+        long now = testClock.currentTimeMillis();
 
         var bubble3 = UUID.randomUUID();
 
@@ -140,7 +148,7 @@ class BoundaryStressAnalyzerTest {
 
     @Test
     void testRecentWindow() {
-        long now = System.currentTimeMillis();
+        long now = testClock.currentTimeMillis();
 
         // Old migrations (outside window)
         for (int i = 0; i < 10; i++) {

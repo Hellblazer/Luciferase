@@ -33,7 +33,7 @@ import java.util.UUID;
  *     "entity-123",
  *     sourceProcessId,
  *     destProcessId,
- *     System.currentTimeMillis(),
+ *     clock.currentTimeMillis(), // inject a Clock — never System.currentTimeMillis() (determinism mandate)
  *     UUID.randomUUID()
  * );
  * UUID tokenId = token.toUUID(); // Deterministic UUID for storage

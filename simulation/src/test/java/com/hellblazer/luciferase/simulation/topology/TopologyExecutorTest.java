@@ -30,6 +30,7 @@ import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 class TopologyExecutorTest {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
@@ -74,7 +76,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -110,7 +112,7 @@ class TopologyExecutorTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -158,7 +160,7 @@ class TopologyExecutorTest {
             newCenter,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -177,6 +179,145 @@ class TopologyExecutorTest {
         // Verify accountant validation passes
         var validation = accountant.validate();
         assertTrue(validation.success(), "Entity validation should pass: " + validation.details());
+    }
+
+    // ---- Luciferase-iveyb: concurrency, removed-bubble safety, split-event coverage ----
+
+    /**
+     * (c) execute(MoveProposal) on a bubble removed from the grid between proposal creation and execute()
+     * must return a clean failure, never an NPE on getBubbleById()==null (TopologyExecutor 0frcy.48 path).
+     */
+    @Test
+    void testRemovedBubbleMoveNoNpe() {
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 100);
+
+        var c = bubble.bounds().centroid();
+        var move = new MoveProposal(
+            UUID.randomUUID(), bubble.id(),
+            new Point3f((float) c.getX() + 0.1f, (float) c.getY() + 0.1f, (float) c.getZ() + 0.1f),
+            new Point3f((float) c.getX() + 0.5f, (float) c.getY() + 0.5f, (float) c.getZ() + 0.5f),
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis());
+
+        // The bubble disappears from the grid after the proposal references it.
+        assertTrue(bubbleGrid.removeBubble(bubble.id()), "bubble must be removed from the grid");
+
+        var result = assertDoesNotThrow(() -> executor.execute(move),
+                                        "execute() on a removed bubble must not throw (no NPE on null bubble)");
+        assertFalse(result.success(), "a move targeting a removed bubble must fail cleanly");
+    }
+
+    /**
+     * (d) a successful split of a populated bubble must emit a SplitEvent whose entitiesMoved is positive.
+     */
+    @Test
+    void testSplitEntitiesMovedPositive() {
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 5100);
+
+        var captured = new java.util.concurrent.atomic.AtomicReference<SplitEvent>();
+        executor.addListener(event -> {
+            if (event instanceof SplitEvent se) {
+                captured.set(se);
+            }
+        });
+
+        var centroid = bubble.centroid();
+        var splitPlane = new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), (float) centroid.getX());
+        var proposal = new SplitProposal(UUID.randomUUID(), bubble.id(), splitPlane,
+                                         DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis());
+
+        var result = executor.execute(proposal);
+        assertTrue(result.success(), "split should succeed: " + result.message());
+
+        var event = captured.get();
+        assertNotNull(event, "a SplitEvent must be emitted on a successful split");
+        assertTrue(event.entitiesMoved() > 0,
+                   "splitting a populated bubble must move a positive entity count, got " + event.entitiesMoved());
+    }
+
+    /**
+     * (a) Two operations (split + merge) touching the SAME bubble submitted concurrently. execute() is guarded
+     * by executionLock, so they serialize: the load-bearing safety property is that they run without exception
+     * and WITHOUT corrupting entity accounting (no loss / no duplication), regardless of interleaving.
+     *
+     * <p>Note: contrary to the original finding's "exactly one success and one failure" assumption, BOTH
+     * operations can legitimately succeed — split and merge both reuse {@code bubble1}'s id, so they compose
+     * (split-then-merge or merge-then-split) rather than hard-conflict. The real invariant is serialized,
+     * conservation-preserving execution, which is what this test pins.
+     *
+     * <p>(b) The executor wires NO consensus protocol — it executes already-approved proposals — so there is no
+     * consensus call to verify here (documented invariant; TopologyExecutor exposes no consensus seam).
+     */
+    @Test
+    void testConcurrentSplitMergeSameBubble() throws Exception {
+        bubbleGrid.createBubbles(2, (byte) 1, 10);
+        var bubbles = bubbleGrid.getAllBubbles().stream().toList();
+        var bubble1 = bubbles.get(0);
+        var bubble2 = bubbles.get(1);
+        addEntities(bubble1, 5100); // splittable
+        addEntities(bubble2, 200);
+
+        var centroid = bubble1.centroid();
+        var splitPlane = new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), (float) centroid.getX());
+        var split = new SplitProposal(UUID.randomUUID(), bubble1.id(), splitPlane,
+                                      DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis());
+        var merge = new MergeProposal(UUID.randomUUID(), bubble1.id(), bubble2.id(),
+                                      DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis());
+
+        var barrier = new java.util.concurrent.CyclicBarrier(2);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var results = new java.util.concurrent.ConcurrentLinkedQueue<TopologyExecutionResult>();
+        var errors = new java.util.concurrent.ConcurrentLinkedQueue<Throwable>();
+
+        Runnable runSplit = () -> {
+            try { barrier.await(); results.add(executor.execute(split)); }
+            catch (Throwable t) { errors.add(t); }
+        };
+        Runnable runMerge = () -> {
+            try { barrier.await(); results.add(executor.execute(merge)); }
+            catch (Throwable t) { errors.add(t); }
+        };
+        pool.submit(runSplit);
+        pool.submit(runMerge);
+        pool.shutdown();
+        assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS), "both operations must finish");
+
+        assertTrue(errors.isEmpty(), "executionLock must serialize the operations without exceptions: " + errors);
+        assertEquals(2, results.size(), "both operations must produce a result");
+        // The load-bearing invariant: serialized execution must not corrupt entity accounting (no loss/dup),
+        // whichever interleaving occurred.
+        var validation = accountant.validate();
+        assertTrue(validation.success(),
+                   "entity accounting must remain valid after the serialized concurrent operations: "
+                   + validation.details());
+    }
+
+    /**
+     * (e) A degenerate SplitPlane positioned far outside the bubble (all entities on one side) must be handled
+     * without exception or entity loss — the executor either splits with an empty side or fails cleanly, but
+     * accounting stays conserved either way.
+     */
+    @Test
+    void testDegenerateSplitPlaneHandled() {
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 5100);
+
+        // Plane offset far below every entity's x (entities have x = i*0.01 >= 0) → all entities one side.
+        var degenerate = new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), -1_000_000f);
+        var proposal = new SplitProposal(UUID.randomUUID(), bubble.id(), degenerate,
+                                         DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis());
+
+        var result = assertDoesNotThrow(() -> executor.execute(proposal),
+                                        "a degenerate split plane must not throw");
+        assertNotNull(result, "execute must return a result for a degenerate plane");
+        // Whether it succeeds (empty side) or fails cleanly, accounting must stay conserved (validate() checks
+        // the global no-loss / no-duplication invariant).
+        var validation = accountant.validate();
+        assertTrue(validation.success(), "entity accounting must stay valid: " + validation.details());
     }
 
     @Test
@@ -200,7 +341,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -259,7 +400,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var proposal2 = new SplitProposal(
@@ -267,7 +408,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute sequentially (second should fail because first already split)
@@ -305,7 +446,7 @@ class TopologyExecutorTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -344,7 +485,7 @@ class TopologyExecutorTest {
 
         var proposal1 = new MergeProposal(
             UUID.randomUUID(), bubbles1.get(0).id(), bubbles1.get(1).id(),
-            DigestAlgorithm.DEFAULT.getOrigin(), System.currentTimeMillis()
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result1 = executor1.execute(proposal1);
         assertTrue(result1.success(), "Merge 1 should succeed");
@@ -366,7 +507,7 @@ class TopologyExecutorTest {
 
         var proposal2 = new MergeProposal(
             UUID.randomUUID(), bubbles2.get(0).id(), bubbles2.get(1).id(),
-            DigestAlgorithm.DEFAULT.getOrigin(), System.currentTimeMillis()
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result2 = executor2.execute(proposal2);
         assertTrue(result2.success(), "Merge 2 should succeed");
@@ -438,7 +579,7 @@ class TopologyExecutorTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -479,7 +620,7 @@ class TopologyExecutorTest {
 
         var proposal1 = new MergeProposal(
             UUID.randomUUID(), bubbles1.get(0).id(), bubbles1.get(1).id(),
-            DigestAlgorithm.DEFAULT.getOrigin(), System.currentTimeMillis()
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result1 = executor1.execute(proposal1);
         assertTrue(result1.success(), "Merge 1 should succeed");
@@ -501,7 +642,7 @@ class TopologyExecutorTest {
 
         var proposal2 = new MergeProposal(
             UUID.randomUUID(), bubbles2.get(0).id(), bubbles2.get(1).id(),
-            DigestAlgorithm.DEFAULT.getOrigin(), System.currentTimeMillis()
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result2 = executor2.execute(proposal2);
         assertTrue(result2.success(), "Merge 2 should succeed");
@@ -578,7 +719,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute — must fail at executor-level validate (not at splitter level)
@@ -667,7 +808,7 @@ class TopologyExecutorTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = executor2.execute(proposal);

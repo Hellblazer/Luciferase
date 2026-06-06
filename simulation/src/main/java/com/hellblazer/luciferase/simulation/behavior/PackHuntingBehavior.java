@@ -168,7 +168,14 @@ public class PackHuntingBehavior implements EntityBehavior {
 
         Vector3f newVelocity;
 
-        if (role.targetPrey() != null && distance(position, role.targetPrey().position()) < chaseRange) {
+        // Hunting requires prey both present AND within chase range. This single gate drives both the velocity
+        // computation and the speed limit below; recomputing the speed-limit predicate as `targetPrey != null`
+        // alone would apply pursuitSpeed to patrol/cohesion velocity when prey is present but beyond chaseRange
+        // (mirrors PredatorBehavior.inPursuitMode).
+        boolean isHunting = role.targetPrey() != null
+                            && distance(position, role.targetPrey().position()) < chaseRange;
+
+        if (isHunting) {
             // Active hunting mode
             switch (role.role()) {
                 case LEADER -> newVelocity = computeLeaderPursuit(position, role.targetPrey().position(), velocity);
@@ -197,7 +204,6 @@ public class PackHuntingBehavior implements EntityBehavior {
         applyBoundaryAvoidance(position, newVelocity);
 
         // Speed limits
-        boolean isHunting = role.targetPrey() != null;
         float speedLimit = isHunting ? pursuitSpeed : maxSpeed;
         float speed = newVelocity.length();
         if (speed > speedLimit) {

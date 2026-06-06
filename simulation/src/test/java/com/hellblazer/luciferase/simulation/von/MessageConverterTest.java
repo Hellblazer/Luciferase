@@ -239,15 +239,20 @@ class MessageConverterTest {
         var sourceBubbleId = UUID.randomUUID();
         var ghosts = new ArrayList<Message.TransportGhost>();
 
+        // Fixed (non-wall-clock) epoch/version/timestamp so the round-trip assertions below are deterministic
+        // and a converter regression that drops/zeros any field is caught (Luciferase-r7yba).
+        long epoch = 11L;
+        long version = 7L;
+        long timestamp = 1234L;
         var ghost1 = new Message.TransportGhost(
             "entity-1",
             new javax.vecmath.Point3f(1.0f, 2.0f, 3.0f),
             "TestContent",
             "test-value",
             "tree-1",
-            1L,
-            1L,
-            System.currentTimeMillis(),
+            epoch,
+            version,
+            timestamp,
             new javax.vecmath.Vector3f(0f, 0f, 0f)
         );
         ghosts.add(ghost1);
@@ -272,7 +277,12 @@ class MessageConverterTest {
         assertEquals(sourceBubbleId, recoveredGhostSync.sourceBubbleId());
         assertEquals(42L, recoveredGhostSync.bucket());
         assertEquals(1, recoveredGhostSync.ghosts().size());
-        assertEquals("entity-1", recoveredGhostSync.ghosts().get(0).entityId());
+        var recoveredGhost = recoveredGhostSync.ghosts().get(0);
+        assertEquals("entity-1", recoveredGhost.entityId());
+        // epoch/version/timestamp must survive toTransport -> fromTransport (Luciferase-r7yba).
+        assertEquals(epoch, recoveredGhost.epoch(), "ghost epoch must round-trip");
+        assertEquals(version, recoveredGhost.version(), "ghost version must round-trip");
+        assertEquals(timestamp, recoveredGhost.timestamp(), "ghost timestamp must round-trip");
     }
 
     @Test
@@ -507,15 +517,17 @@ class MessageConverterTest {
         var ghosts = new ArrayList<Message.TransportGhost>();
 
         for (int i = 0; i < 5; i++) {
+            // Fixed, per-ghost-distinct epoch/version/timestamp (no wall clock) so the round-trip checks below
+            // are deterministic and catch a converter regression on any field (Luciferase-r7yba).
             ghosts.add(new Message.TransportGhost(
                 "entity-" + i,
                 new javax.vecmath.Point3f(i, i + 1, i + 2),
                 "Content" + i,
                 "value-" + i,
                 "tree-" + i,
-                (long) i,
-                (long) i,
-                System.currentTimeMillis(),
+                (long) (100 + i),
+                (long) (200 + i),
+                (long) (1000 + i),
                 new javax.vecmath.Vector3f(0f, 0f, 0f)
             ));
         }
@@ -531,7 +543,11 @@ class MessageConverterTest {
         assertEquals(5, recoveredGhostSync.ghosts().size());
 
         for (int i = 0; i < 5; i++) {
-            assertEquals("entity-" + i, recoveredGhostSync.ghosts().get(i).entityId());
+            var g = recoveredGhostSync.ghosts().get(i);
+            assertEquals("entity-" + i, g.entityId());
+            assertEquals(100 + i, g.epoch(), "ghost " + i + " epoch must round-trip");
+            assertEquals(200 + i, g.version(), "ghost " + i + " version must round-trip");
+            assertEquals(1000 + i, g.timestamp(), "ghost " + i + " timestamp must round-trip");
         }
     }
 }

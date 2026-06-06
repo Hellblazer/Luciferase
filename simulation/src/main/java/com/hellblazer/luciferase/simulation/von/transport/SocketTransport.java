@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
 import com.hellblazer.luciferase.simulation.causality.FirefliesViewMonitor;
 import com.hellblazer.luciferase.simulation.delos.fireflies.FirefliesMembershipView;
 import com.hellblazer.luciferase.simulation.von.TransportVonMessage;
+import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.von.Message;
 import com.hellblazer.luciferase.simulation.von.MessageConverter;
 import com.hellblazer.luciferase.simulation.von.MessageFactory;
@@ -61,7 +62,7 @@ public final class SocketTransport implements NetworkTransport {
     private static final Logger log = LoggerFactory.getLogger(SocketTransport.class);
 
     private final UUID localId;
-    private final MessageFactory factory;
+    private volatile MessageFactory factory;
     private final List<Consumer<Message>> handlers = new CopyOnWriteArrayList<>();
     private final MemberDirectory memberDirectory;
     private volatile ConnectionManager connectionManager;  // Non-final to support safe two-phase initialization
@@ -137,6 +138,18 @@ public final class SocketTransport implements NetworkTransport {
         this.factory = MessageFactory.system();
         this.memberDirectory = new ConcurrentMemberDirectory();
         this.connectionManager = connectionManager;  // Will be null initially, set by factory
+    }
+
+    /**
+     * Inject a clock so ACK (and other factory-built message) timestamps are deterministic under a TestClock.
+     * Rebuilds the {@link MessageFactory} with the given clock, matching the Bubble/Manager setClock pattern.
+     * The previous constructor seeded {@code MessageFactory.system()}, so ACK timestamps were wall-clock only
+     * (Luciferase-fy8ff).
+     *
+     * @param clock the clock to stamp message timestamps with; must not be null
+     */
+    public void setClock(Clock clock) {
+        this.factory = new MessageFactory(Objects.requireNonNull(clock, "clock must not be null"));
     }
 
     /**

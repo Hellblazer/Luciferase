@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
@@ -38,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 class BubbleSplitterTest {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
@@ -74,7 +77,7 @@ class BubbleSplitterTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute split
@@ -121,7 +124,7 @@ class BubbleSplitterTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = splitter.execute(proposal);
@@ -145,7 +148,7 @@ class BubbleSplitterTest {
             UUID.randomUUID(), // Non-existent bubble
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = splitter.execute(proposal);
@@ -167,7 +170,7 @@ class BubbleSplitterTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = splitter.execute(proposal);
@@ -196,7 +199,7 @@ class BubbleSplitterTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = splitter.execute(proposal);
@@ -257,7 +260,7 @@ class BubbleSplitterTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = failingSplitter.execute(proposal);
@@ -309,7 +312,7 @@ class BubbleSplitterTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = splitter.execute(proposal);
@@ -401,7 +404,7 @@ class BubbleSplitterTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Must NOT throw even though rollback moves also fail.

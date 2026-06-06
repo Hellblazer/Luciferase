@@ -46,6 +46,37 @@ class LifecycleCoordinatorTest {
     }
 
     /**
+     * Luciferase-yy3r4: a component stopped (rolled back) while still STARTING must not later resurrect itself
+     * to RUNNING when its deferred doStart completes. Previously only a fixed Thread.sleep race window
+     * exercised this; here the component's start body is gated on a CountDownLatch so the interleaving —
+     * stop() lands mid-STARTING, THEN doStart completes — is fully deterministic. The guarded
+     * STARTING→RUNNING transition (committed only if still STARTING, under the component's stateLock) is what
+     * LifecycleCoordinator.rollback/stopLayer relies on.
+     */
+    @Test
+    void lateDoStartTransitionSuppressedWhenStoppedDuringStarting() throws Exception {
+        var gate = new CountDownLatch(1);
+        var component = new GatedComponent("Gated", gate);
+
+        // Begin start: the async body runs and blocks on the gate, before the STARTING→RUNNING transition.
+        var startFuture = component.start();
+        assertTrue(component.enteredStart().await(5, TimeUnit.SECONDS), "start body must begin");
+        assertEquals(LifecycleState.STARTING, component.getState(), "component must be STARTING while gated");
+
+        // Rollback: stop() the component while it is still STARTING — exactly what stopLayer does for a
+        // previously-started layer when a later layer fails.
+        component.stop().get(5, TimeUnit.SECONDS);
+
+        // Release the gate: the late doStart completion must NOT move the component back to RUNNING.
+        gate.countDown();
+        startFuture.get(5, TimeUnit.SECONDS);
+
+        assertEquals(LifecycleState.STOPPED, component.getState(),
+                     "a component stopped during STARTING must end STOPPED — the late STARTING→RUNNING "
+                     + "transition must be suppressed (no spurious RUNNING-after-STOPPED)");
+    }
+
+    /**
      * Test 1: Verify components start in dependency order.
      * <p>
      * Setup: C depends on B, B depends on A

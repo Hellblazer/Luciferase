@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
@@ -46,6 +48,7 @@ import static org.mockito.Mockito.doReturn;
  * @author hal.hildebrand
  */
 class BubbleMergerTest {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
@@ -81,7 +84,7 @@ class BubbleMergerTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute merge
@@ -140,7 +143,7 @@ class BubbleMergerTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = merger.execute(proposal);
@@ -173,7 +176,7 @@ class BubbleMergerTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = merger.execute(proposal);
@@ -198,7 +201,7 @@ class BubbleMergerTest {
             UUID.randomUUID(), // Non-existent bubble1
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = merger.execute(proposal);
@@ -217,7 +220,7 @@ class BubbleMergerTest {
             bubble1.id(),
             UUID.randomUUID(), // Non-existent bubble2
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = merger.execute(proposal);
@@ -242,7 +245,7 @@ class BubbleMergerTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = merger.execute(proposal);
@@ -314,7 +317,7 @@ class BubbleMergerTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = failingMerger.execute(proposal);
@@ -366,7 +369,7 @@ class BubbleMergerTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = merger.execute(proposal);
@@ -420,7 +423,7 @@ class BubbleMergerTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Must NOT throw even though rollback moves also fail.
@@ -477,7 +480,7 @@ class BubbleMergerTest {
         var proposal = new MergeProposal(
             UUID.randomUUID(), srcId, dstId,
             com.hellblazer.delos.cryptography.DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis());
+            JC1KH_CLOCK.currentTimeMillis());
 
         // Concurrent: merge thread + simulated-migration thread, released simultaneously.
         // The migration thread acquires BOTH locks in UUID.compareTo() order (same order as

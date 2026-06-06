@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.consensus.committee;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
@@ -58,6 +60,8 @@ import static org.mockito.Mockito.when;
  * @author hal.hildebrand
  */
 public class ViewIdRaceConditionTest {
+    // Fixed-base clock for proposal/vote timestamps (determinism mandate, Luciferase-ze0eq).
+    private static final TestClock ZE0EQ_CLOCK = new TestClock(1_000L);
 
     private DynamicContext<Member> context;
     private ViewCommitteeSelector selector;
@@ -135,7 +139,7 @@ public class ViewIdRaceConditionTest {
             source,
             targetA,
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future1 = consensus.requestConsensus(proposal1);
@@ -161,7 +165,7 @@ public class ViewIdRaceConditionTest {
             source,
             targetB,
             view2,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future2 = consensus.requestConsensus(proposal2);
@@ -191,7 +195,7 @@ public class ViewIdRaceConditionTest {
             members.get(0).getId(),  // source
             members.get(1).getId(),  // target
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -204,9 +208,15 @@ public class ViewIdRaceConditionTest {
         // CRITICAL: Use actual committee member IDs, not arbitrary hashes
         votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), true, view2));
 
-        // Wait a bit - should NOT complete (only 1/2 votes with correct viewId)
-        Thread.sleep(200);
-        assertFalse(future.isDone(), "Proposal should not complete with votes from wrong view");
+        // recordVote evaluates quorum synchronously and ignores wrong-view votes inline, so the future's state
+        // is settled the moment recordVote returns — no Thread.sleep needed (Luciferase-lch80). With only one
+        // valid (view1) vote counted, quorum is not reached.
+        assertFalse(future.isDone(), "wrong-view vote must not count toward quorum: future must stay pending");
+
+        // Positive control: a SECOND valid (view1) vote reaches quorum and completes consensus, proving the
+        // only thing missing was a valid vote — i.e. the view2 vote was genuinely rejected, not merely slow.
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), true, view1));
+        assertTrue(future.get(2, TimeUnit.SECONDS), "two valid same-view votes must reach quorum");
     }
 
     @Test
@@ -220,7 +230,7 @@ public class ViewIdRaceConditionTest {
             members.get(0).getId(),  // source
             members.get(1).getId(),  // target
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -256,7 +266,7 @@ public class ViewIdRaceConditionTest {
             members.get(0).getId(),  // source
             members.get(1).getId(),  // target
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);

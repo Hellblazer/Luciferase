@@ -37,7 +37,7 @@ import java.util.UUID;
  *     sourceBubbleId,
  *     entity.getEpoch(),
  *     entity.getVersion(),
- *     System.currentTimeMillis()
+ *     clock.currentTimeMillis() // inject a Clock — never System.currentTimeMillis() (determinism mandate)
  * );
  *
  * // During ABORT: restore from snapshot

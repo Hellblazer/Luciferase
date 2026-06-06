@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
@@ -49,6 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author hal.hildebrand
  */
 class MergeIntegrationTest {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private static final Logger log = LoggerFactory.getLogger(MergeIntegrationTest.class);
 
@@ -110,7 +113,7 @@ class MergeIntegrationTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         log.info("Executing merge: {} + {}", bubble1.id(), bubble2.id());
@@ -175,7 +178,7 @@ class MergeIntegrationTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = executor.execute(mergeProposal);
@@ -215,7 +218,7 @@ class MergeIntegrationTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = executor.execute(mergeProposal);
@@ -258,7 +261,7 @@ class MergeIntegrationTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         executor.execute(mergeProposal);

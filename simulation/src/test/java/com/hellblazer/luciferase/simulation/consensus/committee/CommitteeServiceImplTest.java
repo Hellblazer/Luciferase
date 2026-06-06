@@ -26,7 +26,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import com.google.protobuf.Empty;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -140,6 +142,48 @@ public class CommitteeServiceImplTest {
     // ------------------------------------------------------------------
     // Test 3: read-then-evict path returns correct result and removes entry
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // Luciferase-933d8: a definitively-failed proposal must be distinguishable
+    // from a still-pending one (not the generic "not yet available").
+    // ------------------------------------------------------------------
+
+    @Test
+    void getQuorumResult_failedProposal_returnsDistinctTerminalFailure_notPending() {
+        // Consensus future completes EXCEPTIONALLY (timeout / view change). failedFuture is already completed,
+        // so submitMigrationProposal's whenComplete runs synchronously and stores the failure sentinel.
+        var mockConsensus = Mockito.mock(ViewCommitteeConsensus.class);
+        when(mockConsensus.requestConsensus(Mockito.any()))
+            .thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom: view change")));
+        var mockVoting = Mockito.mock(CommitteeVotingProtocol.class);
+        var failingService = new CommitteeServiceImpl(mockConsensus, mockVoting);
+        failingService.setClock(testClock);
+
+        var proposalId = UUID.randomUUID();
+        var proto = buildProto(proposalId);
+
+        failingService.submitMigrationProposal(proto, new StreamObserver<>() {
+            @Override public void onNext(Empty v) {}
+            @Override public void onError(Throwable t) {}
+            @Override public void onCompleted() {}
+        });
+
+        var resultHolder = new AtomicReference<Boolean>();
+        var errorHolder = new AtomicReference<Throwable>();
+        failingService.getQuorumResult(proto, new StreamObserver<>() {
+            @Override public void onNext(QuorumAchieved v) { resultHolder.set(v.getResult()); }
+            @Override public void onError(Throwable t) { errorHolder.set(t); }
+            @Override public void onCompleted() {}
+        });
+
+        assertNull(resultHolder.get(), "a failed proposal must not deliver a QuorumAchieved result");
+        assertNotNull(errorHolder.get(), "a failed proposal must signal a terminal error");
+        var msg = errorHolder.get().getMessage();
+        assertTrue(msg != null && msg.contains("consensus failed"),
+                   "failed proposal must yield the definitive failure signal, got: " + msg);
+        assertFalse(msg.contains("not yet available"),
+                    "a definitively-failed proposal must NOT be reported as still-pending");
+    }
 
     @Test
     void readThenEvict_returnsResultAndTombstonesEntry() {

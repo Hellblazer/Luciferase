@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -461,6 +462,10 @@ class EntityMigrationTimeoutIntegrationTest {
     @Test
     @DisplayName("Timeout performance scaling: O(n) acceptable with 1000 entities")
     @Tag("performance")
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Wall-clock perf assertions (checkMs<10, processMs<50) vary with CI runner load; "
+                         + "the O(n) scaling logic is covered by the deterministic functional assertions "
+                         + "(Luciferase-38uf3)")
     void testTimeoutPerformanceScalingCheck() {
         // Given: FSM with 1000 entities in various states
         var config = EntityMigrationStateMachine.Configuration.builder()
@@ -473,7 +478,10 @@ class EntityMigrationTimeoutIntegrationTest {
         // Create 1000 entities in different states
         int totalEntities = 1000;
         int migrating = 0;
-        long startTimeMs = System.currentTimeMillis();
+        // Fixed deadline base — checkTimeouts/processTimeouts take an explicit deadline, so no wall clock is
+        // needed here (determinism mandate, Luciferase-38uf3). The System.nanoTime() spans below remain: they
+        // measure this micro-benchmark's elapsed time, and their assertions are CI-gated above.
+        long startTimeMs = 1_000_000L;
 
         for (int i = 0; i < totalEntities; i++) {
             var entityId = "entity-" + i;

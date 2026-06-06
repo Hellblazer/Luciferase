@@ -599,4 +599,34 @@ public class GrpcBubbleNetworkChannelTest {
             ch2.close();
         }
     }
+
+    /**
+     * Luciferase-3l1b5: initialize() registered a fresh JVM shutdown hook on every call and never removed it,
+     * leaking a Thread per call. The hook is now registered at most once per instance and deregistered in
+     * close(). Probe: {@code removeShutdownHook} returns {@code false} when the hook is not currently
+     * registered — so after close() it must return false (close already removed it); pre-fix it would return
+     * true (leak).
+     */
+    @Test
+    void shutdownHook_deregisteredOnClose_andLifecycleIdempotent() throws Exception {
+        var channel = new GrpcBubbleNetworkChannel(true);
+        channel.initialize(UUID.randomUUID(), "localhost:0");
+
+        var hookField = GrpcBubbleNetworkChannel.class.getDeclaredField("shutdownHook");
+        hookField.setAccessible(true);
+        var hook = (Thread) hookField.get(channel);
+        assertNotNull(hook, "initialize() must register a shutdown hook");
+
+        channel.close();
+        assertFalse(Runtime.getRuntime().removeShutdownHook(hook),
+                    "close() must deregister the shutdown hook (no leak)");
+
+        // Re-initialize + close again must not throw and must register/deregister a fresh single hook.
+        channel.initialize(UUID.randomUUID(), "localhost:0");
+        var hook2 = (Thread) hookField.get(channel);
+        assertNotNull(hook2, "re-initialize() after close() must register a new hook");
+        channel.close();
+        assertFalse(Runtime.getRuntime().removeShutdownHook(hook2),
+                    "second close() must also deregister its hook");
+    }
 }

@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.simulation.consensus.committee;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.context.DynamicContext;
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
@@ -52,6 +54,8 @@ import static org.mockito.Mockito.when;
  * @author hal.hildebrand
  */
 public class ViewCommitteeConsensusTest {
+    // Fixed-base clock for proposal/vote timestamps (determinism mandate, Luciferase-ze0eq).
+    private static final TestClock ZE0EQ_CLOCK = new TestClock(1_000L);
 
     private DynamicContext<Member> context;
     private ViewCommitteeSelector selector;
@@ -119,7 +123,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),  // Valid source from members
             members.get(1).getId(),  // Valid target from members
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -137,7 +141,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),  // Valid source from members
             members.get(1).getId(),  // Valid target from members
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -162,7 +166,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -187,7 +191,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -211,7 +215,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view1,  // Proposal tagged with view1
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         // Change view BEFORE submitting proposal
@@ -235,13 +239,13 @@ public class ViewCommitteeConsensusTest {
         var first = new MigrationProposal(
             UUID.randomUUID(), entityId,
             members.get(0).getId(), members.get(1).getId(),
-            view1, System.currentTimeMillis());
+            view1, ZE0EQ_CLOCK.currentTimeMillis());
 
         // Second, concurrent proposal for the SAME entity but a DIFFERENT target.
         var second = new MigrationProposal(
             UUID.randomUUID(), entityId,
             members.get(0).getId(), members.get(2).getId(),
-            view1, System.currentTimeMillis());
+            view1, ZE0EQ_CLOCK.currentTimeMillis());
 
         var firstFuture = consensus.requestConsensus(first);
         assertFalse(firstFuture.isDone(), "First proposal should remain in-flight pending votes");
@@ -264,7 +268,7 @@ public class ViewCommitteeConsensusTest {
         var third = new MigrationProposal(
             UUID.randomUUID(), entityId,
             members.get(0).getId(), members.get(1).getId(),
-            view1, System.currentTimeMillis());
+            view1, ZE0EQ_CLOCK.currentTimeMillis());
         var thirdFuture = consensus.requestConsensus(third);
         assertFalse(thirdFuture.isDone(),
                     "A new proposal for the entity must be accepted once the prior one completes");
@@ -281,7 +285,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -301,7 +305,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             nonExistentNode,  // ATTACK: target not in view
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -321,7 +325,7 @@ public class ViewCommitteeConsensusTest {
             sourceAndTarget,  // ATTACK: source == target
             sourceAndTarget,
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -339,7 +343,7 @@ public class ViewCommitteeConsensusTest {
             null,  // ATTACK: null sourceNodeId
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -357,7 +361,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             null,  // ATTACK: null targetNodeId
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -377,7 +381,7 @@ public class ViewCommitteeConsensusTest {
             nonExistentNode,  // ATTACK: source not in view
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(proposal);
@@ -398,7 +402,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future = consensus.requestConsensus(invalidProposal);
@@ -419,7 +423,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view2,  // Proposal for view2
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         // Change to view2
@@ -453,7 +457,7 @@ public class ViewCommitteeConsensusTest {
             fakeId1,  // ATTACK: fake source member
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var proposal2 = new MigrationProposal(
@@ -462,7 +466,7 @@ public class ViewCommitteeConsensusTest {
             fakeId2,  // ATTACK: another fake source member
             members.get(1).getId(),
             view1,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future1 = consensus.requestConsensus(proposal1);
@@ -486,7 +490,7 @@ public class ViewCommitteeConsensusTest {
             members.get(0).getId(),
             members.get(1).getId(),
             view1,  // Proposal for view1
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         // Start with view1
@@ -510,7 +514,7 @@ public class ViewCommitteeConsensusTest {
             members.get(1).getId(),
             members.get(2).getId(),
             view2,
-            System.currentTimeMillis()
+            ZE0EQ_CLOCK.currentTimeMillis()
         );
 
         var future2 = consensus.requestConsensus(proposal2);

@@ -8,7 +8,13 @@ import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -424,6 +430,76 @@ class RegionBuilderTest {
 
         } finally {
             smallBuilder.close();
+        }
+    }
+
+    /**
+     * Luciferase-csdn1 (0frcy.39): the backpressure admission (check queueSize, evict-or-reject, offer,
+     * increment) must be atomic. Saturate a single-worker builder with a concurrent flood of invisible builds
+     * (rejected, never evicted, when full) and assert the queue depth NEVER exceeds maxQueueDepth — a sampler
+     * records the running max. Without the synchronized admissionLock, concurrent callers could all observe
+     * queueSize<max and all offer, overshooting the cap.
+     */
+    @Test
+    void concurrentBuildSubmission_neverExceedsMaxQueueDepth() throws Exception {
+        int maxQueueDepth = 5;
+        // Heavy-ish voxel set so each build occupies the single worker long enough to keep the queue saturated
+        // during the burst (exercising the cap under real contention).
+        var positions = new ArrayList<Point3f>();
+        for (int i = 0; i < 400; i++) {
+            positions.add(new Point3f((i % 64) / 64f, ((i / 64) % 64) / 64f, ((i / 512) % 64) / 64f));
+        }
+        var bounds = new RegionBounds(0, 0, 0, 1, 1, 1);
+
+        try (var builder = new RegionBuilder(1, maxQueueDepth, 10, 64)) { // single worker → queue saturates
+            int threads = 48;
+            var barrier = new CyclicBarrier(threads);
+            ExecutorService pool = Executors.newFixedThreadPool(threads);
+            var done = new CountDownLatch(threads);
+            var maxObserved = new AtomicInteger(0);
+            var stopSampler = new AtomicBoolean(false);
+
+            var sampler = new Thread(() -> {
+                while (!stopSampler.get()) {
+                    maxObserved.accumulateAndGet(builder.getQueueDepth(), Math::max);
+                }
+            });
+            sampler.start();
+
+            for (int t = 0; t < threads; t++) {
+                final int id = t;
+                pool.submit(() -> {
+                    try {
+                        barrier.await();
+                        for (int k = 0; k < 8; k++) {
+                            var req = new RegionBuilder.BuildRequest(
+                                new RegionId(id * 100 + k, 0), positions, bounds, 0,
+                                false, // invisible → rejected (not evicting) when full, so it stresses the cap
+                                RegionBuilder.BuildType.ESVO, 1000L + id);
+                            try {
+                                builder.build(req);
+                            } catch (RegionBuilder.BuildQueueFullException
+                                     | RegionBuilder.CircuitBreakerOpenException ignored) {
+                                // expected once the queue saturates
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        // barrier/interrupt — irrelevant to the invariant
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+
+            assertTrue(done.await(60, TimeUnit.SECONDS), "submitters must finish");
+            stopSampler.set(true);
+            sampler.join(2000);
+            pool.shutdownNow();
+
+            assertTrue(maxObserved.get() <= maxQueueDepth,
+                       "queue depth must never exceed maxQueueDepth under concurrent submission (no TOCTOU "
+                       + "overflow); observed max " + maxObserved.get() + " > " + maxQueueDepth);
+            assertTrue(builder.getQueueDepth() <= maxQueueDepth, "final queue depth must be within the cap");
         }
     }
 
