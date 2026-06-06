@@ -111,18 +111,43 @@ to the all-containing L0 root.
   RD/FCC overlay decisions; research must check for conflicts.
 - **Doing nothing** keeps a dead-but-present subsystem (misleading metrics, latent consumer breakage).
 
-## Acceptance Criteria (to be finalised at gate)
+## Acceptance Criteria (locked at gate, 2026-06-06)
 
-1. A documented, single coordinate contract: where entity positions live, and (if Option C) the explicit
-   world↔RDGCS transform, applied consistently across population, physics, bubble bounds, and containment.
-2. Bubble grid is a well-formed spatial structure for the chosen option — at minimum, no duplicate keys; for
-   Option B, a same-level adjacent partition with no all-containing root catch-all.
-3. A directed regression: an entity placed adjacent to a shared bubble boundary, moving toward the neighbor,
-   produces a **successful** migration (`getTotalMigrations() > 0`) within a bounded, deterministic tick count.
-4. Entity conservation (exact, no loss) and no-duplication continue to hold across migrations (regression in
-   `MultiBubbleSimulationMigrationTest` stays green).
-5. `Luciferase-0frcy.131` closed; the secondary mixed-level / duplicate-key defect resolved or explicitly
-   tracked.
+Strengthened after the Layer-3 critique (2 Critical, 4 Significant) to pin Option B concretely rather than
+generically. See `## Scope decision` below for the split/merge boundary (Critical-1).
+
+1. **Single coordinate contract (documented).** Entity positions are WorldBounds-scale Cartesian everywhere
+   (F1/F2). The aspirational `EntitySpec.position` "RDGCS coordinates" javadoc is corrected to say Cartesian.
+   No world↔RDGCS scale transform is introduced (Option C rejected).
+2. **Partition construction is specified, not aspirational** (resolves S-1). `createBubbles` (or its
+   replacement) builds a SINGLE-level partition tiling the WorldBounds domain:
+   - **Level selection:** the partition level `L` is chosen so a level-`L` Tet cell-edge ≤
+     `WorldBounds.size() / cbrt(N_bubbles)` (i.e. cells are no coarser than the requested bubble granularity);
+     reuse RDR-003's `SpatialLevelHeuristic` if/when shipped, otherwise compute `L` directly. `L` MUST be > 0
+     (no L0 root bubble).
+   - **Seeding + tiling:** seed from the level-`L` Tet containing the WorldBounds centre
+     (`Tet.locatePointBeyRefinementFromRoot` / Morton conversion, the `PredatorPreyGridDemo` pattern), then
+     BFS over **same-level face neighbors** (`TetreeNeighborFinder.findFaceNeighbor`), including a level-`L`
+     tet iff its centroid lies inside WorldBounds; terminate when no uncovered in-bounds neighbor remains.
+   - **Adjacency validation uses involution** (resolves S-3): BFS adjacency is confirmed by reciprocity
+     (`faceNeighbor(faceNeighbor(t,f).dualFace).==t`), NEVER a shared-vertex count (the Bey-SFC face neighbor
+     is non-conforming, sharing 0–3 vertices — CLAUDE.md).
+3. **Well-formed-partition structural test** (resolves S-2). A named test
+   (`TetreeBubbleGridPartitionTest`) asserts: every bubble key is at the same level `L`; no key is the L0 root
+   `tmIndex`; no duplicate keys; and the face-neighbor BFS from any key reaches all others (the partition is
+   connected). No bubble bounds nest/contain another.
+4. **Router routes to the topologically-correct neighbor, not a catch-all** (resolves Critical-2, S-4).
+   `TetrahedralContainmentChecker.locateDestinationBubble` and `TetrahedralMigrationRouter.routeMigration`
+   replace their level-0-first `for level 0..10` scan with a direct lookup at the partition level
+   `L` (`tetree.locateTetrahedron(position, L)`), so an escaped entity routes to the actual adjacent bubble.
+5. **Directed regression is non-vacuous** (resolves Critical-2). A test places an entity adjacent to a KNOWN
+   shared face with a specific neighbor bubble `B`, moving toward `B`, and asserts the entity migrates to **`B`
+   specifically** — `destinationBubbleKey == expectedNeighborKey` — within a bounded deterministic tick count,
+   NOT merely `getTotalMigrations() > 0` (which a catch-all router would also satisfy).
+6. **Conservation/uniqueness preserved.** Exact entity conservation (no loss) and no-duplication continue to
+   hold across migrations (`MultiBubbleSimulationMigrationTest`, j6ybd, stays green).
+7. **Bead hygiene.** `Luciferase-0frcy.131` closed; the secondary mixed-level/duplicate-key defect is resolved
+   by AC-2/AC-3 (not merely tracked). The static-partition scope boundary (below) is filed as a follow-up bead.
 
 ## Remaining Open Questions (for research)
 
@@ -189,3 +214,28 @@ F1/F2/F5); `createBubbles` is reworked to emit a single-level, non-overlapping, 
 sized to the world domain (formalizing the `PredatorPreyGridDemo` pattern, F4), so a face crossing routes to a
 real neighbor bubble. Option A is rejected (F3: production feature); Option C is rejected (F1/F2/F5:
 Tetree non-negative blocker + rendering blast radius + RDR-003 conflict).
+
+## Scope decision — dynamic topology (split/merge) is out of scope (resolves Critical-1)
+
+The Layer-3 critique correctly observed that `BubbleSplitter` creates split children at `parentLevel + 1`
+(`BubbleSplitter.java:219`), so a split would re-introduce a finer-level bubble and break the same-level
+partition invariant the moment dynamic topology fires — silently re-breaking migration.
+
+**Decision: RDR-015 scopes ONLY the static migration partition.** The same-level partition invariant (AC-2/AC-3)
+is an **initialization-and-migration** guarantee for a grid that does not split/merge during the run. The
+interaction between dynamic topology (`TopologyExecutor` split/merge) and the same-level migration partition —
+i.e. whether splits must be redefined as same-level **sibling replacement** (replace one level-`L` bubble with
+its level-`L` neighbors) rather than inserting a level-`L+1` child, or whether the router must handle a
+post-split mixed-level grid — is a **separate, larger decision deferred to a follow-up RDR**. This is an
+explicit, not silent, scope boundary:
+
+- The directed-migration regression (AC-5) runs on a freshly-constructed partition with no intervening
+  split/merge, so it is valid and non-vacuous under this scope.
+- A follow-up bead MUST be filed (AC-7) capturing the split/merge-vs-partition question, referencing
+  `BubbleSplitter.java:219` and the `TopologyExecutor` tick wiring, so the deferral is tracked and a
+  steady-state simulation that runs splits is not silently assumed to migrate correctly.
+
+Rationale: reconciling the coordinate model + reviving static migration is already a substantial, self-contained
+change (population docs, `createBubbles` rewrite, router fix, tests). Folding the dynamic-topology partition
+contract into the same RDR would couple two independently-riskful changes; the static fix is a prerequisite for
+the dynamic one regardless, so it is the correct first increment.
