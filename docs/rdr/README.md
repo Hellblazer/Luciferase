@@ -25,6 +25,7 @@ See the [RDR process documentation](https://github.com/cwensel/rdr) for the full
 | [RDR-012](RDR-012-pyramid-deep-cross-shape-productionization.md) | PyramidIndex Domain Contract & Deep Cross-Shape — Define the Reachable-SFC Set, Productionize the Deep-Tet Path or Fence It | accepted | Architecture | medium |
 | [RDR-013](RDR-013-grpc-server-dos-hardening.md) | gRPC Server DoS Hardening — Explicit Inbound Message-Size Bounds for Ghost/Balance | accepted | Security | low |
 | [RDR-014](RDR-014-cross-level-tet-edge-vertex-neighbors.md) | Cross-Level Tetrahedral Edge/Vertex Neighbor Traversal for TetreeNeighborFinder | accepted | Correctness | medium |
+| [RDR-015](RDR-015-simulation-bubble-grid-coordinate-space.md) | Reconcile Simulation Bubble-Grid Coordinate Space — Revive the Dead Migration Path | accepted | Architecture | medium |
 
 ## Post-Mortems
 

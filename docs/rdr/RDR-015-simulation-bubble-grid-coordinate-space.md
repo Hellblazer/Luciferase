@@ -1,8 +1,9 @@
 ---
 id: RDR-015
 title: Reconcile Simulation Bubble-Grid Coordinate Space — Revive the Dead Migration Path
-status: draft
+status: accepted
 date: 2026-06-06
+accepted_date: 2026-06-06
 reviewed-by: self
 supersedes: []
 related: [RDR-003]
