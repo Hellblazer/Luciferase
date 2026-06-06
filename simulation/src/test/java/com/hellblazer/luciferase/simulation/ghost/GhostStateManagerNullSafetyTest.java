@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.events.EntityUpdateEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,10 @@ class GhostStateManagerNullSafetyTest {
     private GhostStateManager manager;
     private BubbleBounds bounds;
     private UUID sourceBubbleId;
+    private TestClock testClock;
+
+    // Fixed injected-clock base so event/query timestamps are deterministic (Luciferase-qqx7i).
+    private static final long CLOCK_BASE_MS = 1_000L;
 
     @BeforeEach
     void setUp() {
@@ -52,6 +57,8 @@ class GhostStateManagerNullSafetyTest {
         bounds = BubbleBounds.fromTetreeKey(rootKey);
 
         manager = new GhostStateManager(bounds, 1000); // 1000 max ghosts
+        testClock = new TestClock(CLOCK_BASE_MS);
+        manager.setClock(testClock);
         sourceBubbleId = UUID.randomUUID();
     }
 
@@ -71,7 +78,7 @@ class GhostStateManagerNullSafetyTest {
                 entityId,
                 null,  // null position - should throw
                 new Point3f(1.0f, 0.0f, 0.0f),
-                System.currentTimeMillis(),
+                testClock.currentTimeMillis(),
                 100L // lamport clock
             );
             manager.updateGhost(sourceBubbleId, event);
@@ -134,13 +141,13 @@ class GhostStateManagerNullSafetyTest {
             entityId,
             initialPosition,
             new Point3f(0.0f, 0.0f, 0.0f), // zero velocity
-            System.currentTimeMillis(),
+            testClock.currentTimeMillis(),
             100L
         );
         manager.updateGhost(sourceBubbleId, event);
 
         // Get position at much later time (dead reckoning may return null for old ghost)
-        var futureTime = System.currentTimeMillis() + 100_000; // 100 seconds later
+        var futureTime = testClock.currentTimeMillis() + 100_000; // 100 seconds later
         var position = manager.getGhostPosition(entityId, futureTime);
 
         // Should not throw NullPointerException (position guaranteed non-null)
@@ -171,7 +178,7 @@ class GhostStateManagerNullSafetyTest {
                 entityId,
                 position,
                 new Point3f(1.0f, 0.0f, 0.0f),
-                System.currentTimeMillis(),
+                testClock.currentTimeMillis(),
                 100L + i
             );
 
@@ -182,7 +189,7 @@ class GhostStateManagerNullSafetyTest {
         }
 
         // Get positions for all ghosts (stress test getGhostPosition)
-        var currentTime = System.currentTimeMillis();
+        var currentTime = testClock.currentTimeMillis();
         for (int i = 0; i < entityCount; i++) {
             var entityId = new StringEntityID("entity" + i);
 
