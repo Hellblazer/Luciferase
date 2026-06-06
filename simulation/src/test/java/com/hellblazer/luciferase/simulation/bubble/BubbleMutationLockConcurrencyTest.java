@@ -17,24 +17,30 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Concurrency regression for the one coherent mutation-lock protocol (Luciferase-n7io1).
  * <p>
- * Two <b>different</b> multi-bubble entity-writer paths hammer the SAME bubble pair concurrently:
+ * Two <b>genuinely different</b> multi-bubble entity-writer paths hammer the SAME bubble pair concurrently:
  * <ul>
- *   <li>{@link BubbleLifecycle#transferEntities} — a production writer now guarded by
- *       {@link MutationLocks};</li>
- *   <li>an independent writer that follows the same {@link MutationLocks} protocol directly (the shape
- *       used by {@code TetrahedralMigration}/{@code MultiDirectionalMigration}/{@code BubbleMerger}:
- *       lock the pair in UUID order, then add-to-target / remove-from-source).</li>
+ *   <li><b>Path 1 — {@link BubbleLifecycle#transferEntities}</b>: a production writer that acquires the
+ *       pair via the {@link MutationLocks} utility.</li>
+ *   <li><b>Path 2 — an inline manual locker</b>: acquires {@code getMutationLock()} directly in ascending
+ *       UUID order WITHOUT the utility (the documented contract that {@code TetrahedralMigration} /
+ *       {@code BubbleMerger} historically used). This proves a caller following the ordering by hand
+ *       composes deadlock-free with a {@code MutationLocks} caller — the cross-implementation case.</li>
  * </ul>
- * Because every multi-bubble writer acquires the involved bubbles' locks in a single global UUID order,
- * (1) the run cannot deadlock (it completes within the timeout) and (2) entities are exactly conserved —
- * no entity is lost, duplicated, or created. Before n7io1, {@code transferEntities} skipped the lock, so
- * its read-snapshot / add / remove interleaved with the other writer and could lose or duplicate entities.
+ * Assertions are sensitive to the ACTUAL corruption class, not just the id set: {@code entityCount()} reads
+ * the Tetree spatial index while {@code getAllEntityRecords()} reads the id mapping, so a raced
+ * add/remove that leaves them inconsistent (a spatial-index "zombie" or a lost mapping) is caught — a plain
+ * id-set check would miss it because {@code idMapping.put} overwrites on a duplicate key.
+ * <p>
+ * Before n7io1, {@code transferEntities} skipped the lock, so its snapshot/add/remove interleaved with the
+ * other writer and corrupted the pair. With the shared protocol the run (1) cannot deadlock — it completes
+ * within the timeout — and (2) conserves entities exactly across both the spatial index and the id mapping.
  *
  * @author hal.hildebrand
  */
@@ -54,11 +60,11 @@ class BubbleMutationLockConcurrencyTest {
             a.addEntity(id, new Point3f(i, 0f, 0f), "content-" + i);
         }
 
-        int iterations = 300;
+        int iterations = 400;
         var pool = Executors.newFixedThreadPool(2);
         var start = new CountDownLatch(1);
 
-        // Path 1: production BubbleLifecycle.transferEntities, ping-ponging the pair.
+        // Path 1: production BubbleLifecycle.transferEntities (acquires via MutationLocks), ping-ponging.
         Callable<Void> path1 = () -> {
             start.await();
             for (int i = 0; i < iterations; i++) {
@@ -68,13 +74,12 @@ class BubbleMutationLockConcurrencyTest {
             return null;
         };
 
-        // Path 2: an independent protocol-honoring writer (same MutationLocks discipline as the
-        // migration/merge paths), moving in the opposite phase.
+        // Path 2: an INLINE manual locker (UUID order, not via MutationLocks), opposite phase.
         Callable<Void> path2 = () -> {
             start.await();
             for (int i = 0; i < iterations; i++) {
-                moveAllUnderLock(b, a);
-                moveAllUnderLock(a, b);
+                inlineOrderedMove(b, a);
+                inlineOrderedMove(a, b);
             }
             return null;
         };
@@ -83,19 +88,33 @@ class BubbleMutationLockConcurrencyTest {
         var f2 = pool.submit(path2);
         start.countDown();
 
-        // Completion within the timeout proves no lock-ordering deadlock (UUID-ordered acquisition).
+        // Completion within the timeout proves no lock-ordering deadlock between the utility path and the
+        // inline-manual-lock path (both acquire in ascending UUID order).
         f1.get(30, TimeUnit.SECONDS);
         f2.get(30, TimeUnit.SECONDS);
         pool.shutdownNow();
 
+        // Spatial-index conservation (catches zombies / lost inserts that an id-set check would hide).
+        assertThat(a.entityCount() + b.entityCount())
+            .as("total spatial-index entity count must be exactly conserved across the pair")
+            .isEqualTo(entityCount);
+
+        // Per-bubble internal consistency: spatial index count == id-mapping record count.
+        assertThat(a.entityCount())
+            .as("bubble A: spatial-index count must match id-mapping record count (no divergence)")
+            .isEqualTo(a.getAllEntityRecords().size());
+        assertThat(b.entityCount())
+            .as("bubble B: spatial-index count must match id-mapping record count (no divergence)")
+            .isEqualTo(b.getAllEntityRecords().size());
+
+        // Id-level conservation + uniqueness.
         var inA = new HashSet<>(a.getEntities());
         var inB = new HashSet<>(b.getEntities());
         var union = new HashSet<String>();
         union.addAll(inA);
         union.addAll(inB);
-
         assertThat(union)
-            .as("entities must be exactly conserved across concurrent multi-bubble writers (no loss/creation)")
+            .as("entity ids must be exactly conserved (no loss/creation)")
             .isEqualTo(originalIds);
         assertThat(java.util.Collections.disjoint(inA, inB))
             .as("no entity may reside in both bubbles (no duplication)")
@@ -103,19 +122,30 @@ class BubbleMutationLockConcurrencyTest {
     }
 
     /**
-     * Move every entity from {@code src} to {@code dst} atomically under the shared mutation-lock
-     * protocol — the same add-to-target / remove-from-source shape the production migration/merge paths
-     * use, lifted out so the test exercises a writer path distinct from {@code transferEntities}.
+     * Move every entity {@code src -> dst} atomically by acquiring both mutation locks BY HAND in
+     * ascending UUID order — the documented inline contract, deliberately NOT routed through
+     * {@link MutationLocks}, so the test exercises a writer path distinct from {@code transferEntities}.
      */
-    private static void moveAllUnderLock(EnhancedBubble src, EnhancedBubble dst) {
-        try (var ignored = MutationLocks.lock(src, dst)) {
-            var records = src.getAllEntityRecords();
-            for (var record : records) {
-                dst.addEntity(record.id(), record.position(), record.content());
+    private static void inlineOrderedMove(EnhancedBubble src, EnhancedBubble dst) {
+        int cmp = src.id().compareTo(dst.id());
+        ReentrantLock first = cmp <= 0 ? src.getMutationLock() : dst.getMutationLock();
+        ReentrantLock second = cmp <= 0 ? dst.getMutationLock() : src.getMutationLock();
+        first.lock();
+        try {
+            second.lock();
+            try {
+                var records = src.getAllEntityRecords();
+                for (var record : records) {
+                    dst.addEntity(record.id(), record.position(), record.content());
+                }
+                for (var record : records) {
+                    src.removeEntity(record.id());
+                }
+            } finally {
+                second.unlock();
             }
-            for (var record : records) {
-                src.removeEntity(record.id());
-            }
+        } finally {
+            first.unlock();
         }
     }
 }

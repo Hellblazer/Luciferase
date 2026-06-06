@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.MutationLocks;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import org.slf4j.Logger;
@@ -190,27 +191,29 @@ public class DuplicateEntityDetector {
 
         var sourceBubbleInstance = findBubbleById(sourceBubble);
 
-        // Hold the mutation locks of EVERY involved bubble (the authoritative source plus every
-        // non-source location) in UUID order for the whole verify-then-prune so it is atomic w.r.t.
-        // concurrent migration/merge/split writers (Luciferase-n7io1). Without this, the
-        // "source still holds the entity" check below races a concurrent migration and the prune could
-        // erase the live copy. The locks are gathered before acquisition so the global UUID ordering is
-        // deadlock-free across all writer paths.
-        var involved = new java.util.ArrayList<EnhancedBubble>();
+        // Resolve every involved bubble instance ONCE (the authoritative source plus every non-source
+        // location) and hold each one's mutation lock, in ascending UUID order, for the whole
+        // verify-then-prune so it is atomic w.r.t. concurrent migration/merge/split writers
+        // (Luciferase-n7io1). The same resolved instances are used for both locking and removal — no
+        // second findBubbleById inside the lock — so we mutate exactly the bubbles whose locks we hold.
+        // Guarantee scope: bubbles that exit the grid between this resolution and lock acquisition are
+        // simply absent from the set (resolved to null and skipped); reconciliation for them is deferred
+        // to the next cycle. The source-still-holds-entity check below remains the safety guard.
+        var involvedById = new LinkedHashMap<UUID, EnhancedBubble>();
         if (sourceBubbleInstance != null) {
-            involved.add(sourceBubbleInstance);
+            involvedById.put(sourceBubble, sourceBubbleInstance);
         }
         for (var bubbleId : locations) {
             if (!bubbleId.equals(sourceBubble)) {
                 var b = findBubbleById(bubbleId);
                 if (b != null) {
-                    involved.add(b);
+                    involvedById.put(bubbleId, b);
                 }
             }
         }
 
         var removedCount = 0;
-        try (var ignored = com.hellblazer.luciferase.simulation.bubble.MutationLocks.lock(involved)) {
+        try (var ignored = MutationLocks.lock(new ArrayList<>(involvedById.values()))) {
             // Verify (now race-free, under lock) that the authoritative source still holds the entity
             // before pruning the others. If it has already left the expected source (a migration that
             // committed before we acquired the locks), deleting from the other locations risks erasing
@@ -223,11 +226,10 @@ public class DuplicateEntityDetector {
                 return 0;  // No removal — re-resolve on the next cycle
             }
 
-            // Remove from all non-source bubbles
+            // Remove from all non-source bubbles (using the same instances whose locks we hold)
             for (var bubbleId : locations) {
                 if (!bubbleId.equals(sourceBubble)) {
-                    // Find bubble by ID and remove entity
-                    var bubble = findBubbleById(bubbleId);
+                    var bubble = involvedById.get(bubbleId);
                     if (bubble != null) {
                         try {
                             bubble.removeEntity(entityId);

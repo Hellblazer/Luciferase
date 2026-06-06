@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.MutationLocks;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
@@ -268,6 +269,11 @@ public class BubbleSplitter {
         // and return failure.  The caller (TopologyExecutor) is responsible for
         // any higher-level rollback via OperationTracker.
         var movedRecords = new ArrayList<EnhancedBubble.EntityRecord>(entitiesToMove.size());
+        // Hold source + new-bubble mutation locks (UUID order, deadlock-free) for the whole move loop —
+        // including the rollback branch — so the cross-bubble add/remove is atomic w.r.t. concurrent
+        // migration/merge writers (Luciferase-n7io1). newBubble was registered in the grid above, so it
+        // is reachable by concurrent readers/writers by the time the move starts.
+        try (var ignored = MutationLocks.lock(sourceBubble, newBubble)) {
         for (var entityRecord : entitiesToMove) {
             var entityId = UUID.fromString(entityRecord.id());
 
@@ -308,6 +314,7 @@ public class BubbleSplitter {
             // Remove from source bubble only after accountant confirms the move
             sourceBubble.removeEntity(entityRecord.id());
             movedRecords.add(entityRecord);
+        }
         }
 
         int entitiesMoved = movedRecords.size();

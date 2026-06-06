@@ -9,6 +9,7 @@
 package com.hellblazer.luciferase.simulation.distributed.grid;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.MutationLocks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -260,8 +261,17 @@ public class MultiDirectionalMigration {
         // Hold both bubbles' mutation locks (UUID order, deadlock-free) for the whole add-then-remove
         // commit so it is atomic w.r.t. concurrent migration/merge/split writers on the same pair
         // (Luciferase-n7io1). Rollback (below) also runs under the locks.
-        try (var ignored = com.hellblazer.luciferase.simulation.bubble.MutationLocks.lock(
-                sourceBubble, targetBubble)) {
+        try (var ignored = MutationLocks.lock(sourceBubble, targetBubble)) {
+            // Re-validate under the lock: the prepare phase checked source/target membership WITHOUT a
+            // lock, so a concurrent migration may have moved the entity out of source in between. Adding
+            // to target now would inject an entity the source no longer owns — duplication. Bail if the
+            // source no longer holds it (n7io1 / stale-intent guard).
+            if (!sourceBubble.getEntities().contains(entityId)) {
+                metrics.recordFailure();
+                return MigrationResult.failure(
+                    entityId, intent.direction(),
+                    "Source no longer holds entity at commit (concurrent migration); intent stale");
+            }
             try {
                 // Step 1: Add entity to target bubble (target now owns entity)
                 targetBubble.addEntity(entityId, intent.position(), intent.content());

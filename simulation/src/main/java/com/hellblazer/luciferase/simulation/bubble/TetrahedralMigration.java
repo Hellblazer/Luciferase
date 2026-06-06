@@ -292,61 +292,50 @@ public class TetrahedralMigration {
             return false;
         }
 
-        // Acquire BOTH bubble mutation locks in consistent UUID order to prevent deadlock.
-        // Any two concurrent migrations involving the same pair always acquire in the same order,
-        // so no lock-ordering cycle is possible.
-        int cmp = srcBubble.id().compareTo(dstBubble.id());
-        ReentrantLock firstLock  = cmp <= 0 ? srcBubble.getMutationLock() : dstBubble.getMutationLock();
-        ReentrantLock secondLock = cmp <= 0 ? dstBubble.getMutationLock() : srcBubble.getMutationLock();
+        // Hold BOTH bubble mutation locks via the shared MutationLocks protocol (ascending UUID order,
+        // deadlock-free) — the one coherent protocol shared by every multi-bubble writer
+        // (Luciferase-n7io1), so no two concurrent migrations/merges/splits on the same pair can form a
+        // lock-ordering cycle.
+        try (var ignored = MutationLocks.lock(srcBubble, dstBubble)) {
+            // PHASE 1: Get entity from source under lock (latest snapshot, not stale)
+            var entityRecords = srcBubble.getAllEntityRecords();
+            var entityRecord = entityRecords.stream()
+                                           .filter(e -> e.id().equals(entityId))
+                                           .findFirst()
+                                           .orElse(null);
 
-        firstLock.lock();
-        try {
-            secondLock.lock();
-            try {
-                // PHASE 1: Get entity from source under lock (latest snapshot, not stale)
-                var entityRecords = srcBubble.getAllEntityRecords();
-                var entityRecord = entityRecords.stream()
-                                               .filter(e -> e.id().equals(entityId))
-                                               .findFirst()
-                                               .orElse(null);
-
-                if (entityRecord == null) {
-                    return false;  // Entity not found (already migrated or removed)
-                }
-
-                // PHASE 2: Add to destination (atomic, still under both locks)
-                dstBubble.addEntity(entityId, entityRecord.position(), entityRecord.content());
-
-                // PHASE 3: Remove from source (may fail)
-                try {
-                    srcBubble.removeEntity(entityId);
-                } catch (Exception e) {
-                    // ROLLBACK: Remove from destination if source remove fails
-                    try {
-                        dstBubble.removeEntity(entityId);
-                    } catch (Exception rollbackEx) {
-                        // Rollback failed: the entity now exists in BOTH source and destination
-                        // bubbles (duplicate-entity state). This is unrecoverable here and must be
-                        // observable for downstream reconciliation, so log at ERROR.
-                        log.error("Rollback failed for entity {} migrating {}->{}: entity now exists in "
-                                  + "both source and destination (duplicate state)",
-                                  entityId, srcBubble.id(), dstBubble.id(), rollbackEx);
-                    }
-                    return false;
-                }
-
-                // Success: Record cooldown
-                migrationCooldowns.put(entityId, currentTick);
-
-                return true;
-
-            } finally {
-                secondLock.unlock();
+            if (entityRecord == null) {
+                return false;  // Entity not found (already migrated or removed)
             }
+
+            // PHASE 2: Add to destination (atomic, still under both locks)
+            dstBubble.addEntity(entityId, entityRecord.position(), entityRecord.content());
+
+            // PHASE 3: Remove from source (may fail)
+            try {
+                srcBubble.removeEntity(entityId);
+            } catch (Exception e) {
+                // ROLLBACK: Remove from destination if source remove fails
+                try {
+                    dstBubble.removeEntity(entityId);
+                } catch (Exception rollbackEx) {
+                    // Rollback failed: the entity now exists in BOTH source and destination
+                    // bubbles (duplicate-entity state). This is unrecoverable here and must be
+                    // observable for downstream reconciliation, so log at ERROR.
+                    log.error("Rollback failed for entity {} migrating {}->{}: entity now exists in "
+                              + "both source and destination (duplicate state)",
+                              entityId, srcBubble.id(), dstBubble.id(), rollbackEx);
+                }
+                return false;
+            }
+
+            // Success: Record cooldown
+            migrationCooldowns.put(entityId, currentTick);
+
+            return true;
+
         } catch (Exception e) {
             return false;
-        } finally {
-            firstLock.unlock();
         }
     }
 
