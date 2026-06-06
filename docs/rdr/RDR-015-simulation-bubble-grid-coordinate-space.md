@@ -146,8 +146,11 @@ generically. See `## Scope decision` below for the split/merge boundary (Critica
    NOT merely `getTotalMigrations() > 0` (which a catch-all router would also satisfy).
 6. **Conservation/uniqueness preserved.** Exact entity conservation (no loss) and no-duplication continue to
    hold across migrations (`MultiBubbleSimulationMigrationTest`, j6ybd, stays green).
-7. **Bead hygiene.** `Luciferase-0frcy.131` closed; the secondary mixed-level/duplicate-key defect is resolved
-   by AC-2/AC-3 (not merely tracked). The static-partition scope boundary (below) is filed as a follow-up bead.
+7. **Dynamic-topology follow-up filed.** A follow-up bead is created capturing the split/merge-vs-partition
+   question (`## Scope decision`), referencing `BubbleSplitter.java:219` and the `TopologyExecutor` tick
+   wiring, linked to `Luciferase-0frcy.131`.
+8. **Bead hygiene.** `Luciferase-0frcy.131` closed; the secondary mixed-level/duplicate-key defect is resolved
+   by AC-2/AC-3 (not merely tracked).
 
 ## Remaining Open Questions (for research)
 
