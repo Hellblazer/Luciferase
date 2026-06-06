@@ -1,9 +1,11 @@
 ---
 id: RDR-014
 title: Cross-Level Tetrahedral Edge/Vertex Neighbor Traversal for TetreeNeighborFinder
-status: accepted
+status: closed
 date: 2026-06-05
 accepted_date: 2026-06-05
+closed_date: 2026-06-06
+close_reason: implemented
 reviewed-by: self
 supersedes: []
 related: [RDR-010, RDR-012]
