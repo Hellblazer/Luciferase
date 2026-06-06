@@ -130,10 +130,72 @@ primitives.
   remain partial. This is a *known, documented* limitation (this RDR + the bead), no longer a silent one
   — but it is **not** resolved by this RDR's creation alone.
 
-## Open Questions (for rdr-research / gate)
+## Research Findings (2026-06-05, code-verified)
 
-1. What exact level-delta ranges do live callers pass? (Decides D2 — shallow-band vs full-depth.)
-2. Do `allShapeNeighbors` / `tetBoundary` already enumerate edge/vertex incidence, or is new enumeration
-   needed? (D3.)
-3. Is the involution `dualFace` defined for edge/vertex neighbors as cleanly as for face neighbors, or is
-   a different reciprocity relation required for edge/vertex incidence?
+### F1 — Live scope is EDGE neighbors at ±1 level only (resolves D2)
+
+- The production callers of `TetreeNeighborFinder.findEdgeNeighbors` are `Tetree.findEntityNeighbors`
+  (`Tetree.java:422`, loops 6 edges) and `Tetree.addNeighboringNodes` (`Tetree.java:1390`, loops 6
+  edges); the latter is reached from collision (`CollisionEngine.java:491`) and k-NN
+  (`KnnSearcher.java:487`) via `AbstractSpatialIndex` BFS. These are the live paths.
+- `findEdgeNeighbors` queries cross-level at **±1 only**: parent `level-1`
+  (`TetreeNeighborFinder.java:127`, guard `level > 0` L125) and child `level+1` (L133, guard
+  `level < getMaxRefinementLevel()` L132). **Not arbitrary depth.**
+- `findVertexNeighbors` (`TetreeNeighborFinder.java:274`) is **test-only in production** —
+  `addNeighboringNodes` calls only `findEdgeNeighbors`. Its cross-level traversal spans full depth
+  (coarser loop `level-1..0` L324-329; finer `level+1` L334), but no live caller exercises it.
+- Max refinement level = 21 (`MortonCurve.java:14`); pure-Tetree entities (`minTetLevel = -1`) can sit
+  at any level 0..21. No `minTetLevel` guard exists in the neighbor methods.
+- **Conclusion (D2):** the live production requirement is **edge neighbors at parent/child (±1)** only.
+  Vertex neighbors and deeper-than-±1 edge traversal are test-contract scope, not live — so they may be
+  implemented to satisfy their existing tests (`TetreeEdgeNeighborTest`, `TetreeVertexNeighborTest`)
+  without over-building, and the RDR-012 deep-tet fence is respected (no new deep insertion).
+
+### F2 — No new connectivity tables needed; derive from existing Bey/face tables (resolves D3)
+
+- **Edge incidence** is NOT directly tabled but is fully derivable: each of the 6 edges touches exactly
+  2 faces (edge→face map at `TetreeNeighborFinder.java:104-110`); children touching edge E =
+  `CHILDREN_AT_FACE[type][F1] ∩ CHILDREN_AT_FACE[type][F2]` (`TetreeConnectivity.java:274`). Building
+  blocks: `getChildrenAtFace`, `getChildFace` (used at `TetreeNeighborFinder.java:367/378`), and the
+  existing working cross-level FACE traversal `findDescendantsAtLevel` (`:359/380`) — reuse it.
+- **Vertex incidence** is partially tabled: `CHILD_VERTEX_PARENT_VERTEX`
+  (`TetreeConnectivity.java:346-363`) gives each Bey child's 4 vertices as parent-vertex / edge-midpoint
+  / center references. Invert it (parent-vertex → containing Bey children); optionally cache or add a
+  read-only `VERTEX_TO_BEY_CHILDREN` companion table if hot.
+- **Conclusion (D3):** compose existing primitives; no genuinely new enumeration logic. Reuse
+  `findDescendantsAtLevel` as the cross-level traversal skeleton.
+
+### F3 — Validation is SYMMETRIC MEMBERSHIP, not dualFace involution (resolves Q3)
+
+- Face involution (`neighbor(neighbor(e,f).dualFace) == e`) relies on a one-to-one face↔dualFace map
+  (`Tet.faceNeighbor` dualFace at `Tet.java:1440/1456`; oracle `T8codeDtetFaceNeighborOracleTest.java:182-192`).
+- Edges/vertices are **one-to-many**: an edge is shared by a RING of tets, a vertex by a STAR; return
+  types are `List` (`Tetree.java:374/553`) and there is no `dualEdge`/`dualVertex`. So the involution
+  form does not apply.
+- The correct, already-in-repo validation is **symmetric membership**: for every neighbor `n` of `e`,
+  `e ∈ neighbors(n)`. Pattern: `PyramidNeighborParityTest.reciprocitySweep`
+  (`PyramidNeighborParityTest.java:115-144`), already applied to `findEdgeNeighbors`/`findVertexNeighbors`
+  for pyramids — directly adaptable to Tetree.
+- **Conclusion (Q3):** the test harness is a DFS (depth 4-5) over a refined Tetree asserting
+  symmetric-membership reciprocity for all 6 edges and 4 vertices, PLUS hand-worked exact-count fixtures
+  (ring/star size) at a small fixed level — not `assertTrue(count >= 0)`, and NOT a dualFace involution.
+
+## Decision (updated post-research — proposed for gate)
+
+- **D1' (implement, scoped):** Implement `findEdgeNeighborsAtLevel` for the ±1 live case first
+  (parent/child edge incidence via `CHILDREN_AT_FACE` ∩ edge-faces, traversing with
+  `findDescendantsAtLevel`). Implement `findVertexNeighborsAtLevel` /
+  `findVertexNeighborsAtFinerLevels` to satisfy their existing test contract (inverted
+  `CHILD_VERTEX_PARENT_VERTEX`). No new deep-tet insertion (RDR-012 fence intact).
+- **D2' RESOLVED:** live = edge ±1; vertex + deeper = test-contract scope, not live. Cover the consumed
+  range; do not over-build the deep band.
+- **D3' RESOLVED:** reuse existing tables/primitives; no new connectivity tables (optional
+  `VERTEX_TO_BEY_CHILDREN` cache only if profiling shows a hot path).
+- **Validation RESOLVED:** symmetric-membership reciprocity DFS + exact-count fixtures, adapting
+  `PyramidNeighborParityTest.reciprocitySweep`. Keep the 21 previously-broken live tests green.
+
+## Open Questions (remaining for gate)
+
+1. Vertex-neighbor scope: implement full-depth (to satisfy `TetreeVertexNeighborTest`) now, or fence
+   vertex cross-level until a live consumer appears? (Lower risk than edge since not live.)
+2. Exact hand-worked ring/star counts for the exact-count fixtures (derive during implementation).
