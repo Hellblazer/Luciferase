@@ -208,9 +208,15 @@ public class ViewIdRaceConditionTest {
         // CRITICAL: Use actual committee member IDs, not arbitrary hashes
         votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), true, view2));
 
-        // Wait a bit - should NOT complete (only 1/2 votes with correct viewId)
-        Thread.sleep(200);
-        assertFalse(future.isDone(), "Proposal should not complete with votes from wrong view");
+        // recordVote evaluates quorum synchronously and ignores wrong-view votes inline, so the future's state
+        // is settled the moment recordVote returns — no Thread.sleep needed (Luciferase-lch80). With only one
+        // valid (view1) vote counted, quorum is not reached.
+        assertFalse(future.isDone(), "wrong-view vote must not count toward quorum: future must stay pending");
+
+        // Positive control: a SECOND valid (view1) vote reaches quorum and completes consensus, proving the
+        // only thing missing was a valid vote — i.e. the view2 vote was genuinely rejected, not merely slow.
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), true, view1));
+        assertTrue(future.get(2, TimeUnit.SECONDS), "two valid same-view votes must reach quorum");
     }
 
     @Test

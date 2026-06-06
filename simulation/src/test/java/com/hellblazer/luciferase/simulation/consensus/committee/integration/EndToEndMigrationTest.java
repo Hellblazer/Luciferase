@@ -189,21 +189,14 @@ public class EndToEndMigrationTest {
         // Request consensus
         var future = consensus.requestConsensus(proposal);
 
-        // Simulate asynchronous voting
-        CompletableFuture.runAsync(() -> {
-            try {
-                Thread.sleep(50); // Simulate network delay
-                votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), true, viewId));
-                Thread.sleep(30);
-                votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(2).getId(), true, viewId));
-                Thread.sleep(20);
-                votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(3).getId(), true, viewId));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
+        // Cast the committee votes. recordVote evaluates quorum synchronously and vote order is irrelevant, so
+        // the previous runAsync + Thread.sleep "network delay" sequencing was cosmetic and non-deterministic;
+        // record the votes inline instead (Luciferase-lch80). The future is completed the moment quorum lands.
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(1).getId(), true, viewId));
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(2).getId(), true, viewId));
+        votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(3).getId(), true, viewId));
 
-        // Wait for consensus
+        // Gate on completion (already done once quorum was reached above).
         var approved = future.get(2, TimeUnit.SECONDS);
         assertTrue(approved);
 
