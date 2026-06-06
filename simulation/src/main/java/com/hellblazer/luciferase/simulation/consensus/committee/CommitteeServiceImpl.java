@@ -104,9 +104,21 @@ public class CommitteeServiceImpl extends CommitteeServiceGrpc.CommitteeServiceI
     }
 
     /**
-     * Immutable (result, completedAtMs) pair stored per proposal.
+     * Immutable per-proposal cache entry. {@code failed} distinguishes a proposal whose consensus future
+     * completed exceptionally (timeout / view change) from one that completed normally — the latter carries a
+     * real {@code result} (which may itself be {@code false} when quorum rejected the migration). Without this
+     * flag a failed proposal was indistinguishable from a still-pending one (Luciferase-933d8).
      */
-    record ResultEntry(boolean result, long completedAtMs) {
+    record ResultEntry(boolean result, long completedAtMs, boolean failed) {
+        /** Normal completion: consensus reached a decision ({@code result}). */
+        ResultEntry(boolean result, long completedAtMs) {
+            this(result, completedAtMs, false);
+        }
+
+        /** Sentinel for a proposal whose consensus future completed exceptionally. */
+        static ResultEntry failed(long completedAtMs) {
+            return new ResultEntry(false, completedAtMs, true);
+        }
     }
 
     @Override
@@ -130,6 +142,11 @@ public class CommitteeServiceImpl extends CommitteeServiceGrpc.CommitteeServiceI
                                         new ResultEntry(result, clock.currentTimeMillis()));
                     log.debug("Proposal {} consensus result: {}", proposal.proposalId(), result);
                 } else {
+                    // Record a failure sentinel so getQuorumResult can return a definitive failure rather than
+                    // the generic "not yet available" used for still-pending proposals (Luciferase-933d8).
+                    evictStaleAndOversize();
+                    proposalResults.put(proposal.proposalId().toString(),
+                                        ResultEntry.failed(clock.currentTimeMillis()));
                     log.warn("Proposal {} consensus failed", proposal.proposalId(), ex);
                 }
             });
@@ -180,7 +197,11 @@ public class CommitteeServiceImpl extends CommitteeServiceGrpc.CommitteeServiceI
             // onNext()+onCompleted() on the same StreamObserver contract.
             evictStaleAndOversize();
             var entry = proposalResults.remove(proposalId);
-            if (entry != null) {
+            if (entry != null && entry.failed()) {
+                // Definitive terminal failure (consensus future completed exceptionally). Distinct from the
+                // "not yet available" pending signal below so callers can stop polling (Luciferase-933d8).
+                responseObserver.onError(new RuntimeException("Proposal consensus failed: " + proposalId));
+            } else if (entry != null) {
                 var response = QuorumAchieved.newBuilder()
                     .setProposalId(proposalId)
                     .setResult(entry.result())
@@ -190,7 +211,7 @@ public class CommitteeServiceImpl extends CommitteeServiceGrpc.CommitteeServiceI
                 responseObserver.onNext(response);
                 responseObserver.onCompleted();
             } else {
-                // Result not yet available
+                // Result not yet available (still pending — not the same as a definitively-failed proposal).
                 responseObserver.onError(new RuntimeException("Proposal result not yet available: " + proposalId));
             }
 
