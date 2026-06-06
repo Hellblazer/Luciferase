@@ -93,21 +93,10 @@ public class TetreeNeighborFinder {
         var tet = Tet.tetrahedron(tetIndex);
         var edgeNeighbors = new ArrayList<TetreeKey<?>>();
 
-        // Each edge is shared by multiple faces
-        // Edge-to-face mapping for tetrahedron:
-        // Edge 0 (v0-v1): faces 0, 2
-        // Edge 1 (v0-v2): faces 0, 3
-        // Edge 2 (v0-v3): faces 1, 3
-        // Edge 3 (v1-v2): faces 0, 1
-        // Edge 4 (v1-v3): faces 1, 2
-        // Edge 5 (v2-v3): faces 2, 3
-        var edgeToFaces = new int[][] { { 0, 2 },  // Edge 0
-                                        { 0, 3 },  // Edge 1
-                                        { 1, 3 },  // Edge 2
-                                        { 0, 1 },  // Edge 3
-                                        { 1, 2 },  // Edge 4
-                                        { 2, 3 }   // Edge 5
-        };
+        // Each edge is bounded by exactly two faces; use the single canonical edge->face table
+        // (RDR-014 F4/AC2). The previous inline table here was geometrically WRONG (e.g. edge 0
+        // listed faces {0,2} instead of {2,3}); it is removed in favor of TetreeConnectivity.EDGE_FACES.
+        var edgeToFaces = TetreeConnectivity.EDGE_FACES;
 
         // Check neighbors across both faces that share this edge
         var uniqueNeighbors = new HashSet<TetreeKey<?>>();
