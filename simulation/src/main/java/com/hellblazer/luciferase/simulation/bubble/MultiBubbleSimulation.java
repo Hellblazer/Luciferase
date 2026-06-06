@@ -272,8 +272,12 @@ public class MultiBubbleSimulation implements AutoCloseable {
 
     /**
      * Execute one simulation tick: update entities, detect migrations, sync ghosts.
+     * <p>
+     * Package-private so deterministic tests can single-step the simulation (drive N ticks explicitly) instead
+     * of {@code start()} + {@code Thread.sleep()}, which is non-deterministic (Luciferase-j6ybd). Uses a fixed
+     * {@code DEFAULT_TICK_INTERVAL_MS} delta, so per-tick entity motion does not depend on wall-clock timing.
      */
-    private void tick() {
+    void tick() {
         var startTime = executionEngine.getClock().nanoTime();
 
         try {
