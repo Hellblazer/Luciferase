@@ -1,8 +1,10 @@
 ---
 id: RDR-014
 title: Cross-Level Tetrahedral Edge/Vertex Neighbor Traversal for TetreeNeighborFinder
-status: draft
+status: accepted
 date: 2026-06-05
+accepted_date: 2026-06-05
+reviewed-by: self
 supersedes: []
 related: [RDR-010, RDR-012]
 beads: [Luciferase-7wzml.20]
@@ -12,9 +14,10 @@ beads: [Luciferase-7wzml.20]
 
 ## Status
 
-Draft (2026-06-05). Created from `Luciferase-7wzml.20` (full-build review 2026-06-04, P1 / High,
-HOLLOW STUBS). Not yet researched or gated — the Decision section records candidate approaches, not a
-locked choice. Implementation is blocked on this RDR reaching `accepted`.
+Accepted (2026-06-05). Created from `Luciferase-7wzml.20` (full-build review 2026-06-04, P1 / High,
+HOLLOW STUBS). Researched (F1–F4, code-verified) and gated PASSED (0 critical / 0 significant; the F4
+edge→face derivation was independently re-verified). The locked decision and Acceptance Criteria are
+below; ready for implementation under `Luciferase-7wzml.20`.
 
 ## Context
 

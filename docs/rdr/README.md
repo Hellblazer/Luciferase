@@ -23,6 +23,8 @@ See the [RDR process documentation](https://github.com/cwensel/rdr) for the full
 | [RDR-010](RDR-010-pyramid-spatial-index.md) | Pyramid Spatial Index — Close the Hybrid Hex↔Tet Partition Gap | accepted | Architecture | medium |
 | [RDR-011](RDR-011-pyramid-sfc-linear-id.md) | PyramidIndex SFC Linear-ID Primitive — Port t8code linear_id, or Accept the Morton-Key Divergence | draft | Architecture | low |
 | [RDR-012](RDR-012-pyramid-deep-cross-shape-productionization.md) | PyramidIndex Domain Contract & Deep Cross-Shape — Define the Reachable-SFC Set, Productionize the Deep-Tet Path or Fence It | accepted | Architecture | medium |
+| [RDR-013](RDR-013-grpc-server-dos-hardening.md) | gRPC Server DoS Hardening — Explicit Inbound Message-Size Bounds for Ghost/Balance | accepted | Security | low |
+| [RDR-014](RDR-014-cross-level-tet-edge-vertex-neighbors.md) | Cross-Level Tetrahedral Edge/Vertex Neighbor Traversal for TetreeNeighborFinder | accepted | Correctness | medium |
 
 ## Post-Mortems
 
