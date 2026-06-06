@@ -147,8 +147,22 @@ public class TetrahedralContainmentChecker {
      */
     public TetreeKey<?> locateDestinationBubble(Point3f position) {
         try {
-            // Use Tetree to find containing tetrahedron
-            // Try at multiple levels to find a bubble that exists
+            // When the grid is a single-level spatial partition (RDR-015 AC4), the destination is the
+            // bubble at the partition level L directly containing the position — NOT the first level in a
+            // 0..N scan. The old level-0-first scan resolved escaped entities to the all-containing L0
+            // root (a catch-all) on the mixed-level grid, and could not reach a partition deeper than the
+            // scan's level cap at all (returning null). Query at L directly.
+            byte partitionLevel = bubbleGrid.getPartitionLevel();
+            if (partitionLevel > 0) {
+                var tet = tetree.locateTetrahedron(position, partitionLevel);
+                if (tet == null) {
+                    return null;
+                }
+                var key = tet.tmIndex();
+                return bubbleGrid.containsBubble(key) ? key : null;
+            }
+
+            // Legacy fallback (non-partition grid): scan a level range for the first existing bubble.
             for (byte level = 0; level <= 10; level++) {
                 var tet = tetree.locateTetrahedron(position, level);
                 if (tet == null) {

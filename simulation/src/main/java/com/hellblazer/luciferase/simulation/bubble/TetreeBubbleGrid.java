@@ -57,6 +57,14 @@ public class TetreeBubbleGrid {
     private final byte maxLevel;
 
     /**
+     * The single level at which all bubbles reside when this grid was built as a spatial partition
+     * (RDR-015 AC2). {@code -1} means "not a single-level partition" — the grid is empty or was built
+     * via the legacy mixed-level {@link #createBubbles(int, byte, long)}. Routing/distribution query
+     * directly at this level when it is {@code > 0}, instead of scanning levels.
+     */
+    private volatile byte partitionLevel = -1;
+
+    /**
      * Create a new TetreeBubbleGrid.
      *
      * @param maxLevel Maximum refinement level for bubble distribution
@@ -106,8 +114,9 @@ public class TetreeBubbleGrid {
             throw new IllegalArgumentException("Target frame time must be positive, got: " + targetFrameMs);
         }
 
-        // Clear existing bubbles
+        // Clear existing bubbles. Legacy mixed-level distribution is NOT a single-level partition.
         bubblesByKey.clear();
+        partitionLevel = -1;
 
         // Determine number of levels to use
         int numLevels = Math.min(maxLevel + 1, count);
@@ -263,7 +272,20 @@ public class TetreeBubbleGrid {
             addBubble(bubble, entry.getKey());
         }
 
+        partitionLevel = level;
         return level;
+    }
+
+    /**
+     * The single level at which all bubbles reside when this grid is a spatial partition (RDR-015 AC2),
+     * or {@code -1} if the grid is empty or was built via the legacy mixed-level
+     * {@link #createBubbles(int, byte, long)}. Routing and distribution query the Tetree directly at
+     * this level instead of scanning a level range.
+     *
+     * @return the partition level {@code L > 0}, or {@code -1} if not a single-level partition
+     */
+    public byte getPartitionLevel() {
+        return partitionLevel;
     }
 
     /**
@@ -667,5 +689,6 @@ public class TetreeBubbleGrid {
     public void clear() {
         bubblesByKey.clear();
         neighborFinder.clearCache();
+        partitionLevel = -1;
     }
 }

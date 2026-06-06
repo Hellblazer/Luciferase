@@ -54,7 +54,10 @@ class MultiBubbleSimulationTest {
         );
 
         assertNotNull(simulation);
-        assertEquals(1, simulation.getAllBubbles().size());
+        // RDR-015 Option B: the grid is a single-level partition tiling the world domain, so the bubble
+        // count is determined by the tiling at the chosen partition level, not by the requested count
+        // (which is now a granularity hint). It is never zero and never the L0 root catch-all.
+        assertTrue(simulation.getAllBubbles().size() > 0, "partition must produce at least one bubble");
     }
 
     @Test
@@ -69,9 +72,10 @@ class MultiBubbleSimulationTest {
 
         assertNotNull(simulation);
         var bubbles = simulation.getAllBubbles().size();
-        // Due to tetrahedral key collisions, may create fewer than requested
+        // RDR-015 Option B: count is a granularity hint; the realized count is the number of in-bounds
+        // level-L tets tiling the world domain (may exceed the requested count). The old "<= requested"
+        // bound was a property of the legacy mixed-level grid, not the spatial partition.
         assertTrue(bubbles > 0, "Should create bubbles");
-        assertTrue(bubbles <= 9, "Should not exceed requested count");
     }
 
     @Test
