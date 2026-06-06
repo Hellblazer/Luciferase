@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
@@ -50,6 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
     + "does not occur; re-enable when bubble re-keying lands. Unit contract is covered by "
     + "BubbleMoverTest (deferred-failure assertions).")
 class MoveIntegrationTest {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private static final Logger log = LoggerFactory.getLogger(MoveIntegrationTest.class);
 
@@ -100,7 +103,7 @@ class MoveIntegrationTest {
             clusterCentroid,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         log.info("Executing move toward cluster centroid: ({}, {}, {})",
@@ -153,7 +156,7 @@ class MoveIntegrationTest {
             clusterCentroid,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = executor.execute(moveProposal);
@@ -193,7 +196,7 @@ class MoveIntegrationTest {
             clusterCentroid,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         executor.execute(moveProposal);
@@ -227,7 +230,7 @@ class MoveIntegrationTest {
             clusterCentroid,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = mover.execute(moveProposal);
@@ -261,7 +264,7 @@ class MoveIntegrationTest {
             clusterCentroid,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = mover.execute(moveProposal);
@@ -300,7 +303,7 @@ class MoveIntegrationTest {
             clusterCentroid,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = executor.execute(moveProposal);

@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 class TopologyExecutorTest {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
@@ -74,7 +75,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -110,7 +111,7 @@ class TopologyExecutorTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -158,7 +159,7 @@ class TopologyExecutorTest {
             newCenter,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -200,7 +201,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -259,7 +260,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var proposal2 = new SplitProposal(
@@ -267,7 +268,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute sequentially (second should fail because first already split)
@@ -305,7 +306,7 @@ class TopologyExecutorTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -344,7 +345,7 @@ class TopologyExecutorTest {
 
         var proposal1 = new MergeProposal(
             UUID.randomUUID(), bubbles1.get(0).id(), bubbles1.get(1).id(),
-            DigestAlgorithm.DEFAULT.getOrigin(), System.currentTimeMillis()
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result1 = executor1.execute(proposal1);
         assertTrue(result1.success(), "Merge 1 should succeed");
@@ -366,7 +367,7 @@ class TopologyExecutorTest {
 
         var proposal2 = new MergeProposal(
             UUID.randomUUID(), bubbles2.get(0).id(), bubbles2.get(1).id(),
-            DigestAlgorithm.DEFAULT.getOrigin(), System.currentTimeMillis()
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result2 = executor2.execute(proposal2);
         assertTrue(result2.success(), "Merge 2 should succeed");
@@ -438,7 +439,7 @@ class TopologyExecutorTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute
@@ -479,7 +480,7 @@ class TopologyExecutorTest {
 
         var proposal1 = new MergeProposal(
             UUID.randomUUID(), bubbles1.get(0).id(), bubbles1.get(1).id(),
-            DigestAlgorithm.DEFAULT.getOrigin(), System.currentTimeMillis()
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result1 = executor1.execute(proposal1);
         assertTrue(result1.success(), "Merge 1 should succeed");
@@ -501,7 +502,7 @@ class TopologyExecutorTest {
 
         var proposal2 = new MergeProposal(
             UUID.randomUUID(), bubbles2.get(0).id(), bubbles2.get(1).id(),
-            DigestAlgorithm.DEFAULT.getOrigin(), System.currentTimeMillis()
+            DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result2 = executor2.execute(proposal2);
         assertTrue(result2.success(), "Merge 2 should succeed");
@@ -578,7 +579,7 @@ class TopologyExecutorTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute — must fail at executor-level validate (not at splitter level)
@@ -667,7 +668,7 @@ class TopologyExecutorTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = executor2.execute(proposal);

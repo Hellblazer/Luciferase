@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
@@ -35,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 class TopologyEvolutionTest {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
@@ -75,7 +78,7 @@ class TopologyEvolutionTest {
             bubble.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute split
@@ -118,7 +121,7 @@ class TopologyEvolutionTest {
             bubble1.id(),
             bubble2.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute merge
@@ -173,7 +176,7 @@ class TopologyEvolutionTest {
             newCenter,
             clusterCentroid,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         // Execute move
@@ -223,7 +226,7 @@ class TopologyEvolutionTest {
             bubble1.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         int bubbleCountBefore = bubbleGrid.getAllBubbles().size();
@@ -276,7 +279,7 @@ class TopologyEvolutionTest {
             bubble1.id(),
             splitPlane,
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         int bubbleCountBefore = bubbleGrid.getAllBubbles().size();
@@ -296,7 +299,7 @@ class TopologyEvolutionTest {
             bubble2.id(),
             bubble3.id(),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         executor.execute(mergeProposal);

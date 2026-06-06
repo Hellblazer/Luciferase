@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
+
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
@@ -45,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 class BubbleSplitterStrategyIntegrationTest {
+    private static final TestClock JC1KH_CLOCK = new TestClock(1_000L); // determinism mandate (Luciferase-jc1kh)
 
     private TetreeBubbleGrid bubbleGrid;
     private EntityAccountant accountant;
@@ -90,7 +93,7 @@ class BubbleSplitterStrategyIntegrationTest {
             bubble.id(),
             SplitPlane.yAxis((float) centroid.getY()), // Intentionally wrong axis
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = splitter.execute(proposal);
@@ -133,7 +136,7 @@ class BubbleSplitterStrategyIntegrationTest {
             bubble.id(),
             SplitPlane.xAxis((float) centroid.getX()), // X-axis should be used by strategy
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = splitter.execute(proposal);
@@ -171,7 +174,7 @@ class BubbleSplitterStrategyIntegrationTest {
             bubble.id(),
             SplitPlane.xAxis((float) centroid.getX()),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         splitter.execute(proposal);
@@ -222,7 +225,7 @@ class BubbleSplitterStrategyIntegrationTest {
             bubble1.id(),
             SplitPlane.xAxis((float) centroid.getX()),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var yProposal = new SplitProposal(
@@ -230,7 +233,7 @@ class BubbleSplitterStrategyIntegrationTest {
             bubble2.id(),
             SplitPlane.yAxis((float) centroid.getY()),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var xResult = xAxisSplitter.execute(xProposal);
@@ -304,7 +307,7 @@ class BubbleSplitterStrategyIntegrationTest {
             bubble.id(),
             SplitPlane.alongLongestAxis(bounds),
             DigestAlgorithm.DEFAULT.getOrigin(),
-            System.currentTimeMillis()
+            JC1KH_CLOCK.currentTimeMillis()
         );
 
         var result = splitter.execute(proposal);
@@ -343,7 +346,7 @@ class BubbleSplitterStrategyIntegrationTest {
                 bubble.id(),
                 SplitPlane.xAxis((float) centroid.getX()),
                 DigestAlgorithm.DEFAULT.getOrigin(),
-                System.currentTimeMillis()
+                JC1KH_CLOCK.currentTimeMillis()
             );
             splitter.execute(proposal);
         }
