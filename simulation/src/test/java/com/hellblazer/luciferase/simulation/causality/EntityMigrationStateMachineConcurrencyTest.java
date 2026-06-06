@@ -79,10 +79,11 @@ class EntityMigrationStateMachineConcurrencyTest {
         assertTrue(latch.await(5, TimeUnit.SECONDS), "Should complete within timeout");
         executor.shutdown();
 
-        // Only ONE thread should succeed (first one)
-        // This validates that only the first transition from OWNED->MIGRATING_OUT succeeds
-        // Subsequent attempts from MIGRATING_OUT->MIGRATING_OUT will fail
-        assertTrue(successCount.get() > 0, "At least one transition should succeed");
+        // EXACTLY one thread must succeed (the single-owner invariant). assertTrue(>0) was vacuous: it passed
+        // for 1..N successes, so a regression letting multiple concurrent OWNED->MIGRATING_OUT transitions
+        // commit would go undetected (Luciferase-pja48).
+        assertEquals(1, successCount.get(),
+                     "Exactly one concurrent OWNED->MIGRATING_OUT transition must succeed (single-owner invariant)");
 
         // Final state should be consistent
         var finalState = fsm.getState(entityId);
