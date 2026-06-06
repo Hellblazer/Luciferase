@@ -4,6 +4,7 @@
  */
 package com.hellblazer.luciferase.simulation.distributed.grid;
 
+import com.hellblazer.luciferase.simulation.bubble.EntityPhysicsManager;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import org.junit.jupiter.api.Test;
 
@@ -59,10 +60,13 @@ class GridMultiBubbleSimulationRemediationWave3Test {
         init.setAccessible(true);
         init.invoke(sim);
 
-        Field f = GridMultiBubbleSimulation.class.getDeclaredField("velocities");
+        // The raw velocities map is now owned by EntityPhysicsManager (Luciferase-chmxx Finding 1).
+        // Access it via physicsManager.getVelocities() rather than the old direct field.
+        Field f = GridMultiBubbleSimulation.class.getDeclaredField("physicsManager");
         f.setAccessible(true);
+        EntityPhysicsManager pm = (EntityPhysicsManager) f.get(sim);
         // Defensive copy so the two sims' live maps don't alias.
-        return new HashMap<>((Map<String, Vector3f>) f.get(sim));
+        return new HashMap<>(pm.getVelocities());
     }
 
     @Test

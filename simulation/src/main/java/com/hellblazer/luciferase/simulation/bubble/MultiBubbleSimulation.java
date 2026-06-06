@@ -151,6 +151,10 @@ public class MultiBubbleSimulation implements AutoCloseable {
         // Initialize physics manager
         this.physicsManager = new EntityPhysicsManager(behavior, worldBounds);
 
+        // Wire physics manager into ghost sync adapter so outbound ghosts carry real velocity
+        // enabling dead-reckoning (Luciferase-chmxx Finding 1).
+        ghostSyncAdapter.setPhysicsManager(this.physicsManager);
+
         // Initialize query service
         this.queryService = new SimulationQueryService(bubbleGrid, ghostSyncAdapter, populationManager, metrics);
 

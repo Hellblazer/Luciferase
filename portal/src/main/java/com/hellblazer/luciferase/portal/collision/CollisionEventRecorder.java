@@ -26,6 +26,9 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Quat4f;
 import javax.vecmath.Vector3f;
 import java.io.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -38,7 +41,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * @author hal.hildebrand
  */
 public class CollisionEventRecorder {
-    
+
+    private static final Logger log = LoggerFactory.getLogger(CollisionEventRecorder.class);
+
     // Recording state
     private final BooleanProperty isRecording = new SimpleBooleanProperty(false);
     private final BooleanProperty isReplaying = new SimpleBooleanProperty(false);
@@ -101,7 +106,7 @@ public class CollisionEventRecorder {
         recordingStartTime.set(LocalDateTime.now());
         sessionName.set("Session_" + recordingStartTime.get().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")));
         
-        System.out.println("Started recording collision events: " + sessionName.get());
+        log.info("Started recording collision events: {}", sessionName.get());
     }
     
     /**
@@ -111,8 +116,7 @@ public class CollisionEventRecorder {
         recordingDuration.set(frameCounter.get());
         totalFrames.set(frameCounter.get());
         
-        System.out.println("Stopped recording. Captured " + recordedEvents.size() + 
-                         " events over " + frameCounter.get() + " frames");
+        log.info("Stopped recording. Captured {} events over {} frames", recordedEvents.size(), frameCounter.get());
     }
     
     /**
@@ -185,7 +189,7 @@ public class CollisionEventRecorder {
         currentFrame.set(0);
         isReplaying.set(true);
         
-        System.out.println("Started replay of " + recordedEvents.size() + " events");
+        log.info("Started replay of {} events", recordedEvents.size());
         notifyReplayListeners(ReplayEvent.REPLAY_STARTED, null);
     }
     
@@ -197,7 +201,7 @@ public class CollisionEventRecorder {
         currentFrame.set(0);
         isReplaying.set(false);
         
-        System.out.println("Stopped replay");
+        log.info("Stopped replay");
         notifyReplayListeners(ReplayEvent.REPLAY_STOPPED, null);
     }
     
@@ -269,7 +273,7 @@ public class CollisionEventRecorder {
             out.writeObject(session);
         }
         
-        System.out.println("Saved recording session to: " + file.getAbsolutePath());
+        log.info("Saved recording session to: {}", file.getAbsolutePath());
     }
     
     /**
@@ -303,7 +307,7 @@ public class CollisionEventRecorder {
             frameSnapshots.addAll(session.snapshots);
         }
         
-        System.out.println("Loaded recording session from: " + file.getAbsolutePath());
+        log.info("Loaded recording session from: {}", file.getAbsolutePath());
     }
     
     /**

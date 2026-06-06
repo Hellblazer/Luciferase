@@ -349,7 +349,8 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
             ghost.sourceTreeId(),
             ghost.epoch(),
             ghost.version(),
-            ghost.timestamp()
+            ghost.timestamp(),
+            ghost.velocity()  // real velocity for dead-reckoning (Luciferase-chmxx)
         );
     }
 
@@ -410,17 +411,16 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
             tg.sourceTreeId()
         );
 
-        // NOTE: velocity is (0,0,0) because Message.TransportGhost has no velocity field.
-        // Wiring requires adding a velocity component to TransportGhost (schema change) and
-        // populating it in toTransportGhost(). Tracked in Luciferase-chmxx (.186 completion,
-        // 2026-06-04). Dead-reckoning on the P2PGhostChannel receive
-        // path is inactive until that schema plumbing is complete.
+        // Velocity plumbed from TransportGhost (Luciferase-chmxx): toTransportGhost() copies
+        // SimulationGhostEntity.velocity() into the schema; here we read it back so the
+        // received ghost carries real velocity for dead-reckoning.
         return new SimulationGhostEntity<>(
             internalGhost,
             sourceId,
             bucket,
             tg.epoch(),
-            tg.version()
+            tg.version(),
+            tg.velocity()  // real velocity from sender (Luciferase-chmxx)
         );
     }
 

@@ -162,4 +162,18 @@ public class EntityPhysicsManager {
     public int getEntityCount() {
         return velocities.size();
     }
+
+    /**
+     * Expose the live velocity map so callers that already hold a reference (e.g.
+     * {@link com.hellblazer.luciferase.simulation.distributed.grid.MultiDirectionalMigration})
+     * can share the same backing store without copying.
+     * <p>
+     * The returned map is the actual {@code ConcurrentHashMap}; callers must not
+     * replace or clear it — use {@link #setVelocity}/{@link #removeEntity} for mutations.
+     *
+     * @return live, mutable velocity map (Luciferase-chmxx Finding 1)
+     */
+    public Map<String, Vector3f> getVelocities() {
+        return velocities;
+    }
 }

@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -72,6 +73,13 @@ public class TetreeGhostSyncAdapter {
     private volatile com.hellblazer.luciferase.common.time.Clock clock =
         com.hellblazer.luciferase.common.time.Clock.system();
 
+    /**
+     * Optional physics manager for entity velocity lookup (Luciferase-chmxx).
+     * When non-null, real entity velocity is included in ghosts enabling dead-reckoning.
+     * When null, ghosts carry zero velocity (dead-reckoning inactive for this adapter).
+     */
+    private volatile EntityPhysicsManager physicsManager = null;
+
     // Per-bubble ghost sync infrastructure
     private final Map<UUID, GhostBoundarySync<StringEntityID, Object>> ghostSyncByBubble;
     private final Map<UUID, ExternalBubbleTracker> trackerByBubble;
@@ -108,6 +116,18 @@ public class TetreeGhostSyncAdapter {
      */
     public void setClock(com.hellblazer.luciferase.common.time.Clock clock) {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    }
+
+    /**
+     * Inject an EntityPhysicsManager for real entity velocity lookup (Luciferase-chmxx).
+     * <p>
+     * When set, ghosts produced by this adapter carry real velocity enabling dead-reckoning.
+     * Without this, ghosts carry zero velocity.
+     *
+     * @param physicsManager the physics manager to use for velocity lookup (may be null to disable)
+     */
+    public void setPhysicsManager(EntityPhysicsManager physicsManager) {
+        this.physicsManager = physicsManager;
     }
 
     /**
@@ -303,6 +323,9 @@ public class TetreeGhostSyncAdapter {
         // Find neighbors that need ghosts
         var neighbors = findBoundaryNeighbors(bubble);
 
+        // Snapshot physics manager (volatile read; consistent for this call)
+        var pm = this.physicsManager;
+
         // Check all entities in this bubble
         for (var entityRecord : bubble.getAllEntityRecords()) {
             var position = entityRecord.position();
@@ -325,9 +348,18 @@ public class TetreeGhostSyncAdapter {
                 clock.currentTimeMillis()  // Deterministic timestamp via injected clock (Luciferase-ml7kc)
             );
 
+            // Resolve velocity: use physics manager if available, else zero (Luciferase-chmxx)
+            Vector3f velocity;
+            if (pm != null) {
+                var v = pm.getVelocity(entityRecord.id());
+                velocity = v != null ? v : new Vector3f(0f, 0f, 0f);
+            } else {
+                velocity = new Vector3f(0f, 0f, 0f);
+            }
+
             // Add ghost for each neighbor
             for (var neighborId : neighborsNeedingGhosts) {
-                ghostSync.addGhost(ghostEntity, bubbleId, neighborId, currentBucket);
+                ghostSync.addGhost(ghostEntity, bubbleId, neighborId, currentBucket, velocity);
             }
         }
     }

@@ -42,14 +42,14 @@ import static org.lwjgl.system.MemoryUtil.*;
  *   <li>Depth-based coloring</li>
  * </ul>
  *
- * <p><b>Far-pointer limitation:</b> Far pointers (nodes whose child offset exceeds
- * the 14-bit in-band {@code childPtr} field) are <em>not yet supported</em> on the
- * GPU path. The {@code esvo_ray_traversal.cl} kernel signature has no
- * {@code farPointers[]} buffer argument, and the traversal never checks
- * {@code FAR_FLAG_BIT}. Uploading an octree with far pointers would produce
- * silently wrong geometry. This renderer therefore fails loud at upload time when
- * far pointers are present. See Luciferase-7wzml.160 and the related ESVT kernel
- * issue Luciferase-8putk for the kernel-protocol fix.
+ * <p><b>Far-pointer support:</b> Far pointers (nodes whose child offset exceeds
+ * the 14-bit in-band {@code childPtr} field) are fully supported on the GPU path.
+ * The {@code esvo_ray_traversal.cl} kernel receives a {@code farPointers[]} buffer
+ * (arg 2) and checks {@code FAR_FLAG_BIT} (bit 16) in the traversal loop.
+ * When the far flag is set the kernel resolves the child offset via
+ * {@code farPointers[childPtr]} instead of using {@code childPtr} directly.
+ * A minimal placeholder buffer is always uploaded even when no far pointers exist.
+ * See Luciferase-7wzml.222 (wiring) and Luciferase-7wzml.160 (original guard).
  *
  * <p><b>Coordinate Space:</b> [0, 1] normalized voxel space
  *
@@ -58,8 +58,9 @@ import static org.lwjgl.system.MemoryUtil.*;
 public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, ESVOOctreeData> {
     private static final Logger log = LoggerFactory.getLogger(ESVOOpenCLRenderer.class);
 
-    // Raw cl_mem handle for ByteBuffer upload
+    // Raw cl_mem handles for ByteBuffer upload
     private long clNodeBuffer;
+    private long clFarPointerBuffer;
 
     // Scene bounds derived from coordinate space (ESVO now uses [0,1] normalized coordinates)
     private static final CoordinateSpace COORD_SPACE = CoordinateSpace.UNIT_CUBE;
@@ -98,15 +99,23 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
 
     @Override
     protected void allocateTypeSpecificBuffers() {
-        // Initialize empty node buffer
+        // Initialize empty node and far-pointer buffers
         clNodeBuffer = 0;
+        clFarPointerBuffer = 0;
     }
 
     @Override
     protected void uploadDataBuffers(ESVOOctreeData data) {
-        // Release old node buffer if exists
+        // Release old buffers if they exist
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
+            untrackRawHandle(clNodeBuffer);
+            clNodeBuffer = 0;
+        }
+        if (clFarPointerBuffer != 0) {
+            clReleaseMemObject(clFarPointerBuffer);
+            untrackRawHandle(clFarPointerBuffer);
+            clFarPointerBuffer = 0;
         }
 
         // Convert octree data to ByteBuffer
@@ -119,28 +128,37 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
         } finally {
             memFree(nodeData);
         }
+
+        // Upload far-pointer table (kernel always receives the buffer; may be empty)
+        var farPointers = data.getFarPointers();
+        if (farPointers != null && farPointers.length > 0) {
+            log.debug("Uploading {} far pointer(s) to GPU", farPointers.length);
+            var fpData = memAlloc(farPointers.length * Integer.BYTES);
+            fpData.order(ByteOrder.nativeOrder());
+            for (int fp : farPointers) {
+                fpData.putInt(fp);
+            }
+            fpData.flip();
+            try {
+                clFarPointerBuffer = createRawBuffer(fpData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+            } finally {
+                memFree(fpData);
+            }
+        } else {
+            // No far pointers — supply a minimal placeholder buffer so the kernel arg slot is always bound
+            clFarPointerBuffer = createEmptyRawBuffer(Integer.BYTES, CL_MEM_READ_ONLY);
+        }
     }
 
     /**
      * Convert ESVOOctreeData to ByteBuffer for GPU upload.
      * Each node is 8 bytes (2 ints: childDescriptor + contourDescriptor).
      *
-     * @throws UnsupportedOperationException if the octree contains far pointers,
-     *         because the ESVO OpenCL kernel has no farPointers[] buffer argument
-     *         and would silently resolve far-flagged nodes to wrong child indices.
-     *         See Luciferase-7wzml.160 / Luciferase-8putk for the kernel-protocol fix.
+     * <p>Far pointers are now fully supported: the kernel receives a separate
+     * {@code farPointers[]} buffer (arg 2) and resolves far-flagged child offsets
+     * via indirection. See Luciferase-7wzml.222.
      */
     private ByteBuffer octreeToByteBuffer(ESVOOctreeData data) {
-        var farPointers = data.getFarPointers();
-        if (farPointers != null && farPointers.length > 0) {
-            throw new UnsupportedOperationException(
-                    "Far pointers are not yet wired to the ESVO OpenCL kernel: "
-                    + "the esvo_ray_traversal.cl kernel has no farPointers[] buffer argument "
-                    + "and never checks FAR_FLAG_BIT. Uploading this octree would silently "
-                    + "render wrong geometry. See Luciferase-7wzml.160 (ESVO) and "
-                    + "Luciferase-8putk (ESVT) for the kernel-protocol fix.");
-        }
-
         int nodeCount = data.getNodeCount();
         var buffer = memAlloc(nodeCount * ESVONodeUnified.SIZE_BYTES);
         buffer.order(ByteOrder.nativeOrder());
@@ -166,18 +184,22 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
 
     @Override
     protected void setKernelArguments() {
-        // Set node buffer (arg 1)
+        // arg 0: rays — set by base class (AbstractOpenCLRenderer.executeKernel)
+        // arg 1: octree node buffer
         setRawBufferArg(1, clNodeBuffer);
 
-        // Set result buffer (arg 2)
-        kernel.setBufferArg(2, resultBuffer, ComputeKernel.BufferAccess.WRITE);
+        // arg 2: far-pointer indirection table (always bound; may be a 4-byte stub when no far pointers)
+        setRawBufferArg(2, clFarPointerBuffer);
 
-        // Set maxDepth (arg 3)
-        kernel.setIntArg(3, maxDepth);
+        // arg 3: hit-result buffer (write)
+        kernel.setBufferArg(3, resultBuffer, ComputeKernel.BufferAccess.WRITE);
 
-        // Set scene bounds (args 4, 5)
-        setFloat3Arg(4, sceneMin[0], sceneMin[1], sceneMin[2]);
-        setFloat3Arg(5, sceneMax[0], sceneMax[1], sceneMax[2]);
+        // arg 4: maxDepth
+        kernel.setIntArg(4, maxDepth);
+
+        // args 5, 6: scene bounds
+        setFloat3Arg(5, sceneMin[0], sceneMin[1], sceneMin[2]);
+        setFloat3Arg(6, sceneMax[0], sceneMax[1], sceneMax[2]);
     }
 
     @Override
@@ -237,7 +259,13 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
     protected void disposeTypeSpecificBuffers() {
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
+            untrackRawHandle(clNodeBuffer);
             clNodeBuffer = 0;
+        }
+        if (clFarPointerBuffer != 0) {
+            clReleaseMemObject(clFarPointerBuffer);
+            untrackRawHandle(clFarPointerBuffer);
+            clFarPointerBuffer = 0;
         }
     }
 }

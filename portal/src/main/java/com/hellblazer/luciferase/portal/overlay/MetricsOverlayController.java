@@ -18,6 +18,8 @@ package com.hellblazer.luciferase.portal.overlay;
 
 import com.hellblazer.luciferase.esvo.gpu.beam.metrics.MetricsSnapshot;
 import javafx.animation.AnimationTimer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -29,6 +31,8 @@ import java.util.function.Supplier;
  * @author hal.hildebrand
  */
 public class MetricsOverlayController {
+
+    private static final Logger log = LoggerFactory.getLogger(MetricsOverlayController.class);
     private static final long UPDATE_INTERVAL_NS = 500_000_000L;  // 500ms (2 Hz)
 
     private final Supplier<MetricsSnapshot> metricsSource;
@@ -117,8 +121,8 @@ public class MetricsOverlayController {
                 updateCallback.accept(snapshot);
             }
         } catch (Exception e) {
-            // Log error but don't crash the timer
-            System.err.println("Error updating metrics: " + e.getMessage());
+            // Log error (with stack trace) but don't crash the timer
+            log.error("Error updating metrics", e);
         }
     }
 }
