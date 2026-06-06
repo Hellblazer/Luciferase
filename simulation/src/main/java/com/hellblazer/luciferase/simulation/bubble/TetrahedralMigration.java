@@ -142,8 +142,11 @@ public class TetrahedralMigration {
         for (var bubble : bubbleGrid.getAllBubbles()) {
             var bubbleMigrations = checker.checkMigrations(bubble);
 
-            // Filter by migration candidate criteria
-            var bounds = bubble.bounds();
+            // Hysteresis is measured against the FIXED partition cell, consistent with the escape test
+            // (RDR-015). The adaptive bubble.bounds() wraps its entities, so overshoot past it is ~0 and
+            // would re-suppress every migration the containment check just admitted.
+            var cellKey = bubble.spatialKey();
+            var bounds = cellKey != null ? BubbleBounds.fromTetreeKey(cellKey) : bubble.bounds();
             for (var migration : bubbleMigrations) {
                 if (migrationCandidate(migration, currentTick, bounds)) {
                     allMigrations.add(migration);

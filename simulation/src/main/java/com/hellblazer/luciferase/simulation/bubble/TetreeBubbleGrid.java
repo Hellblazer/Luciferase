@@ -168,6 +168,9 @@ public class TetreeBubbleGrid {
                 var bounds = BubbleBounds.fromTetreeKey(key);
                 var location = new BubbleLocation(key, bounds);
 
+                // Record the fixed registration cell on the bubble.
+                bubble.setSpatialKey(key);
+
                 // Register in maps
                 bubblesByKey.put(key, bubble);
 
@@ -619,6 +622,9 @@ public class TetreeBubbleGrid {
         if (bubblesByKey.containsKey(key)) {
             throw new IllegalArgumentException("Bubble already exists at key: " + key);
         }
+
+        // Record the fixed registration cell on the bubble so migration containment can test against it.
+        bubble.setSpatialKey(key);
 
         // Add to key map
         bubblesByKey.put(key, bubble);

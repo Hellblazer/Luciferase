@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.config.WorldBounds;
@@ -23,34 +24,27 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
-import java.util.HashSet;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Directed-migration regression for RDR-015 (AC5) — <b>non-vacuous</b>.
+ * Directed-migration regression for RDR-015 (AC5) — <b>non-vacuous and end-to-end</b>.
  * <p>
- * Places a probe at a position strictly inside a KNOWN same-level face-neighbor bubble {@code B}
- * of a source bubble {@code S} and asserts the router resolves that position to <b>{@code B}
- * specifically</b> ({@code destinationBubbleKey == expectedNeighborKey}), NOT merely
- * {@code getTotalMigrations() > 0} — a catch-all router (the current level-0-first scan that
- * resolves almost everything to the all-containing L0 root) would satisfy the weak form while
- * routing to the wrong bubble.
+ * Drives the full migration subsystem ({@link TetrahedralMigration#checkMigrations}: containment →
+ * routing → two-phase execute) and asserts a known entity, placed inside a specific face-neighbor
+ * bubble {@code B} of its source bubble {@code S}, actually <b>migrates to {@code B} specifically</b> —
+ * it leaves {@code S} and arrives in {@code B}, with exactly one successful migration recorded. This is
+ * the load-bearing guarantee the RDR exists to restore; asserting merely
+ * {@code getTotalMigrations() > 0} would be satisfied by a catch-all router routing to the wrong bubble.
  * <p>
- * <b>TDD status (RDR-015 P0): RED against current code, intentionally.</b> Two ways it fails today:
- * <ol>
- *   <li>{@link TetreeBubbleGrid#createBubbles} builds a mixed-level (non-partition) grid, so a
- *       same-level in-grid face-neighbor pair may not exist — the setup {@code assertNotNull}
- *       fails meaningfully (grid is not a connected same-level partition).</li>
- *   <li>Even when a neighbor pair exists, {@link TetrahedralContainmentChecker#locateDestinationBubble}
- *       scans levels 0..10 and returns the first match — the L0 root catch-all — instead of the
- *       partition-level neighbor {@code B}.</li>
- * </ol>
- * Goes green once P1 reworks {@code createBubbles} into a single-level partition (AC2) and P2
- * replaces the router's level-0-first scan with a direct lookup at the partition level
- * {@code L} (AC4).
+ * The migration path was dead through three independent causes, all resolved across RDR-015 P1–P3:
+ * (1) entity coordinates decoupled from the bubble-grid domain; (2) a mixed-level non-partition grid
+ * with an L0 catch-all; (3) escape tested against the <em>adaptive</em> entity-derived bounds (which
+ * re-wrap the entities every tick and so never report an escape). Containment now tests against each
+ * bubble's FIXED partition cell.
  *
  * @author hal.hildebrand
  */
@@ -61,62 +55,75 @@ class DirectedMigrationRegressionTest {
     private static final WorldBounds WORLD        = new WorldBounds(0.0f, 100.0f);
 
     @Test
-    void escapedEntityRoutesToTheSpecificAdjacentNeighbor() {
+    void escapedEntityMigratesToTheSpecificAdjacentNeighbor() {
         var grid = new TetreeBubbleGrid((byte) 21);
         grid.createBubbles(BUBBLE_COUNT, WORLD, TARGET_FRAME);
 
-        var keySet = new HashSet<>(grid.getBubblesWithKeys().keySet());
+        byte level = grid.getPartitionLevel();
+        assertTrue(level > 0, "grid must be a single-level partition");
+        var spatial = grid.getSpatialIndex();
+        int edge = Constants.lengthAtLevel(level);
 
-        // Find a source bubble S with a same-level, in-grid, involution-reciprocal face neighbor B.
-        TetreeKey<?> expectedNeighborKey = null;
-        Tet neighborTet = null;
-        for (var key : keySet) {
-            var s = key.toTet();
-            var b = firstSameLevelNeighborInGrid(s, keySet);
-            if (b != null) {
-                neighborTet = b;
-                expectedNeighborKey = b.tmIndex();
-                break;
+        // Find a source cell S and a displaced position P that (a) provably escapes S's fixed cell and
+        // (b) lands in a DIFFERENT existing partition cell B. Using the actual containing cell of P as
+        // the expected destination keeps the assertion specific (== B), not a weak "some migration".
+        TetreeKey<?> sourceKey = null;
+        TetreeKey<?> expectedDestKey = null;
+        Point3f probe = null;
+        outer:
+        for (var key : grid.getBubblesWithKeys().keySet()) {
+            var cell = BubbleBounds.fromTetreeKey(key);
+            var sc = centroid(key.toTet());
+            for (var offset : displacements(edge)) {
+                var p = new Point3f(sc.x + offset[0], sc.y + offset[1], sc.z + offset[2]);
+                if (cell.contains(p)) {
+                    continue; // not escaped from S's fixed cell
+                }
+                var destTet = spatial.locateTetrahedron(p, level);
+                if (destTet == null) {
+                    continue;
+                }
+                var destKey = destTet.tmIndex();
+                if (destKey.equals(key) || !grid.containsBubble(destKey)) {
+                    continue; // must be a different, existing partition cell
+                }
+                sourceKey = key;
+                expectedDestKey = destKey;
+                probe = p;
+                break outer;
             }
         }
+        assertNotNull(expectedDestKey,
+                      "setup: partition must expose a source cell with an escaped position landing in a "
+                      + "different existing cell");
 
-        assertNotNull(expectedNeighborKey,
-                      "RDR-015 AC5 setup: the grid must expose a same-level in-grid face-neighbor pair "
-                      + "(a connected partition). If null, createBubbles is not a single-level partition (P1).");
+        var sourceBubble = grid.getBubble(sourceKey);
+        var destBubble = grid.getBubble(expectedDestKey);
 
-        // Probe: a point strictly inside neighbor B (its tetrahedral centroid). An entity that has
-        // crossed the shared S->B face and now sits here MUST route to B specifically.
-        var probe = centroid(neighborTet);
+        var entityId = "directed-1";
+        sourceBubble.addEntity(entityId, probe, probe);
 
-        var checker = new TetrahedralContainmentChecker(grid.getSpatialIndex(), grid);
-        var destinationBubbleKey = checker.locateDestinationBubble(probe);
+        var migration = new TetrahedralMigration(grid, spatial);
+        migration.checkMigrations(1L);
 
-        assertEquals(expectedNeighborKey, destinationBubbleKey,
-                     "router must route an escaped entity to the specific adjacent neighbor bubble B, "
-                     + "not a level-0 catch-all (RDR-015 AC4/AC5)");
+        assertEquals(1, migration.getMetrics().getTotalMigrations(), "exactly one entity must migrate");
+        assertEquals(0, migration.getMetrics().getFailureCount(), "no migration may fail");
+        assertTrue(containsEntity(destBubble, entityId),
+                   "entity must arrive in the specific destination bubble that contains its position");
+        assertFalse(containsEntity(sourceBubble, entityId),
+                    "entity must no longer reside in the source bubble S");
     }
 
-    /**
-     * First face neighbor of {@code s} that is (a) present in the partition and (b) involution-reciprocal
-     * ({@code faceNeighbor(faceNeighbor(s,f).face()).tet() == s}). The Bey-SFC face neighbor is
-     * non-conforming (shares 0–3 vertices), so reciprocity — not shared-vertex count — is the correct
-     * adjacency test (CLAUDE.md "Face-neighbor testing caveat").
-     */
-    private static Tet firstSameLevelNeighborInGrid(Tet s, Set<TetreeKey<?>> partition) {
-        for (int face = 0; face < 4; face++) {
-            var fn = s.faceNeighbor(face);
-            if (fn == null) {
-                continue;
-            }
-            var back = fn.tet().faceNeighbor(fn.face());
-            if (back == null || !s.equals(back.tet())) {
-                continue;
-            }
-            if (partition.contains(fn.tet().tmIndex())) {
-                return fn.tet();
-            }
-        }
-        return null;
+    /** Axis displacements of 1.5 cell-edges in each direction — far enough to clear the source cell's AABB. */
+    private static float[][] displacements(int edge) {
+        float d = edge * 1.5f;
+        return new float[][] {
+            {d, 0, 0}, {-d, 0, 0}, {0, d, 0}, {0, -d, 0}, {0, 0, d}, {0, 0, -d}
+        };
+    }
+
+    private static boolean containsEntity(EnhancedBubble bubble, String entityId) {
+        return bubble.getAllEntityRecords().stream().anyMatch(r -> r.id().equals(entityId));
     }
 
     private static Point3f centroid(Tet tet) {

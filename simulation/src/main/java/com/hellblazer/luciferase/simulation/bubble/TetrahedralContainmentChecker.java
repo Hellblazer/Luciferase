@@ -81,33 +81,26 @@ public class TetrahedralContainmentChecker {
         Objects.requireNonNull(bubble, "Bubble cannot be null");
 
         var migrations = new ArrayList<MigrationRecord>();
-        var bounds = bubble.bounds();
 
-        // Early return if no bounds (no entities)
-        if (bounds == null) {
-            return migrations;
-        }
-
-        // Get the bubble's TetreeKey directly from its own bounds — O(1).
-        // The previous implementation scanned bubbleGrid.getAllBubbles() to find
-        // the matching bubble and then called findBubbleKey(), which scanned the
-        // same list a SECOND time, for an O(n) cost per call. Since checkMigrations
-        // is invoked once per bubble per tick, that made the overall cost O(n^2)
-        // in bubble count every tick (Luciferase-0frcy.59). The source key is
-        // simply this bubble's root key — no grid scan is required.
-        TetreeKey<?> bubbleKey = bubble.bounds().rootKey();
-
+        // Source key is the bubble's FIXED registration cell — O(1), stable across ticks (RDR-015).
+        // The previous implementation tested escape against bubble.bounds(), the ADAPTIVE entity-derived
+        // AABB that BubbleBoundsTracker recomputes from the entities every tick. That box always wraps
+        // its own entities, so !contains(position) was never true and NO migration candidate was ever
+        // produced — a dead-migration cause independent of the coordinate-space mismatch. Containment
+        // must be tested against the fixed partition cell the bubble owns.
+        TetreeKey<?> bubbleKey = bubble.spatialKey();
         if (bubbleKey == null) {
-            // Bubble has no key (no bounds) - skip migration check
+            // Bubble not registered in a partition grid (e.g. legacy/standalone) - skip migration check.
             return migrations;
         }
+        var cellBounds = BubbleBounds.fromTetreeKey(bubbleKey);
 
         // Check each entity for containment
         for (var entity : bubble.getAllEntityRecords()) {
             var position = entity.position();
 
-            // Containment check: is entity still within bubble bounds?
-            if (!bounds.contains(position)) {
+            // Containment check: is entity still within the fixed partition-cell bounds?
+            if (!cellBounds.contains(position)) {
                 // Entity escaped - find destination
                 var destKey = locateDestinationBubble(position);
 

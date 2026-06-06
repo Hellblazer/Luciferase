@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.lucien.entity.EntityData;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.ghost.GhostChannel;
 import com.hellblazer.luciferase.simulation.ghost.GhostStateManager;
@@ -68,6 +69,15 @@ public class EnhancedBubble implements AutoCloseable {
     /** True only when this bubble created (owns) the RealTimeController. */
     private final boolean ownsController;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+
+    /**
+     * The grid registration key — the FIXED partition cell this bubble owns (RDR-015). Assigned by
+     * {@link TetreeBubbleGrid} when the bubble is registered; {@code null} for a bubble not in a grid.
+     * Migration containment must test entities against this cell's bounds (which do not move), not the
+     * adaptive entity-derived {@link #bounds()} (which re-wrap the entities every tick and so can never
+     * report an escape).
+     */
+    private volatile TetreeKey<?> spatialKey;
 
     /**
      * Create an enhanced bubble with spatial indexing and monitoring.
@@ -206,6 +216,26 @@ public class EnhancedBubble implements AutoCloseable {
      */
     public BubbleBounds bounds() {
         return boundsTracker.bounds();
+    }
+
+    /**
+     * The grid registration key (FIXED partition cell), or {@code null} if this bubble is not registered
+     * in a {@link TetreeBubbleGrid}. Set by the grid at registration time.
+     *
+     * @return the registration {@link TetreeKey}, or {@code null}
+     */
+    public TetreeKey<?> spatialKey() {
+        return spatialKey;
+    }
+
+    /**
+     * Record the grid registration key (FIXED partition cell). Called by {@link TetreeBubbleGrid} on
+     * registration; not for general use.
+     *
+     * @param spatialKey the registration key
+     */
+    void setSpatialKey(TetreeKey<?> spatialKey) {
+        this.spatialKey = spatialKey;
     }
 
     /**
