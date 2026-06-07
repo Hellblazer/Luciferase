@@ -21,18 +21,15 @@ import java.util.Objects;
  * <p>
  * Dependency Layer: 0 (no dependencies — RDR-017 gate C2; persistence has zero network surface)
  * <p>
- * Note: PersistenceManager auto-starts background tasks (batch flush, checkpoints) on construction.
- * The start() method is effectively a no-op but maintains lifecycle state consistency.
- * <p>
  * Extends {@link AbstractLifecycleAdapter} for common state management logic.
  * <p>
- * <b>Composition status (RDR-017).</b> P0 (Production Node Bootstrap) fixes the lifecycle dependency
- * ordering: {@code dependencies()} is now {@code List.of()} so this adapter sits at Layer 0, and
+ * <b>Composition status (RDR-017).</b> P0 fixed the lifecycle dependency ordering: {@code dependencies()}
+ * is {@code List.of()} so this adapter sits at Layer 0, and
  * {@link com.hellblazer.luciferase.simulation.von.NodeBootstrap} registers it alongside
- * {@code SocketConnectionManagerAdapter}. {@link #doStart()} remains a deliberate no-op: making it call
- * {@code recover()} fail-loud and relocating the batch-flush/checkpoint schedulers out of the
- * {@link PersistenceManager} constructor into {@code doStart()} (so a checkpoint cannot overwrite an
- * unrecovered log) is <b>RDR-017 P1</b> (Luciferase-pf1iu).
+ * {@code SocketConnectionManagerAdapter}. P1 (Luciferase-pf1iu) makes {@link #doStart()} call
+ * {@link PersistenceManager#recover()} fail-loud (a corrupt WAL aborts startup) and then
+ * {@link PersistenceManager#startSchedulers()} — the batch-flush and checkpoint schedulers are no longer
+ * started in the {@link PersistenceManager} constructor, so neither can run before recovery completes.
  *
  * @author hal.hildebrand
  */
@@ -55,8 +52,14 @@ public class PersistenceManagerAdapter extends AbstractLifecycleAdapter {
     }
 
     @Override
-    protected void doStart() {
-        // No-op: PersistenceManager auto-starts background tasks on construction
+    protected void doStart() throws Exception {
+        // RDR-017 P1 (Luciferase-pf1iu): recover the WAL BEFORE starting the background schedulers.
+        // recover() rethrows IOException on a corrupt WAL — letting it propagate aborts startup
+        // (fail-loud, RDR-004-class silent-data-loss closure) rather than degrading into a node that
+        // runs on partially-recovered state. Schedulers start only after a clean recover(), so a
+        // checkpoint/batch-flush can never overwrite an unrecovered log.
+        persistenceManager.recover();
+        persistenceManager.startSchedulers();
     }
 
     @Override

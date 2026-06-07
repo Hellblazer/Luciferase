@@ -10,11 +10,15 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.membership.Member;
+import com.hellblazer.luciferase.simulation.causality.EntityMigrationStateMachine;
 import com.hellblazer.luciferase.simulation.lifecycle.PersistenceManagerAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.SocketConnectionManagerAdapter;
+import com.hellblazer.luciferase.simulation.persistence.MigrationRecoveryStateSink;
+import com.hellblazer.luciferase.simulation.persistence.PersistenceManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -89,6 +93,33 @@ public final class NodeBootstrap {
         Objects.requireNonNull(base, "base cannot be null");
         Objects.requireNonNull(nodeId, "nodeId cannot be null");
         return base.resolve(".luciferase").resolve("wal").resolve(nodeId.toString());
+    }
+
+    /**
+     * Build the persistence adapter for the node, wiring the WAL recovery sink to the node's migration
+     * FSM (RDR-017 P1, §F5).
+     * <p>
+     * Constructs {@code MigrationRecoveryStateSink(fsm) → PersistenceManager(nodeId, walDir, sink) →
+     * PersistenceManagerAdapter}, so that on startup {@code PersistenceManagerAdapter.doStart()} calls
+     * {@code recover()} and replays {@code ENTITY_DEPARTURE}/{@code MIGRATION_COMMIT} events into the
+     * FSM (reconstructing {@code MIGRATING_OUT}/{@code DEPARTED}) before the schedulers start. Using the
+     * real sink rather than {@code RecoveryStateSink.NOOP} is what makes recovery reconstruct state
+     * instead of silently discarding replayed events.
+     *
+     * @param nodeId the resolved node identity (see {@link #resolveNodeId(Digest)})
+     * @param walDir the per-node WAL directory (see {@link #walDir(Path, UUID)})
+     * @param fsm    the node's entity-migration state machine to reconstruct on recovery
+     * @return a persistence adapter ready to register via {@link #assemble}
+     * @throws IOException if WAL initialization fails
+     */
+    public static PersistenceManagerAdapter persistenceAdapter(UUID nodeId, Path walDir,
+                                                               EntityMigrationStateMachine fsm) throws IOException {
+        Objects.requireNonNull(nodeId, "nodeId cannot be null");
+        Objects.requireNonNull(walDir, "walDir cannot be null");
+        Objects.requireNonNull(fsm, "fsm cannot be null");
+        var sink = new MigrationRecoveryStateSink(fsm);
+        var pm = new PersistenceManager(nodeId, walDir, sink);
+        return new PersistenceManagerAdapter(pm);
     }
 
     /**
