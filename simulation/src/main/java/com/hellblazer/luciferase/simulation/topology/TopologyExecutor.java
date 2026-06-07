@@ -268,6 +268,14 @@ public class TopologyExecutor implements OperationTracker {
                     if (success) {
                         metrics.recordMergeSuccess();
                     } else {
+                        // RDR-018 AC-4 interim: BubbleMerger.execute() hard-fences every arbitrary
+                        // two-bubble merge fail-loud WITHOUT mutating state. On that path this
+                        // rollback is a benign no-op (empty operationHistory, unchanged
+                        // distribution) and rollback() will emit "No grid operations to rollback"
+                        // at WARN — that log line is EXPECTED for a fenced merge, not an error.
+                        // Stage-2 observability (separating fence-rejection from attempt-failure in
+                        // the event/metric schema) is tracked as an explicit boundary, see
+                        // Luciferase-xtyki / RDR-018 AC-2.5.
                         metrics.recordMergeFailure();
                         rollback(snapshot, "Merge failed: " + message);
                     }

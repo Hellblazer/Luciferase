@@ -33,7 +33,16 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Executes bubble merge operations with duplicate detection.
  * <p>
- * Merges two underpopulated bubbles (<500 entities each) by:
+ * <b>RDR-018 AC-4 coverage fence:</b> the public {@link #execute(MergeProposal)} entry point
+ * currently REJECTS every arbitrary two-bubble merge fail-loud. Removing one of two arbitrary
+ * bubbles leaves its tetrahedral region untiled (a partition coverage hole, RDR-018 F4); the
+ * only coverage-preserving merge under Option B is the inverse-Bey collapse of a complete
+ * sibling-leaf set, which lands with B-core (AC-2.5). The entity-move machinery below survives
+ * as the package-private {@link #executeMerge(MergeProposal)} and is exercised directly by unit
+ * tests; it is the foundation the coverage-preserving merge will wrap.
+ * <p>
+ * The remainder of this contract describes the {@link #executeMerge(MergeProposal)} mechanism,
+ * which merges two underpopulated bubbles (<500 entities each) by:
  * <ol>
  *   <li>Moving all entities from bubble2 to bubble1</li>
  *   <li>Atomically transferring via EntityAccountant</li>
@@ -112,12 +121,83 @@ public class BubbleMerger {
     public MergeExecutionResult execute(MergeProposal proposal) {
         java.util.Objects.requireNonNull(proposal, "proposal must not be null");
 
+        var bubble1Id = proposal.bubble1();
+        var bubble2Id = proposal.bubble2();
+
+        // Resolve both bubbles first so a malformed proposal still reports the precise
+        // "not found" reason (these checks are part of the public contract and are
+        // exercised independently of the coverage fence below).
+        var bubble1 = bubbleGrid.getBubbleById(bubble1Id);
+        var bubble2 = bubbleGrid.getBubbleById(bubble2Id);
+        if (bubble1 == null) {
+            return new MergeExecutionResult(false, "Bubble1 not found: " + bubble1Id, 0, 0, 0);
+        }
+        if (bubble2 == null) {
+            return new MergeExecutionResult(false, "Bubble2 not found: " + bubble2Id, 0, 0, 0);
+        }
+
+        // RDR-018 AC-4 / F4 COVERAGE FENCE — fail-loud, NO mutation.
+        //
+        // An arbitrary two-bubble merge moves bubble2's entities into bubble1 and then
+        // removes bubble2 from the grid (see executeMerge -> removeBubble). Because routing
+        // is key-as-geometry — every bubble owns exactly its TetreeKey's tetrahedron and an
+        // escaping entity is routed by locateTetrahedron(position, level) — removing bubble2
+        // leaves bubble2's tetrahedral region UNTILED. Any entity that later escapes into
+        // that region routes to a key with no owning bubble and is silently dropped: a
+        // partition coverage hole.
+        //
+        // Under RDR-018 Option B the only coverage-preserving merge is the inverse-Bey
+        // collapse of a COMPLETE set of sibling child leaves back into their parent leaf.
+        // That requires the refinement-forest leaf bookkeeping and the Bey-refinement
+        // splitter delivered by B-core (AC-2.5). No such complete sibling set exists in the
+        // current single-level (depth-0 base case) partition, so every arbitrary two-bubble
+        // merge is a coverage-hole-punching operation and is rejected here.
+        //
+        // NOTE: unlike the RDR-012 split fence, a documentation-only note is INSUFFICIENT for
+        // merge (RDR-018 gate S5): merge is reachable independently of the live tick path and
+        // actively removes coverage, so it must be hard-fenced in code. The entity-move
+        // mechanism survives as the package-private executeMerge(), gated here until B-core
+        // supplies coverage-safe (sibling-collapse) proposals.
+        // The result's entity-count fields carry no operational meaning on a rejected proposal
+        // (nothing is mutated), so they are reported as 0 rather than reading the accountant
+        // outside any lock — which would otherwise produce a stale count under concurrent
+        // splits/migrations. Callers that need live counts query the accountant directly.
+        log.warn("Rejecting arbitrary two-bubble merge {} + {} (RDR-018 AC-4 coverage fence): "
+                 + "would leave bubble2 region untiled; coverage-preserving sibling-collapse merge "
+                 + "deferred to B-core (AC-2.5)", bubble1Id, bubble2Id);
+        return new MergeExecutionResult(false,
+                                        "RDR-018 AC-4 fence: arbitrary two-bubble merge rejected — removing bubble2 "
+                                        + "would leave its tetrahedral region untiled (coverage hole); "
+                                        + "coverage-preserving sibling-collapse merge deferred to B-core (AC-2.5)",
+                                        0, 0, 0);
+    }
+
+    /**
+     * The merge entity-move mechanism: relocate every non-duplicate entity from bubble2 into
+     * bubble1 under both mutation locks, validate conservation, roll back atomically on any
+     * failure, and remove the now-empty bubble2 from the grid.
+     * <p>
+     * <b>Package-private and intentionally NOT the public entry point.</b> On its own this
+     * mechanism does NOT preserve partition coverage — its terminal {@code removeBubble(bubble2)}
+     * leaves bubble2's tetrahedral region untiled (RDR-018 F4). It is gated behind
+     * {@link #execute(MergeProposal)}'s coverage fence and is invoked directly only by unit
+     * tests of the move/conservation/rollback machinery (the machinery itself is correct and
+     * is the foundation the B-core sibling-collapse merge — RDR-018 AC-2.5 — will build on,
+     * wrapping it with the coverage-preserving re-tile step).
+     *
+     * @param proposal the merge proposal with two existing bubble IDs
+     * @return execution result with success status and details
+     * @throws NullPointerException if proposal is null
+     */
+    MergeExecutionResult executeMerge(MergeProposal proposal) {
+        java.util.Objects.requireNonNull(proposal, "proposal must not be null");
+
         // Generate correlation ID for tracking this operation across log statements
         var correlationId = UUID.randomUUID().toString().substring(0, 8);
         var bubble1Id = proposal.bubble1();
         var bubble2Id = proposal.bubble2();
 
-        log.debug("[{}] Executing merge: {} + {}", correlationId, bubble1Id, bubble2Id);
+        log.debug("[{}] Executing merge mechanism: {} + {}", correlationId, bubble1Id, bubble2Id);
 
         // Get both bubbles
         var bubble1 = bubbleGrid.getBubbleById(bubble1Id);
@@ -303,7 +383,14 @@ public class BubbleMerger {
                      correlationId, bubble2Id);
         }
 
-        // Remove bubble2 from grid (all entities now in bubble1)
+        // Remove bubble2 from grid (all entities now in bubble1).
+        //
+        // TODO(RDR-018 AC-2.5 / Luciferase-6a5o7): THIS LINE IS THE COVERAGE HOLE (F4). Removing
+        // bubble2 untiles its tetrahedral region. This mechanism is reachable ONLY via tests today
+        // because execute() hard-fences (RDR-018 AC-4). B-core MUST wrap this with the inverse-Bey
+        // re-tile step (collapse a COMPLETE sibling-leaf set into the parent leaf, re-registering
+        // the parent key so the region stays tiled) BEFORE lifting the execute() fence. Do not
+        // un-fence execute() while this remains a bare removeBubble.
         boolean removed = bubbleGrid.removeBubble(bubble2Id);
         if (removed) {
             log.debug("Removed merged bubble {} from grid", bubble2Id);
