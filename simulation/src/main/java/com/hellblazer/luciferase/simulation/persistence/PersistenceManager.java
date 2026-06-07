@@ -63,6 +63,8 @@ public class PersistenceManager implements AutoCloseable {
     private final RecoveryStateSink recoverySink;
     private final ScheduledExecutorService executor;
     private final AtomicBoolean recoveryInProgress;
+    private final AtomicBoolean schedulersStarted = new AtomicBoolean(false);
+    private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicLong lastCheckpointSeq;
     private final AtomicLong eventCounter;
 
@@ -118,13 +120,48 @@ public class PersistenceManager implements AutoCloseable {
         this.eventCounter = new AtomicLong(0);
         this.lastCheckpoint = Instant.ofEpochMilli(clock.currentTimeMillis());
 
-        // Start batch flush scheduler
-        startBatchFlushScheduler();
+        // RDR-017 P1 (Luciferase-pf1iu): the batch-flush and checkpoint schedulers are NO LONGER
+        // started here. Starting them in the constructor let a checkpoint (every 5s) or batch flush
+        // (every 100ms) fire before recover() ran — overwriting/truncating an unrecovered WAL. They
+        // are now started by PersistenceManagerAdapter.doStart() via startSchedulers(), strictly AFTER
+        // recover() completes.
+        log.info("PersistenceManager constructed for node {} at {} (schedulers idle until startSchedulers())",
+                 nodeId, logDirectory);
+    }
 
-        // Start periodic checkpoint scheduler
-        startCheckpointScheduler();
+    /**
+     * Start the batch-flush and checkpoint background schedulers.
+     * <p>
+     * RDR-017 P1: called by {@link com.hellblazer.luciferase.simulation.lifecycle.PersistenceManagerAdapter}
+     * ({@code doStart()}) <b>after</b> {@link #recover()} completes, so neither scheduler can run against an
+     * unrecovered WAL. Idempotent: repeated calls are a no-op.
+     */
+    public void startSchedulers() {
+        if (schedulersStarted.compareAndSet(false, true)) {
+            startBatchFlushScheduler();
+            startCheckpointScheduler();
+            log.info("PersistenceManager schedulers started for node {}", nodeId);
+        }
+    }
 
-        log.info("PersistenceManager started for node {} at {}", nodeId, logDirectory);
+    /**
+     * @return whether the background schedulers have been started (RDR-017 P1)
+     */
+    public boolean isSchedulersStarted() {
+        return schedulersStarted.get();
+    }
+
+    /**
+     * @return the number of tasks currently queued on the scheduler executor. Zero before
+     *         {@link #startSchedulers()} runs; two once both schedulers are scheduled. Package-private
+     *         test-support: the scheduler-relocation regression (RDR-017 P1) uses it to prove no
+     *         scheduler is queued in the constructor — catching a re-introduction of either scheduler.
+     */
+    int scheduledTaskCount() {
+        if (executor instanceof java.util.concurrent.ScheduledThreadPoolExecutor stpe) {
+            return stpe.getQueue().size();
+        }
+        return -1;
     }
 
     /**
@@ -359,6 +396,11 @@ public class PersistenceManager implements AutoCloseable {
      */
     @Override
     public void close() throws IOException {
+        // Idempotent (RDR-017 P1): the corrupt-WAL abort path closes the PM from doStart(), and a
+        // caller's finally block may close again — a second close must not throw "WAL is closed".
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         log.info("Shutting down PersistenceManager for node {}", nodeId);
 
         // Shutdown executor
