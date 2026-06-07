@@ -152,13 +152,17 @@ public final class CollisionEngine<Key extends SpatialKey<Key>, ID extends Entit
 
     /** Find collisions involving a specific entity. */
     public List<CollisionPair<ID, Content>> findCollisions(ID entityId) {
-        var locations = core.entityManager().getEntityLocations(entityId);
-        if (locations.isEmpty()) {
-            return Collections.emptyList();
-        }
-
+        // Luciferase-fwfpm: read getEntityLocations INSIDE the read lock (mirroring findCollisionsFineGrained).
+        // updateEntity clears then re-inserts the location set under the write lock; reading it before locking
+        // could observe the transiently-empty set mid-move and short-circuit to emptyList() — a false-negative
+        // collision result for an entity that is in fact colliding.
         core.lock().readLock().lock();
         try {
+            var locations = core.entityManager().getEntityLocations(entityId);
+            if (locations.isEmpty()) {
+                return Collections.emptyList();
+            }
+
             var collisions = ObjectPools.<CollisionPair<ID, Content>>borrowArrayList();
             var checkedEntities = ObjectPools.<ID>borrowHashSet();
             try {
