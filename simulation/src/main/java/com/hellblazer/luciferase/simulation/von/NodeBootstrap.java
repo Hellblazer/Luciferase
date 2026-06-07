@@ -15,6 +15,7 @@ import com.hellblazer.luciferase.simulation.lifecycle.PersistenceManagerAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.SocketConnectionManagerAdapter;
 import com.hellblazer.luciferase.simulation.persistence.MigrationRecoveryStateSink;
 import com.hellblazer.luciferase.simulation.persistence.PersistenceManager;
+import com.hellblazer.luciferase.simulation.tumbler.BubbleMigrator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -144,6 +145,40 @@ public final class NodeBootstrap {
         manager.setBubbleDependencies(List.of(pmAdapter.name()));
         log.info("Node lifecycle assembled: {} and {} at Layer 0; bubbles depend on {}",
                  scmAdapter.name(), pmAdapter.name(), pmAdapter.name());
+    }
+
+    /**
+     * Wire the node lifecycle graph (see {@link #assemble(Manager, SocketConnectionManagerAdapter,
+     * PersistenceManagerAdapter)}) and inject the live {@link PersistenceManager} into the migration
+     * subsystem so the RDR-016 R2 {@code ENTITY_DEPARTURE}/{@code MIGRATION_COMMIT} WAL bracket fires
+     * in the assembled node (RDR-017 P2, §Approach.3).
+     * <p>
+     * {@code setPersistenceManager} is called <b>after</b> the persistence adapter has been registered
+     * and started (the coordinator started in the {@link Manager} constructor starts components on
+     * registration), so the migrator never logs against an unrecovered/unstarted WAL.
+     * <p>
+     * <b>Shutdown ordering contract.</b> The migrator is wired to the persistence manager but is NOT
+     * registered as a lifecycle component, so {@code Manager.close()} does not stop it. The caller MUST
+     * call {@code migrator.shutdown()} (draining in-flight migrations) <b>before</b> {@code Manager.close()}
+     * closes the WAL — otherwise an in-flight migration can call {@code logMigrationCommit()} after the
+     * WAL is closed, failing the commit and leaving an {@code ENTITY_DEPARTURE}-without-{@code COMMIT}
+     * split-brain precondition (the exact hazard RDR-016 R2 guards). Lifecycle-integrating the migrator
+     * (a {@code BubbleMigratorAdapter} stopped ahead of the persistence layer) is tracked for the live
+     * {@link #main} wiring — until then {@code main} throws, so the race is unreachable in production.
+     *
+     * @param manager    the VON manager owning the lifecycle coordinator
+     * @param scmAdapter the connection-manager adapter (Layer 0)
+     * @param pmAdapter  the persistence adapter (Layer 0)
+     * @param migrator   the bubble migrator whose WAL bracket is wired to the started persistence manager
+     */
+    public static void assemble(Manager manager, SocketConnectionManagerAdapter scmAdapter,
+                                PersistenceManagerAdapter pmAdapter, BubbleMigrator migrator) {
+        Objects.requireNonNull(migrator, "migrator cannot be null");
+        assemble(manager, scmAdapter, pmAdapter);
+        // After coordinator.start()/registration: the persistence adapter is RUNNING (recovered,
+        // schedulers up), so the migration WAL bracket can durably log against it.
+        migrator.setPersistenceManager(pmAdapter.getPersistenceManager());
+        log.info("Migration durability wired: BubbleMigrator → {}", pmAdapter.name());
     }
 
     /**
