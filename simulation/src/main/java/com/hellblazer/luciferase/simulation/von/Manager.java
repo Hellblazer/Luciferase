@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.lifecycle.EnhancedBubbleAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.LifecycleComponent;
 import com.hellblazer.luciferase.simulation.lifecycle.LifecycleCoordinator;
+import com.hellblazer.luciferase.simulation.lifecycle.LifecycleException;
 import javax.vecmath.Point3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -229,22 +230,7 @@ public class Manager {
 
         bubbles.put(id, bubble);
 
-        // Register with lifecycle coordinator for graceful shutdown
-        // Non-fatal if registration fails - bubble still works without coordinator
-        if (bubble instanceof EnhancedBubble enhanced) {
-            try {
-                var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController(),
-                                                        bubbleDependencies);
-                coordinator.registerAndStart(adapter);
-                log.debug("Created and registered bubble: {}", id);
-            } catch (Exception e) {
-                log.warn("Failed to register bubble {} with lifecycle coordinator: {}", id, e.getMessage());
-                // Continue - bubble still functional without coordinator
-            }
-        } else {
-            log.debug("Created bubble: {}", id);
-        }
-
+        registerBubbleAdapter(id, bubble);
         return bubble;
     }
 
@@ -267,25 +253,46 @@ public class Manager {
         // Forward events to manager listeners
         bubble.addEventListener(this::dispatchEvent);
 
-        bubbles.put(id, bubble);
+        registerBubbleAdapter(id, bubble);
+        return bubble;
+    }
 
-        // Register with lifecycle coordinator for graceful shutdown
-        // Non-fatal if registration fails - bubble still works without coordinator
+    /**
+     * Register a newly created bubble with the lifecycle coordinator.
+     * <p>
+     * RDR-017 P0 (Luciferase-vhhu0): registration failure handling depends on whether bubbles carry
+     * lifecycle dependencies. In the legacy/standalone path ({@code bubbleDependencies} empty) a
+     * registration failure is non-fatal — the bubble still works without coordinator management,
+     * preserving pre-RDR-017 behavior. In the composed-node path ({@code bubbleDependencies} non-empty,
+     * set by {@link com.hellblazer.luciferase.simulation.von.NodeBootstrap#assemble}) a failure means the
+     * declared dependency (e.g. {@code PersistenceManager}) is not registered — an ordering/wiring bug
+     * that must fail loud rather than silently produce a bubble outside the lifecycle graph (it would
+     * start before persistence and skip graceful shutdown/recovery). The half-registered bubble is
+     * removed from the manager before rethrowing.
+     */
+    private void registerBubbleAdapter(UUID id, Bubble bubble) {
         if (bubble instanceof EnhancedBubble enhanced) {
             try {
                 var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController(),
                                                         bubbleDependencies);
                 coordinator.registerAndStart(adapter);
-                log.debug("Created and registered bubble with ID: {}", id);
+                log.debug("Created and registered bubble: {}", id);
             } catch (Exception e) {
+                if (!bubbleDependencies.isEmpty()) {
+                    // Composed-node path: a dependency is unregistered — fail loud, do not leak an
+                    // unmanaged bubble into the lifecycle graph.
+                    bubbles.remove(id, bubble);
+                    throw new LifecycleException(
+                        "Failed to register bubble " + id + " with declared dependencies "
+                        + bubbleDependencies + " (is the persistence adapter registered via "
+                        + "NodeBootstrap.assemble() before createBubble()?)", e);
+                }
                 log.warn("Failed to register bubble {} with lifecycle coordinator: {}", id, e.getMessage());
-                // Continue - bubble still functional without coordinator
+                // Continue - bubble still functional without coordinator (legacy standalone path)
             }
         } else {
-            log.debug("Created bubble with ID: {}", id);
+            log.debug("Created bubble: {}", id);
         }
-
-        return bubble;
     }
 
     /**

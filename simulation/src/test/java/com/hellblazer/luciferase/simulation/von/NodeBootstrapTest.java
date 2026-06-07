@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -73,6 +74,25 @@ class NodeBootstrapTest {
         } finally {
             // manager.close() stops the coordinator, which stops the SCM/PM adapters and closes
             // their wrapped components — closing pm/scm again here would double-close the WAL.
+            manager.close();
+        }
+    }
+
+    @Test
+    void createBubbleFailsLoudWhenDeclaredDependencyMissing() {
+        // Composed-node hardening (RDR-017 P0 review): if bubbleDependencies is configured but the
+        // named dependency was never registered (assemble() skipped / misordered), createBubble must
+        // fail loud rather than silently emit a bubble outside the lifecycle graph.
+        var registry = LocalServerTransport.Registry.create();
+        var manager = new Manager(registry, SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL, 16L,
+                                  SpatialLevelHeuristic.DEFAULT_AOI_RADIUS);
+        try {
+            manager.setBubbleDependencies(java.util.List.of("PersistenceManager")); // PM NOT registered
+            assertThrows(com.hellblazer.luciferase.simulation.lifecycle.LifecycleException.class,
+                         manager::createBubble,
+                         "createBubble must fail loud when a declared dependency is unregistered");
+            assertEquals(0, manager.size(), "the half-registered bubble must not leak into the manager");
+        } finally {
             manager.close();
         }
     }
