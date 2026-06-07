@@ -67,7 +67,22 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     // but does not limit the NUMBER of open StreamGhostUpdates streams — many cheap streams would otherwise pin
     // unbounded virtual-thread tasks + activeStreams entries (connection-level DoS).
     private static final int MAX_ACTIVE_STREAMS = 1024;
-    
+
+    // Luciferase-onzvy: SyncGhosts is unary — a small SyncRequest listing many tree_ids makes the server build a
+    // correspondingly large SyncResponse before sending. The inbound message bound caps the REQUEST, not the
+    // OUTBOUND response, so an unbounded tree_id list is a response-amplification DoS vector. Cap the count and
+    // reject an oversized request with INVALID_ARGUMENT before doing any work.
+    private static final int MAX_SYNC_TREE_IDS = 4096;
+
+    // Luciferase-onzvy: capping the tree_id COUNT bounds fan-out but NOT per-tree size — a single tree_id whose
+    // ghost layer holds millions of elements still makes the server allocate a multi-GB response before the
+    // client's inbound bound ever drops it (server-side heap/CPU amplification). Bound the OUTBOUND response by
+    // total element count, checked against GhostLayer.getNumGhostElements() (O(1)) BEFORE building each batch, so
+    // the server never allocates an over-cap response. Applies to both unary all-ghosts paths (syncGhosts and the
+    // no-boundary-keys requestGhosts path). Rejected with RESOURCE_EXHAUSTED (transient/size, not a static
+    // argument violation). 1M elements ≈ a generous ghost working set; tune if a real workload needs more.
+    private static final long MAX_RESPONSE_GHOST_ELEMENTS = 1_000_000L;
+
     // Virtual thread executor for concurrent operations
     private final ExecutorService virtualExecutor;
     
@@ -146,6 +161,23 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                     return;
                 }
                 
+                // Luciferase-onzvy: the no-boundary-keys path of createGhostBatch dumps the ENTIRE ghost layer into one
+                // GhostBatch — the same server-side amplification as syncGhosts. Bound it before building (O(1) count
+                // check). The boundary-keys path is client-bounded (the client enumerates exactly which keys it wants,
+                // capped by the inbound request size), so only the all-ghosts path needs this guard.
+                if (request.getBoundaryKeysCount() == 0
+                    && ghostLayer.getNumGhostElements() > MAX_RESPONSE_GHOST_ELEMENTS) {
+                    log.warn("Rejecting ghost request from rank {} for tree {}: {} ghost elements exceeds cap {}",
+                             request.getRequesterRank(), request.getRequesterTreeId(),
+                             ghostLayer.getNumGhostElements(), MAX_RESPONSE_GHOST_ELEMENTS);
+                    responseObserver.onError(Status.RESOURCE_EXHAUSTED
+                                                 .withDescription("ghost batch would exceed element cap: "
+                                                                  + ghostLayer.getNumGhostElements() + " > "
+                                                                  + MAX_RESPONSE_GHOST_ELEMENTS)
+                                                 .asRuntimeException());
+                    return;
+                }
+
                 // Create response batch with relevant ghosts
                 var batch = createGhostBatch(request, ghostLayer);
                 responseObserver.onNext(batch);
@@ -233,7 +265,20 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
     @Override
     public void syncGhosts(SyncRequest request, StreamObserver<SyncResponse> responseObserver) {
         syncRequestCount.incrementAndGet();
-        
+
+        // Luciferase-onzvy: reject an oversized tree_id list synchronously, BEFORE spawning a task or building any
+        // response — bounding outbound response amplification (the inbound limit only caps the request).
+        int treeIdCount = request.getTreeIdsCount();
+        if (treeIdCount > MAX_SYNC_TREE_IDS) {
+            log.warn("Rejecting sync request from rank {}: {} tree_ids exceeds cap {}",
+                     request.getRequesterRank(), treeIdCount, MAX_SYNC_TREE_IDS);
+            responseObserver.onError(Status.INVALID_ARGUMENT
+                                         .withDescription("too many tree_ids in sync request: " + treeIdCount
+                                                          + " > " + MAX_SYNC_TREE_IDS)
+                                         .asRuntimeException());
+            return;
+        }
+
         virtualExecutor.submit(() -> {
             try {
                 log.debug("Processing sync request from rank {} for {} trees", 
@@ -245,9 +290,24 @@ public class GhostExchangeServiceImpl<Key extends SpatialKey<Key>, ID extends En
                 long now = clock.currentTimeMillis();
 
                 // Process each requested tree
+                long projectedElements = 0;
                 for (var treeId : request.getTreeIdsList()) {
                     var ghostLayer = ghostLayerProvider.getGhostLayer(treeId);
                     if (ghostLayer != null) {
+                        // Luciferase-onzvy: bound the OUTBOUND response before allocating this batch. getNumGhostElements
+                        // is O(1); if servicing this tree would push the response past the cap, reject the whole request
+                        // with RESOURCE_EXHAUSTED so the server never builds an over-cap response.
+                        projectedElements += ghostLayer.getNumGhostElements();
+                        if (projectedElements > MAX_RESPONSE_GHOST_ELEMENTS) {
+                            log.warn("Rejecting sync request from rank {}: projected {} ghost elements exceeds cap {}",
+                                     request.getRequesterRank(), projectedElements, MAX_RESPONSE_GHOST_ELEMENTS);
+                            responseObserver.onError(Status.RESOURCE_EXHAUSTED
+                                                         .withDescription("sync response would exceed element cap: "
+                                                                          + projectedElements + " > "
+                                                                          + MAX_RESPONSE_GHOST_ELEMENTS)
+                                                         .asRuntimeException());
+                            return;
+                        }
                         var batch = ProtobufConverters.ghostLayerToProtobufBatch(
                             ghostLayer,
                             ghostLayerProvider.getCurrentRank(),
