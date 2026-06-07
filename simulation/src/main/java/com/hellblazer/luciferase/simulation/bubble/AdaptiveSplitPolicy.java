@@ -160,13 +160,17 @@ public class AdaptiveSplitPolicy {
         // the k-means computation and placing entities in spatially wrong
         // children. Population is now part of the split operation and preserves
         // the cluster-entity correspondence.
+        // Snapshot the source under its mutation lock so the split sees a consistent entity set rather
+        // than one racing a concurrent migration/merge writer (Luciferase-n7io1). Only the source is a
+        // shared bubble here — the child bubbles are freshly constructed below and not yet visible to any
+        // other writer, so they need no locking.
         var recordsById = new HashMap<String, EnhancedBubble.EntityRecord>();
-        for (var record : source.getAllEntityRecords()) {
-            recordsById.put(record.id(), record);
+        try (var ignored = MutationLocks.lock(source)) {
+            for (var record : source.getAllEntityRecords()) {
+                recordsById.put(record.id(), record);
+            }
         }
 
-        // LOCK MISSING (Luciferase-n7io1): acquire source+target getMutationLock() in UUID order;
-        // races concurrent migration/merge
         var childBubbles = new ArrayList<EnhancedBubble>();
         for (var cluster : analysis.clusters()) {
             var childId = UUID.randomUUID();

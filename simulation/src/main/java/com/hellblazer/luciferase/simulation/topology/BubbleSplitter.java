@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.MutationLocks;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
@@ -268,46 +269,52 @@ public class BubbleSplitter {
         // and return failure.  The caller (TopologyExecutor) is responsible for
         // any higher-level rollback via OperationTracker.
         var movedRecords = new ArrayList<EnhancedBubble.EntityRecord>(entitiesToMove.size());
-        for (var entityRecord : entitiesToMove) {
-            var entityId = UUID.fromString(entityRecord.id());
+        // Hold source + new-bubble mutation locks (UUID order, deadlock-free) for the whole move loop —
+        // including the rollback branch — so the cross-bubble add/remove is atomic w.r.t. concurrent
+        // migration/merge writers (Luciferase-n7io1). newBubble was registered in the grid above, so it
+        // is reachable by concurrent readers/writers by the time the move starts.
+        try (var ignored = MutationLocks.lock(sourceBubble, newBubble)) {
+            for (var entityRecord : entitiesToMove) {
+                var entityId = UUID.fromString(entityRecord.id());
 
-            // Add entity to new bubble first
-            newBubble.addEntity(entityRecord.id(), entityRecord.position(), entityRecord.content());
+                // Add entity to new bubble first
+                newBubble.addEntity(entityRecord.id(), entityRecord.position(), entityRecord.content());
 
-            // Move in accountant (atomic under its internal lock)
-            boolean moved = accountant.moveBetweenBubbles(entityId, sourceBubbleId, newBubbleId);
-            if (!moved) {
-                // FAIL FAST: undo all in-progress moves and abort the split.
-                log.error("[{}] Failed to move entity {} from {} to {} — aborting split, rolling back {} partial moves",
-                          correlationId, entityId, sourceBubbleId, newBubbleId, movedRecords.size());
-                // Undo: move already-moved entities back to source.
-                // Rollback is best-effort: if a rollback move itself fails, the entity is
-                // logged as an orphan but we continue reversing the rest.  Full 2PC
-                // (rollback-of-rollback) is out of scope; the log.error below makes
-                // any orphan diagnosable.
-                newBubble.removeEntity(entityRecord.id()); // undo bubble-side add for this entity
-                for (var done : movedRecords) {
-                    var doneId = UUID.fromString(done.id());
-                    boolean rolledBack = accountant.moveBetweenBubbles(doneId, newBubbleId, sourceBubbleId);
-                    if (!rolledBack) {
-                        log.error("[{}] Rollback move FAILED for entity {} (from newBubble {} back to source {}) — entity may be orphaned",
-                                  correlationId, doneId, newBubbleId, sourceBubbleId);
+                // Move in accountant (atomic under its internal lock)
+                boolean moved = accountant.moveBetweenBubbles(entityId, sourceBubbleId, newBubbleId);
+                if (!moved) {
+                    // FAIL FAST: undo all in-progress moves and abort the split.
+                    log.error("[{}] Failed to move entity {} from {} to {} — aborting split, rolling back {} partial moves",
+                              correlationId, entityId, sourceBubbleId, newBubbleId, movedRecords.size());
+                    // Undo: move already-moved entities back to source.
+                    // Rollback is best-effort: if a rollback move itself fails, the entity is
+                    // logged as an orphan but we continue reversing the rest.  Full 2PC
+                    // (rollback-of-rollback) is out of scope; the log.error below makes
+                    // any orphan diagnosable.
+                    newBubble.removeEntity(entityRecord.id()); // undo bubble-side add for this entity
+                    for (var done : movedRecords) {
+                        var doneId = UUID.fromString(done.id());
+                        boolean rolledBack = accountant.moveBetweenBubbles(doneId, newBubbleId, sourceBubbleId);
+                        if (!rolledBack) {
+                            log.error("[{}] Rollback move FAILED for entity {} (from newBubble {} back to source {}) — entity may be orphaned",
+                                      correlationId, doneId, newBubbleId, sourceBubbleId);
+                        }
+                        sourceBubble.addEntity(done.id(), done.position(), done.content());
+                        newBubble.removeEntity(done.id());
                     }
-                    sourceBubble.addEntity(done.id(), done.position(), done.content());
-                    newBubble.removeEntity(done.id());
+                    // Remove the pre-registered empty/reverted new bubble from the grid.
+                    bubbleGrid.removeBubble(newBubbleId);
+                    metrics.recordSplitFailure("MOVE_FAILED");
+                    return new SplitExecutionResult(false,
+                                                   "moveBetweenBubbles failed for entity " + entityId
+                                                   + "; split aborted and rolled back",
+                                                   null, entitiesBeforeSplit, entitiesBeforeSplit);
                 }
-                // Remove the pre-registered empty/reverted new bubble from the grid.
-                bubbleGrid.removeBubble(newBubbleId);
-                metrics.recordSplitFailure("MOVE_FAILED");
-                return new SplitExecutionResult(false,
-                                               "moveBetweenBubbles failed for entity " + entityId
-                                               + "; split aborted and rolled back",
-                                               null, entitiesBeforeSplit, entitiesBeforeSplit);
-            }
 
-            // Remove from source bubble only after accountant confirms the move
-            sourceBubble.removeEntity(entityRecord.id());
-            movedRecords.add(entityRecord);
+                // Remove from source bubble only after accountant confirms the move
+                sourceBubble.removeEntity(entityRecord.id());
+                movedRecords.add(entityRecord);
+            }
         }
 
         int entitiesMoved = movedRecords.size();

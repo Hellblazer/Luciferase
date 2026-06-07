@@ -171,19 +171,22 @@ public class BubbleLifecycle {
             return;
         }
 
-        // Get all entities from source
-        var entities = source.getAllEntityRecords();
+        // Hold both bubbles' mutation locks (UUID order, deadlock-free) for the whole move so the
+        // snapshot, the target adds, and the source removes are atomic w.r.t. concurrent
+        // migration/merge/split writers (Luciferase-n7io1). The snapshot is taken under the lock so it
+        // cannot be stale relative to a racing writer.
+        try (var ignored = MutationLocks.lock(source, target)) {
+            var entities = source.getAllEntityRecords();
 
-        // LOCK MISSING (Luciferase-n7io1): acquire source+target getMutationLock() in UUID order;
-        // races concurrent migration/merge
-        // Transfer each entity to target
-        for (var entity : entities) {
-            target.addEntity(entity.id(), entity.position(), entity.content());
-        }
+            // Transfer each entity to target
+            for (var entity : entities) {
+                target.addEntity(entity.id(), entity.position(), entity.content());
+            }
 
-        // Remove all entities from source
-        for (var entity : entities) {
-            source.removeEntity(entity.id());
+            // Remove all entities from source
+            for (var entity : entities) {
+                source.removeEntity(entity.id());
+            }
         }
     }
 }

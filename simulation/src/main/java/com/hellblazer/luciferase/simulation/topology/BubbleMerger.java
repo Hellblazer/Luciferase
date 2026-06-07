@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.topology;
 
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.MutationLocks;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
@@ -129,23 +130,12 @@ public class BubbleMerger {
             return new MergeExecutionResult(false, "Bubble2 not found: " + bubble2Id, 0, 0, 0);
         }
 
-        // Acquire BOTH bubble mutation locks in UUID.compareTo() order (consistent total order)
-        // before ANY snapshot or mutation.  This shares the same global lock order as
-        // TetrahedralMigration.executeMigration, making concurrent merge+migration deadlock-free.
-        int cmp = bubble1Id.compareTo(bubble2Id);
-        ReentrantLock firstLock  = cmp <= 0 ? bubble1.getMutationLock() : bubble2.getMutationLock();
-        ReentrantLock secondLock = cmp <= 0 ? bubble2.getMutationLock() : bubble1.getMutationLock();
-
-        firstLock.lock();
-        try {
-            secondLock.lock();
-            try {
-                return executeUnderLocks(correlationId, bubble1Id, bubble2Id, bubble1, bubble2);
-            } finally {
-                secondLock.unlock();
-            }
-        } finally {
-            firstLock.unlock();
+        // Hold BOTH bubble mutation locks via the shared MutationLocks protocol (ascending UUID order,
+        // deadlock-free) before ANY snapshot or mutation. This is the one coherent mutation-lock protocol
+        // shared by every multi-bubble writer (Luciferase-n7io1), so concurrent merge + migration + split
+        // on overlapping pairs cannot form a lock-ordering cycle.
+        try (var ignored = MutationLocks.lock(bubble1, bubble2)) {
+            return executeUnderLocks(correlationId, bubble1Id, bubble2Id, bubble1, bubble2);
         }
     }
 
