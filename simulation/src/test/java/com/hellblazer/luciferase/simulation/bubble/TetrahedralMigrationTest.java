@@ -17,11 +17,15 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
 import javax.vecmath.Point3f;
@@ -251,18 +255,22 @@ class TetrahedralMigrationTest {
         var grid = new TetreeBubbleGrid((byte) 1);
         grid.createBubbles(1, (byte) 1, 16);
 
-        // A key that is definitely not in the grid
-        var missingKey = new CompactTetreeKey((byte) 1, 99_999_999L);
+        // A VALID tet key that is definitely not in this level-1 grid (a level-2 cell is never registered by a
+        // level-1 partition). It must be a decodable tet because the hysteresis gate now derives the source tet
+        // geometry from the key (Luciferase-6kod9); the old fabricated CompactTetreeKey decoded to an invalid type.
+        var missingTet = Tet.createValidated(0, 0, 0, (byte) 2, (byte) 0);
+        var missingKey = missingTet.tmIndex();
 
         // A real key that IS in the grid (for the destination)
         var destKey = grid.getAllBubbles().iterator().next().bounds().rootKey();
 
         // Stub checker: returns one MigrationRecord whose sourceKey is not in grid.
-        // Position is far outside the Tetree domain (MAX_COORD≈2^21≈2M) so the RDGCS
-        // overshoot greatly exceeds HYSTERESIS_DIST=2.0f and the gate passes.
+        // Position is placed 1000 Cartesian units past a face of the source tet so the exact face-distance
+        // hysteresis gate passes (Luciferase-6kod9) and we reach executeMigration.
+        var missingSrcPos = pointPastFace(missingTet, 0, 1000.0);
         var checker = Mockito.mock(TetrahedralContainmentChecker.class);
         var record = new TetrahedralContainmentChecker.MigrationRecord(
-            "entity-missing-src", missingKey, destKey, new Point3f(5_000_000f, 5_000_000f, 5_000_000f), null);
+            "entity-missing-src", missingKey, destKey, missingSrcPos, null);
         when(checker.checkMigrations(any())).thenReturn(List.of(record));
 
         // Stub router: returns a decision that also uses the missing source key
@@ -368,52 +376,60 @@ class TetrahedralMigrationTest {
     }
 
     // -----------------------------------------------------------------------
-    // Bead Luciferase-7wzml.185 — hysteresis enforcement tests
+    // Bead Luciferase-7wzml.185 / Luciferase-6kod9 — hysteresis enforcement tests
     //
-    // The hysteresis gate (HYSTERESIS_DIST = 2.0f) must suppress migrationCandidate
-    // for entities within 2.0 Cartesian units of the boundary, and pass entities
-    // that are genuinely far outside.
-    //
-    // Coordinate arithmetic (RDGCoordinates):
-    //   rdg.x = round((-x + y + z) / sqrt(2))
-    //   rdg.y = round(( x - y + z) / sqrt(2))
-    //   rdg.z = round(( x + y - z) / sqrt(2))
-    // Overshoot conversion: overshoot_cartesian = overshoot_rdg_euclidean * sqrt(2)
-    //   overshoot_rdg=1 (one axis) → cartesian ≈ sqrt(2) ≈ 1.414  < 2.0 (blocked)
-    //   overshoot_rdg=2 (one axis) → cartesian ≈ sqrt(2)*2 ≈ 2.83  > 2.0 (allowed)
-    //   overshoot_rdg=5 (one axis) → cartesian ≈ sqrt(2)*5 ≈ 7.07  > 2.0 (allowed)
+    // The escape test now uses EXACT tetrahedral containment, so the hysteresis gate is the EXACT distance the
+    // entity has crossed past the nearest FACE of its source partition tet (Luciferase-6kod9), in raw-Cartesian
+    // units, gated on HYSTERESIS_DIST = 2.0f. (It is no longer the RDG-AABB overshoot, which collapsed to ~0 for
+    // an entity just over a true face once containment became exact.) These tests place an entity a controlled
+    // Cartesian distance past a real source tet's face and assert the gate suppresses (< 2.0) or allows (>= 2.0).
     // -----------------------------------------------------------------------
 
     /**
-     * Helper: build a hysteresis test migration using mocked checker/router/bubble.
-     * Returns a TetrahedralMigration wired with:
-     *  - a real grid with one real bubble providing its rootKey
-     *  - a mocked checker returning a single record at the given position
-     *  - a mocked router returning null (so no migration executes, only the gate is tested)
-     *  - the bubble's bounds() stubbed to return the given BubbleBounds
+     * Test-side, INDEPENDENT computation of a point exactly {@code dist} Cartesian units outward past face
+     * {@code faceIdx} of {@code tet} (from that face's centroid, along its outward unit normal). Mirrors — without
+     * calling — the production {@code overshootPastNearestFace} geometry, so it validates rather than echoes it.
      */
-    private long hysteresisGateMigrations(BubbleBounds stubBounds, Point3f entityPosition) {
+    private static Point3f pointPastFace(Tet tet, int faceIdx, double dist) {
+        var v = tet.coordinates();
+        var a = v[(faceIdx + 1) & 3];
+        var b = v[(faceIdx + 2) & 3];
+        var c = v[(faceIdx + 3) & 3];
+        var apex = v[faceIdx];
+        double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+        double acx = c.x - a.x, acy = c.y - a.y, acz = c.z - a.z;
+        double nx = aby * acz - abz * acy;
+        double ny = abz * acx - abx * acz;
+        double nz = abx * acy - aby * acx;
+        double len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        double towardApex = nx * (apex.x - a.x) + ny * (apex.y - a.y) + nz * (apex.z - a.z);
+        double s = towardApex > 0 ? -1.0 : 1.0;
+        double ux = s * nx / len, uy = s * ny / len, uz = s * nz / len; // outward unit normal
+        double cx = (a.x + b.x + c.x) / 3.0, cy = (a.y + b.y + c.y) / 3.0, cz = (a.z + b.z + c.z) / 3.0;
+        return new Point3f((float) (cx + ux * dist), (float) (cy + uy * dist), (float) (cz + uz * dist));
+    }
+
+    /**
+     * Run the hysteresis gate for an entity placed {@code dist} Cartesian units past face {@code faceIdx} of a
+     * real source partition tet. The mocked router returns null, so a gate PASS records exactly one failure
+     * (returns 1) and a gate SUPPRESS drops the record before routing (returns 0). Parameterized over all four
+     * faces because the production {@code overshootPastNearestFace} loops every face (Luciferase-6kod9 review).
+     */
+    private long hysteresisGateFailures(int faceIdx, double dist) {
         var grid = new TetreeBubbleGrid((byte) 1);
         grid.createBubbles(1, (byte) 1, 16);
-        var realBubble = grid.getAllBubbles().iterator().next();
-        var srcKey = realBubble.bounds().rootKey();
+        var bubble = grid.getAllBubbles().iterator().next();
+        TetreeKey<?> srcKey = bubble.bounds().rootKey();
+        var pos = pointPastFace(Tet.tetrahedron(srcKey), faceIdx, dist);
         var dstKey = new CompactTetreeKey((byte) 1, 88_888_888L);
 
-        // Mock a bubble that reports the stubbed bounds (controls hysteresis threshold)
-        var mockBubble = Mockito.mock(EnhancedBubble.class);
-        when(mockBubble.bounds()).thenReturn(stubBounds);
-
-        // Grid spy so getAllBubbles() returns the mock bubble
         var spyGrid = Mockito.spy(grid);
-        doReturn(List.of(mockBubble)).when(spyGrid).getAllBubbles();
+        doReturn(List.of(bubble)).when(spyGrid).getAllBubbles();
 
-        // Checker returns one migration record at the specified position
         var checker = Mockito.mock(TetrahedralContainmentChecker.class);
-        var record = new TetrahedralContainmentChecker.MigrationRecord(
-            "hysteresis-entity", srcKey, dstKey, entityPosition, null);
-        when(checker.checkMigrations(mockBubble)).thenReturn(List.of(record));
+        var record = new TetrahedralContainmentChecker.MigrationRecord("hysteresis-entity", srcKey, dstKey, pos, null);
+        when(checker.checkMigrations(bubble)).thenReturn(List.of(record));
 
-        // Router returns null → no actual migration executes; we test only the gate
         var router = Mockito.mock(TetrahedralMigrationRouter.class);
         when(router.routeMigration(any())).thenReturn(null);
 
@@ -423,304 +439,39 @@ class TetrahedralMigrationTest {
     }
 
     /**
-     * Luciferase-7wzml.185 — Case 1: entity within hysteresis band must NOT migrate.
-     * <p>
-     * Bounds rdgMax.x = 500. Entity RDGCS position: rdg.x = 501 (overshoot=1 on x only),
-     * rdg.y and rdg.z inside the box.  Euclidean RDGCS overshoot = 1.  Cartesian ≈ √2 ≈
-     * 1.414 which is less than HYSTERESIS_DIST=2.0 → migrationCandidate must return false
-     * (hysteresis gate fires) → the checker record is discarded, router never called,
-     * failure count stays 0, total migrations stays 0.
+     * Luciferase-6kod9 — entity just past a source-tet face (1.0 < HYSTERESIS_DIST=2.0) is SUPPRESSED, for
+     * EVERY face (production overshootPastNearestFace loops all four — review follow-up).
      */
-    @Test
-    void hysteresis_entityWithinBand_suppressesMigration() {
-        // RDGCS box: x∈[0,500], y∈[0,1000], z∈[0,1000]
-        var rdgMin = new Point3i(0, 0, 0);
-        var rdgMax = new Point3i(500, 1000, 1000);
-        // Use a real bubble's rootKey as the anchor; the key is irrelevant for this test.
-        var grid = new TetreeBubbleGrid((byte) 1);
-        grid.createBubbles(1, (byte) 1, 16);
-        var anchorKey = grid.getAllBubbles().iterator().next().bounds().rootKey();
-        var stubBounds = BubbleBounds.of(anchorKey, rdgMin, rdgMax);
-
-        // Position that converts to rdg.x = 501, rdg.y = 250, rdg.z = 250 (overshoot 1 on x)
-        // rdg.x = round((-x+y+z)/sqrt(2)) = 501  →  -x+y+z = 501*sqrt(2) ≈ 708.6
-        // rdg.y = round((x-y+z)/sqrt(2))  = 250  →   x-y+z = 250*sqrt(2) ≈ 353.6
-        // rdg.z = round((x+y-z)/sqrt(2))  = 250  →   x+y-z = 250*sqrt(2) ≈ 353.6
-        // Adding all three: x+y+z = (708.6+353.6+353.6)/2 = 707.9;  x=(707.9-708.6)/2 = -0.35 ≈ 0
-        // Simpler: use a well-inside y/z and bump x just past max.
-        // For z=500*sqrt(2)≈707, y=0, x=0: rdg.x=round(707/sqrt(2))=500, rdg.y=500, rdg.z=-500.
-        // Instead, use BubbleBounds.toRDG() to verify the position in the test rather than pre-computing.
-        // Pick a position we know produces a small overshoot: shift slightly past rdgMax.x border.
-        // A Cartesian position of (0, 0, 501*sqrt(2)) in (x,y,z):
-        //   rdg.x = round((0+0+501*sqrt(2))/sqrt(2)) = round(501) = 501  → overshoot 1 on x
-        //   rdg.y = round((0-0+501*sqrt(2))/sqrt(2)) = 501                → within [0,1000]
-        //   rdg.z = round((0+0-501*sqrt(2))/sqrt(2)) = -501               → within [0,1000]? NO.
-        // z=-501 is below rdgMin.z=0 → overshoot on z too.
-        // Use asymmetric bounds: z∈[-1000,0]:
-        var rdgMinB = new Point3i(0, 0, -1000);
-        var rdgMaxB = new Point3i(500, 1000, 0);
-        var stubBoundsB = BubbleBounds.of(anchorKey, rdgMinB, rdgMaxB);
-
-        // Position (0, 0, 501*sqrt(2)) → rdg=(501, 501, -501).
-        //   overshoot x = 501-500 = 1, overshoot y = 0 (501 <= 1000), overshoot z = 0 (-501 >= -1000).
-        //   Euclidean RDGCS overshoot = 1 → Cartesian ≈ sqrt(2) ≈ 1.414 < 2.0 → SUPPRESSED.
-        float pz = 501.0f * (float) Math.sqrt(2.0);
-        var nearBoundaryPos = new Point3f(0.0f, 0.0f, pz);
-
-        // Verify our coordinate arithmetic using BubbleBounds.toRDG
-        var actualRdg = stubBoundsB.toRDG(nearBoundaryPos);
-        // overshoot on x only: rdg.x should be 501, y 501 (inside 1000), z -501 (inside -1000..0)
-        assertEquals(501, actualRdg.x, "rdg.x must overshoot by exactly 1");
-        assertTrue(actualRdg.y <= rdgMaxB.y, "rdg.y must be inside bounds");
-        assertTrue(actualRdg.z >= rdgMinB.z, "rdg.z must be inside bounds");
-        int overshootX = actualRdg.x - rdgMaxB.x;
-        assertTrue(overshootX > 0, "Must be outside boundary");
-        double overshootCartesian = overshootX * Math.sqrt(2.0);
-        assertTrue(overshootCartesian < TetrahedralMigration.getHysteresisDistance(),
-                   "Overshoot " + overshootCartesian + " must be less than HYSTERESIS_DIST=2.0");
-
-        // Now run through the migration gate
-        var dstKey = new CompactTetreeKey((byte) 1, 88_888_888L);
-        var srcKey = grid.getAllBubbles().iterator().next().bounds().rootKey();
-        var mockBubble = Mockito.mock(EnhancedBubble.class);
-        when(mockBubble.bounds()).thenReturn(stubBoundsB);
-        var spyGrid = Mockito.spy(grid);
-        doReturn(List.of(mockBubble)).when(spyGrid).getAllBubbles();
-        var checker = Mockito.mock(TetrahedralContainmentChecker.class);
-        var record = new TetrahedralContainmentChecker.MigrationRecord(
-            "entity-near-boundary", srcKey, dstKey, nearBoundaryPos, null);
-        when(checker.checkMigrations(mockBubble)).thenReturn(List.of(record));
-        var router = Mockito.mock(TetrahedralMigrationRouter.class);
-        when(router.routeMigration(any())).thenReturn(null);
-
-        var mig = new TetrahedralMigration(spyGrid, checker, router);
-        mig.checkMigrations(0L);
-
-        // Hysteresis suppressed the candidate → router was never called → no failure recorded
-        verify(router, never()).routeMigration(any());
-        assertEquals(0, mig.getMetrics().getTotalMigrations(),
-                     "Entity within hysteresis band must NOT migrate");
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3})
+    void hysteresis_justPastFace_suppressesMigration(int faceIdx) {
+        assertEquals(0, hysteresisGateFailures(faceIdx, 1.0),
+                     "entity 1.0 Cartesian units past face " + faceIdx + " (< 2.0) must be suppressed");
     }
 
     /**
-     * Luciferase-7wzml.185 — Case 2: entity well past boundary must be allowed through.
-     * <p>
-     * Bounds rdgMax.x = 500. Entity RDGCS overshoot ≥ 5 on x → Cartesian ≈ 5*√2 ≈ 7.07
-     * which exceeds HYSTERESIS_DIST=2.0 → migrationCandidate returns true → router called.
+     * Luciferase-6kod9 — entity well past a source-tet face (10.0 >= HYSTERESIS_DIST=2.0) is ALLOWED through,
+     * for EVERY face; the mocked router then returns null, recording exactly one failure (the gate-pass signal).
      */
-    @Test
-    void hysteresis_entityWellPastBoundary_allowsMigration() {
-        var grid = new TetreeBubbleGrid((byte) 1);
-        grid.createBubbles(1, (byte) 1, 16);
-        var srcKey = grid.getAllBubbles().iterator().next().bounds().rootKey();
-        var dstKey = new CompactTetreeKey((byte) 1, 77_777_777L);
-        var anchorKey = srcKey;
-
-        // Asymmetric bounds same as above: x∈[0,500], y∈[0,1000], z∈[-1000,0]
-        var rdgMin = new Point3i(0, 0, -1000);
-        var rdgMax = new Point3i(500, 1000, 0);
-        var stubBounds = BubbleBounds.of(anchorKey, rdgMin, rdgMax);
-
-        // Position (0, 0, 510*sqrt(2)) → rdg.x = 510, overshoot x = 10
-        // Cartesian overshoot ≈ 10 * sqrt(2) ≈ 14.1 >> 2.0 → ALLOWED
-        float pz = 510.0f * (float) Math.sqrt(2.0);
-        var farPos = new Point3f(0.0f, 0.0f, pz);
-
-        var actualRdg = stubBounds.toRDG(farPos);
-        int overshootX = actualRdg.x - rdgMax.x;
-        assertTrue(overshootX >= 5, "Must be well past boundary (rdg overshoot >= 5), was " + overshootX);
-        double overshootCartesian = Math.sqrt((double) overshootX * overshootX) * Math.sqrt(2.0);
-        assertTrue(overshootCartesian >= TetrahedralMigration.getHysteresisDistance(),
-                   "Overshoot " + overshootCartesian + " must be >= HYSTERESIS_DIST=2.0");
-
-        var mockBubble = Mockito.mock(EnhancedBubble.class);
-        when(mockBubble.bounds()).thenReturn(stubBounds);
-        var spyGrid = Mockito.spy(grid);
-        doReturn(List.of(mockBubble)).when(spyGrid).getAllBubbles();
-        var checker = Mockito.mock(TetrahedralContainmentChecker.class);
-        var record = new TetrahedralContainmentChecker.MigrationRecord(
-            "entity-far-outside", srcKey, dstKey, farPos, null);
-        when(checker.checkMigrations(mockBubble)).thenReturn(List.of(record));
-        var router = Mockito.mock(TetrahedralMigrationRouter.class);
-        when(router.routeMigration(any())).thenReturn(null);  // null triggers failure count
-
-        var mig = new TetrahedralMigration(spyGrid, checker, router);
-        mig.checkMigrations(0L);
-
-        // Hysteresis passed → router was called (even though it returns null, recording a failure)
-        verify(router, times(1)).routeMigration(any());
-        assertEquals(1, mig.getMetrics().getFailureCount(),
-                     "Entity well past boundary must reach router (hysteresis gate passed)");
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3})
+    void hysteresis_wellPastFace_allowsMigration(int faceIdx) {
+        assertEquals(1, hysteresisGateFailures(faceIdx, 10.0),
+                     "entity 10.0 Cartesian units past face " + faceIdx + " (>= 2.0) must pass the gate");
     }
 
     /**
-     * Luciferase-7wzml.185 — Case 3: entity at EXACTLY HYSTERESIS_DIST from boundary.
-     * <p>
-     * RDGCS integers are discrete; HYSTERESIS_DIST=2.0 maps to rdg_overshoot=sqrt(2)≈1.414.
-     * The nearest integers: rdg=1 → Cartesian≈1.414 < 2.0 (blocked), rdg=2 → Cartesian≈2.83 > 2.0 (allowed).
-     * This test verifies the rdg=1 boundary case is suppressed (not allowed through).
+     * Luciferase-6kod9 — threshold straddle on each face: just inside the band is suppressed, just outside is
+     * allowed. Reads the production constant so the test tracks any future change to it.
      */
-    @Test
-    void hysteresis_atExactHysteresisThreshold_suppresses() {
-        var grid = new TetreeBubbleGrid((byte) 1);
-        grid.createBubbles(1, (byte) 1, 16);
-        var srcKey = grid.getAllBubbles().iterator().next().bounds().rootKey();
-        var dstKey = new CompactTetreeKey((byte) 1, 66_666_666L);
-
-        // Bounds and position for exactly rdg overshoot = 1 on x-axis only
-        var rdgMin = new Point3i(0, 0, -1000);
-        var rdgMax = new Point3i(500, 1000, 0);
-        var stubBounds = BubbleBounds.of(srcKey, rdgMin, rdgMax);
-        float pz = 501.0f * (float) Math.sqrt(2.0);
-        var atThresholdPos = new Point3f(0.0f, 0.0f, pz);
-
-        // Verify arithmetic
-        var rdg = stubBounds.toRDG(atThresholdPos);
-        int overshootX = Math.max(0, rdg.x - rdgMax.x);
-        double overshootCartesian = overshootX * Math.sqrt(2.0);
-        // With overshoot=1: cartesian ≈ 1.414 which is < HYSTERESIS_DIST=2.0 → must be suppressed
-        assertTrue(overshootCartesian < TetrahedralMigration.getHysteresisDistance(),
-                   "rdg overshoot=1 → Cartesian " + overshootCartesian + " must be < 2.0");
-
-        var mockBubble = Mockito.mock(EnhancedBubble.class);
-        when(mockBubble.bounds()).thenReturn(stubBounds);
-        var spyGrid = Mockito.spy(grid);
-        doReturn(List.of(mockBubble)).when(spyGrid).getAllBubbles();
-        var checker = Mockito.mock(TetrahedralContainmentChecker.class);
-        var record = new TetrahedralContainmentChecker.MigrationRecord(
-            "entity-at-threshold", srcKey, dstKey, atThresholdPos, null);
-        when(checker.checkMigrations(mockBubble)).thenReturn(List.of(record));
-        var router = Mockito.mock(TetrahedralMigrationRouter.class);
-        when(router.routeMigration(any())).thenReturn(null);
-
-        var mig = new TetrahedralMigration(spyGrid, checker, router);
-        mig.checkMigrations(0L);
-
-        verify(router, never()).routeMigration(any());
-        assertEquals(0, mig.getMetrics().getTotalMigrations(),
-                     "Entity at rdg-overshoot=1 (Cartesian<2.0) must be suppressed by hysteresis");
-    }
-
-    // -----------------------------------------------------------------------
-    // Bead Luciferase-7wzml.185 — real-bounds integration test
-    //
-    // Verifies hysteresis against PRODUCTION BubbleBounds derived from a real
-    // TetreeBubbleGrid bubble via BubbleBounds.fromTetreeKey (4-corner RDGCS),
-    // not a synthetic axis-aligned box. The real tetrahedral bounds may be
-    // skewed in RDGCS space, so this catches any gap between the synthetic and
-    // production paths.
-    // -----------------------------------------------------------------------
-
-    /**
-     * Luciferase-7wzml.185 — Real-bounds integration: hysteresis uses PRODUCTION
-     * BubbleBounds.fromTetreeKey (4-corner RDGCS).
-     * <p>
-     * Creates a real TetreeBubbleGrid bubble, retrieves its structural bounds via
-     * {@link BubbleBounds#fromTetreeKey}, and proves:
-     * <ol>
-     *   <li>An entity just barely outside (RDGCS overshoot=1 on one axis, Cartesian≈√2≈1.41
-     *       &lt; HYSTERESIS_DIST=2.0) is SUPPRESSED by the hysteresis gate.</li>
-     *   <li>An entity well past the boundary (RDGCS overshoot≥2, Cartesian≥2√2≈2.83
-     *       &gt; HYSTERESIS_DIST=2.0) is ALLOWED through.</li>
-     * </ol>
-     * The checker and router are mocked only to isolate the hysteresis gate; the bounds
-     * are the real 4-corner RDGCS bounds produced by the production path.
-     */
-    @Test
-    void hysteresis_realTetreeBubbleBounds_suppressedAndAllowed() {
-        // Build a real grid so we get a real TetreeKey and its fromTetreeKey bounds
-        var grid = new TetreeBubbleGrid((byte) 1);
-        grid.createBubbles(1, (byte) 1, 16);
-        var entry = grid.getBubblesWithKeys().entrySet().iterator().next();
-        var realKey = entry.getKey();
-
-        // Production bounds: 4-corner RDGCS from real tetrahedron geometry
-        var realBounds = BubbleBounds.fromTetreeKey(realKey);
-        assertNotNull(realBounds, "fromTetreeKey must produce non-null bounds");
-
-        var rdgMin = realBounds.rdgMin();
-        var rdgMax = realBounds.rdgMax();
-
-        // Use toCartesian(targetRdg) to build positions: toRDG(toCartesian(p)) == p exactly,
-        // so there is no rounding ambiguity. y and z targets are the midpoints of the bounds
-        // to ensure they stay well inside on those axes.
-        int midY = (rdgMin.y + rdgMax.y) / 2;
-        int midZ = (rdgMin.z + rdgMax.z) / 2;
-
-        // --- CASE 1: barely outside (RDGCS overshoot=1 on x) → SUPPRESSED ---
-        // Target RDGCS: x = rdgMax.x+1 (overshoot 1), y = midY (inside), z = midZ (inside)
-        // Cartesian overshoot ≈ 1*√2 ≈ 1.41 < HYSTERESIS_DIST=2.0 → gate must block.
-        var nearTargetRdg = new Point3i(rdgMax.x + 1, midY, midZ);
-        var nearCartesianD = realBounds.toCartesian(nearTargetRdg);
-        var nearPos = new Point3f((float) nearCartesianD.x, (float) nearCartesianD.y, (float) nearCartesianD.z);
-
-        // Verify round-trip: toRDG(toCartesian(nearTargetRdg)) == nearTargetRdg
-        var nearRdg = realBounds.toRDG(nearPos);
-        assertEquals(nearTargetRdg.x, nearRdg.x, "RDGCS round-trip x must be exact for near position");
-        int nearOvershootX = Math.max(0, nearRdg.x - rdgMax.x);
-        double nearCartesian = nearOvershootX * Math.sqrt(2.0);
-        assertTrue(nearCartesian < TetrahedralMigration.getHysteresisDistance(),
-            "Near-boundary real-bounds overshoot " + nearCartesian + " must be < HYSTERESIS_DIST=2.0");
-
-        // --- CASE 2: well outside (RDGCS overshoot=5 on x) → ALLOWED ---
-        // Target RDGCS: x = rdgMax.x+5 (overshoot 5), y = midY, z = midZ
-        // Cartesian overshoot ≈ 5*√2 ≈ 7.07 >= HYSTERESIS_DIST=2.0 → gate must pass.
-        var farTargetRdg = new Point3i(rdgMax.x + 5, midY, midZ);
-        var farCartesianD = realBounds.toCartesian(farTargetRdg);
-        var farPos = new Point3f((float) farCartesianD.x, (float) farCartesianD.y, (float) farCartesianD.z);
-
-        var farRdg = realBounds.toRDG(farPos);
-        assertEquals(farTargetRdg.x, farRdg.x, "RDGCS round-trip x must be exact for far position");
-        int farOvershootX = Math.max(0, farRdg.x - rdgMax.x);
-        double farCartesian = farOvershootX * Math.sqrt(2.0);
-        assertTrue(farCartesian >= TetrahedralMigration.getHysteresisDistance(),
-            "Far-boundary real-bounds overshoot " + farCartesian + " must be >= HYSTERESIS_DIST=2.0");
-
-        // --- Run migration gate for CASE 1 (suppressed) ---
-        {
-            var srcKey = realKey;
-            var dstKey = new CompactTetreeKey((byte) 1, 88_888_888L);
-            var mockBubble = Mockito.mock(EnhancedBubble.class);
-            when(mockBubble.bounds()).thenReturn(realBounds);
-            var spyGrid = Mockito.spy(grid);
-            doReturn(List.of(mockBubble)).when(spyGrid).getAllBubbles();
-            var checker = Mockito.mock(TetrahedralContainmentChecker.class);
-            var record = new TetrahedralContainmentChecker.MigrationRecord(
-                "real-bounds-near", srcKey, dstKey, nearPos, null);
-            when(checker.checkMigrations(mockBubble)).thenReturn(List.of(record));
-            var router = Mockito.mock(TetrahedralMigrationRouter.class);
-            when(router.routeMigration(any())).thenReturn(null);
-
-            var mig = new TetrahedralMigration(spyGrid, checker, router);
-            mig.checkMigrations(0L);
-
-            verify(router, never()).routeMigration(any());
-            assertEquals(0, mig.getMetrics().getTotalMigrations(),
-                "Near-boundary entity with real fromTetreeKey bounds must be SUPPRESSED by hysteresis");
-        }
-
-        // --- Run migration gate for CASE 2 (allowed) ---
-        {
-            var srcKey = realKey;
-            var dstKey = new CompactTetreeKey((byte) 1, 77_777_777L);
-            var mockBubble = Mockito.mock(EnhancedBubble.class);
-            when(mockBubble.bounds()).thenReturn(realBounds);
-            var spyGrid = Mockito.spy(grid);
-            doReturn(List.of(mockBubble)).when(spyGrid).getAllBubbles();
-            var checker = Mockito.mock(TetrahedralContainmentChecker.class);
-            var record = new TetrahedralContainmentChecker.MigrationRecord(
-                "real-bounds-far", srcKey, dstKey, farPos, null);
-            when(checker.checkMigrations(mockBubble)).thenReturn(List.of(record));
-            var router = Mockito.mock(TetrahedralMigrationRouter.class);
-            when(router.routeMigration(any())).thenReturn(null);
-
-            var mig = new TetrahedralMigration(spyGrid, checker, router);
-            mig.checkMigrations(0L);
-
-            verify(router, times(1)).routeMigration(any());
-            assertEquals(1, mig.getMetrics().getFailureCount(),
-                "Far-boundary entity with real fromTetreeKey bounds must be ALLOWED through hysteresis");
-        }
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3})
+    void hysteresis_threshold_suppressesBelow_allowsAbove(int faceIdx) {
+        double h = TetrahedralMigration.getHysteresisDistance();
+        assertEquals(0, hysteresisGateFailures(faceIdx, h - 0.5),
+                     "face " + faceIdx + ": just inside the hysteresis band must be suppressed");
+        assertEquals(1, hysteresisGateFailures(faceIdx, h + 0.5),
+                     "face " + faceIdx + ": just outside the hysteresis band must be allowed");
     }
 
     // -----------------------------------------------------------------------

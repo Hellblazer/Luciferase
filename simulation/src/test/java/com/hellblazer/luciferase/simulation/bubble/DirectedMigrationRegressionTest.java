@@ -40,13 +40,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * recorded. This is the load-bearing, anti-catch-all guarantee the RDR exists to restore; asserting merely
  * {@code getTotalMigrations() > 0} would be satisfied by a catch-all router routing to the wrong bubble.
  * <p>
- * <b>Limitation (tracked follow-up):</b> {@code B} is the cell that geometrically contains the escaped
- * position, not necessarily the immediate face-adjacent neighbor of {@code S}. Escape is currently tested
- * against the cell's RDG-AABB (an outer approximation of the tetrahedron), so a point inside the immediate
- * face neighbor still lies within {@code S}'s AABB and does not register as escaped; only points ~1.5
- * cell-edges out escape, landing a cell or two away. Asserting strict face-adjacency requires switching the
- * escape test to exact tetrahedral containment ({@code locateTetrahedron(pos,L) != cellKey}), filed as a
- * follow-up (it also reworks the spatial-hysteresis gate). The anti-catch-all guarantee here is unaffected.
+ * <b>Escape is now EXACT (Luciferase-6kod9):</b> an entity escapes {@code S} iff its position is not inside
+ * {@code S}'s tetrahedron by the exact {@code contains12DOP} test (the partition cell's true Kuhn simplex),
+ * not the former RDG-AABB outer approximation. {@code B} is the cell that exactly geometrically contains the
+ * escaped position. We assert the entity migrates to {@code B} specifically — the strong, exact anti-catch-all
+ * guarantee. We deliberately do NOT additionally assert that {@code B} is an SFC face-neighbor of {@code S}
+ * (e.g. via {@code findAllFaceNeighbors}): tet face neighbors are the non-conforming Bey-SFC neighbors that
+ * share 0–3 vertices, so the SFC face-neighbor set need not equal the geometric containing-neighbor of a point
+ * just past a face. Per the project caveat, tet adjacency is validated by involution reciprocity, never by
+ * assuming geometric-neighbor == SFC-neighbor; the exact geometric-destination assertion below is the correct,
+ * non-fragile guarantee.
  * <p>
  * The migration path was dead through three independent causes, all resolved across RDR-015 P1–P3:
  * (1) entity coordinates decoupled from the bubble-grid domain; (2) a mixed-level non-partition grid
@@ -80,15 +83,15 @@ class DirectedMigrationRegressionTest {
         Point3f probe = null;
         outer:
         for (var key : grid.getBubblesWithKeys().keySet()) {
-            var cell = BubbleBounds.fromTetreeKey(key);
-            var sc = centroid(key.toTet());
+            var srcTet = key.toTet();
+            var sc = centroid(srcTet);
             for (var offset : displacements(edge)) {
                 var p = new Point3f(sc.x + offset[0], sc.y + offset[1], sc.z + offset[2]);
                 if (p.x < 0 || p.y < 0 || p.z < 0) {
                     continue; // Tetree coordinate domain is non-negative
                 }
-                if (cell.contains(p)) {
-                    continue; // not escaped from S's fixed cell
+                if (srcTet.contains12DOP(p.x, p.y, p.z)) {
+                    continue; // EXACT containment: not escaped from S's own cell (Luciferase-6kod9)
                 }
                 var destTet = spatial.locateTetrahedron(p, level);
                 if (destTet == null) {
