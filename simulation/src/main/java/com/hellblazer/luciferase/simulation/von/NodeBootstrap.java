@@ -156,6 +156,15 @@ public final class NodeBootstrap {
      * {@code setPersistenceManager} is called <b>after</b> the persistence adapter has been registered
      * and started (the coordinator started in the {@link Manager} constructor starts components on
      * registration), so the migrator never logs against an unrecovered/unstarted WAL.
+     * <p>
+     * <b>Shutdown ordering contract.</b> The migrator is wired to the persistence manager but is NOT
+     * registered as a lifecycle component, so {@code Manager.close()} does not stop it. The caller MUST
+     * call {@code migrator.shutdown()} (draining in-flight migrations) <b>before</b> {@code Manager.close()}
+     * closes the WAL — otherwise an in-flight migration can call {@code logMigrationCommit()} after the
+     * WAL is closed, failing the commit and leaving an {@code ENTITY_DEPARTURE}-without-{@code COMMIT}
+     * split-brain precondition (the exact hazard RDR-016 R2 guards). Lifecycle-integrating the migrator
+     * (a {@code BubbleMigratorAdapter} stopped ahead of the persistence layer) is tracked for the live
+     * {@link #main} wiring — until then {@code main} throws, so the race is unreachable in production.
      *
      * @param manager    the VON manager owning the lifecycle coordinator
      * @param scmAdapter the connection-manager adapter (Layer 0)

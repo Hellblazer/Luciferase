@@ -54,9 +54,10 @@ class NodeBootstrapDurabilityRoundTripTest {
     }
 
     @Test
-    void migrateThenReopenSameWalDir_recoversDepartedFsmState(@TempDir Path base) throws Exception {
+    void migrateThenReopenSameWalDir_recoversFsmState(@TempDir Path base) throws Exception {
         var memberId = DigestAlgorithm.DEFAULT.random();   // stable member identity across "restarts"
-        var entityId = UUID.randomUUID();
+        var committedEntity = UUID.randomUUID();   // full migration → DEPARTED on recovery
+        var inFlightEntity = UUID.randomUUID();    // departure only, no commit → MIGRATING_OUT on recovery
 
         // ───────── node #1: assemble, wire migration durability, migrate one entity ─────────
         var nodeId1 = NodeBootstrap.resolveNodeId(memberId);
@@ -64,26 +65,36 @@ class NodeBootstrapDurabilityRoundTripTest {
 
         var fsm1 = freshFsm();
         var pmAdapter1 = NodeBootstrap.persistenceAdapter(nodeId1, walDir1, fsm1);
+        // 1-arg SocketConnectionManagerAdapter has no bind address → doStart() does not listen on a
+        // socket. Intentional: this is a durability test, not a network test; the SCM only needs to
+        // occupy Layer 0 so the lifecycle graph matches production.
         var scm1 = new SocketConnectionManager(ProcessAddress.localhost("p2-node1", 0), msg -> {});
         var mgr1 = manager();
         var tumbler = new SpatialTumbler((byte) 5, 16L);
         var migrator = new BubbleMigrator(tumbler, Duration.ofSeconds(1), Duration.ofMillis(100), 5);
+        var target = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
         try {
             NodeBootstrap.assemble(mgr1, new SocketConnectionManagerAdapter(scm1), pmAdapter1, migrator);
 
-            // Drive a real, successful WAL-bracketed migration (no neighbors → MOVE ACK completes
+            // (a) Drive a real, successful WAL-bracketed migration (no neighbors → MOVE ACK completes
             // immediately). The entity id MUST be a UUID so the bracket's UUID.fromString succeeds.
             var source = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
-            source.addEntity(entityId.toString(), new Point3f(1f, 0f, 0f), "payload");
-            var target = new Bubble(UUID.randomUUID(), (byte) 5, 16L, mock(Transport.class));
+            source.addEntity(committedEntity.toString(), new Point3f(1f, 0f, 0f), "payload");
             migrator.setBubbleTransferFactory((tgtServer, src) -> target);
 
             var result = migrator.migrate(source, UUID.randomUUID(), UUID.randomUUID())
                                  .get(5, TimeUnit.SECONDS);
             assertTrue(result.success(),
                        "live WAL-bracketed migration must commit: " + result.message());
+
+            // (b) Simulate a crash mid-migration: ENTITY_DEPARTURE durable, MIGRATION_COMMIT never
+            // written (the half the RDR-016 R2 bracket protects). Recovery must reconstruct MIGRATING_OUT.
+            pmAdapter1.getPersistenceManager()
+                      .logEntityDeparture(inFlightEntity, UUID.randomUUID(), UUID.randomUUID());
         } finally {
-            mgr1.close();          // stops the PM adapter → flushes + closes the WAL durably
+            target.close();        // releases the target Bubble's retry-scheduler daemon thread
+            migrator.shutdown();    // releases the migration executor pool
+            mgr1.close();           // stops the PM adapter → flushes + closes the WAL durably
         }
 
         // ───────── WAL-identity pinning (gate C1): the reopened node derives the SAME dir ─────────
@@ -100,9 +111,12 @@ class NodeBootstrapDurabilityRoundTripTest {
         try {
             NodeBootstrap.assemble(mgr2, new SocketConnectionManagerAdapter(scm2), pmAdapter2);
 
-            // The committed migration (ENTITY_DEPARTURE + MIGRATION_COMMIT) must reconstruct as DEPARTED.
-            assertEquals(EntityMigrationState.DEPARTED, fsm2.getState(entityId.toString()),
+            // The committed migration (ENTITY_DEPARTURE + MIGRATION_COMMIT) must reconstruct as DEPARTED;
+            // the in-flight departure (ENTITY_DEPARTURE only) must reconstruct as MIGRATING_OUT (gate S2).
+            assertEquals(EntityMigrationState.DEPARTED, fsm2.getState(committedEntity.toString()),
                          "a committed migration must recover to DEPARTED on the reopened node");
+            assertEquals(EntityMigrationState.MIGRATING_OUT, fsm2.getState(inFlightEntity.toString()),
+                         "an uncommitted departure must recover to MIGRATING_OUT on the reopened node");
         } finally {
             mgr2.close();
         }
