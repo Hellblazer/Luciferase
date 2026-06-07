@@ -355,6 +355,33 @@ public class TopologyExecutor implements OperationTracker {
                         committed
                     );
                 }
+                case CollapseProposal collapse -> {
+                    // RDR-018 AC-3 prerequisite: coverage-preserving inverse-Bey sibling-collapse.
+                    // Unlike MergeProposal (hard-fenced in BubbleMerger.execute — F4 coverage hole),
+                    // a sibling collapse preserves coverage by construction (8 children whose union is
+                    // their parent → re-registered parent), so it is NOT fenced and runs the real
+                    // mechanism here.
+                    var result = merger.executeCollapse(collapse);
+                    success = result.success();
+                    message = result.message();
+                    if (success) {
+                        metrics.recordMergeSuccess();
+                    } else {
+                        metrics.recordMergeFailure();
+                        rollback(snapshot, "Collapse failed: " + message);
+                    }
+                    int entitiesMoved = result.entitiesMoved();
+                    var parentId = result.parentBubbleId();
+                    var childBubbleIds = result.childBubbleIds();
+                    eventFactory = committed -> new CollapseEvent(
+                        uuidSupplier.get(),
+                        clock.currentTimeMillis(),
+                        parentId,
+                        childBubbleIds,
+                        entitiesMoved,
+                        committed
+                    );
+                }
                 case MoveProposal move -> {
                     var result = mover.execute(move);
                     success = result.success();

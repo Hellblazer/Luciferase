@@ -29,6 +29,8 @@ import java.util.UUID;
  *   <li>{@link SplitProposal} - Split overcrowded bubble (>5000 entities)</li>
  *   <li>{@link MergeProposal} - Merge underpopulated bubbles (<500 entities)</li>
  *   <li>{@link MoveProposal} - Relocate bubble to follow entity cluster</li>
+ *   <li>{@link CollapseProposal} - Coverage-preserving inverse-Bey collapse of a complete
+ *       8-sibling leaf set into their parent (RDR-018 AC-3 prerequisite)</li>
  * </ul>
  * <p>
  * All proposals include:
@@ -48,7 +50,7 @@ import java.util.UUID;
  * @author hal.hildebrand
  */
 public sealed interface TopologyProposal
-    permits SplitProposal, MergeProposal, MoveProposal {
+    permits SplitProposal, MergeProposal, MoveProposal, CollapseProposal {
 
     /**
      * Gets the unique proposal identifier.

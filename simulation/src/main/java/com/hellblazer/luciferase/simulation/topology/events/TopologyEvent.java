@@ -37,7 +37,7 @@ import java.util.UUID;
  *
  * @author hal.hildebrand
  */
-public sealed interface TopologyEvent permits SplitEvent, MergeEvent, MoveEvent, DensityStateChangeEvent, ConsensusVoteEvent {
+public sealed interface TopologyEvent permits SplitEvent, MergeEvent, MoveEvent, CollapseEvent, DensityStateChangeEvent, ConsensusVoteEvent {
 
     /**
      * Get the event type name for JSON serialization.

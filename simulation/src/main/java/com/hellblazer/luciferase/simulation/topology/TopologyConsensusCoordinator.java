@@ -333,6 +333,12 @@ public class TopologyConsensusCoordinator {
             case SplitProposal split -> java.util.List.of(split.sourceBubble());
             case MergeProposal merge -> java.util.List.of(merge.bubble1(), merge.bubble2());
             case MoveProposal move -> java.util.List.of(move.sourceBubble());
+            // A collapse affects the full 8-sibling set, but the proposal only carries the anchor
+            // child by id; the other 7 are derived from the grid at execution time. Cooldown-tracking
+            // on the anchor is sufficient to serialise repeated collapse attempts of the same set
+            // (any sibling resolves to the same parent). Full sibling-set cooldown reservation is an
+            // explicit deferred boundary tracked on Luciferase-xtyki.
+            case CollapseProposal collapse -> java.util.List.of(collapse.anchorChild());
         };
     }
 

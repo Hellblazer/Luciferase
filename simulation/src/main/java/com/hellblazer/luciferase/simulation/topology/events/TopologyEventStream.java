@@ -137,9 +137,24 @@ public class TopologyEventStream implements TopologyEventListener {
             case SplitEvent e -> splitEventToJson(e);
             case MergeEvent e -> mergeEventToJson(e);
             case MoveEvent e -> moveEventToJson(e);
+            case CollapseEvent e -> collapseEventToJson(e);
             case DensityStateChangeEvent e -> densityStateChangeEventToJson(e);
             case ConsensusVoteEvent e -> consensusVoteEventToJson(e);
         };
+    }
+
+    private String collapseEventToJson(CollapseEvent event) {
+        var idsJson = event.childBubbleIds().stream()
+                           .map(id -> "\"" + id + "\"")
+                           .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        // A failed collapse carries a null parentBubbleId; emit JSON null, not the string "null".
+        var parentJson = event.parentBubbleId() == null ? "null" : "\"" + event.parentBubbleId() + "\"";
+        return String.format(Locale.ROOT,
+            """
+            {"eventType":"collapse","eventId":"%s","timestamp":%d,"parentBubbleId":%s,"childBubbleIds":%s,"entitiesMoved":%d,"success":%b}""",
+            event.eventId(), event.timestamp(), parentJson, idsJson,
+            event.entitiesMoved(), event.success()
+        );
     }
 
     private String splitEventToJson(SplitEvent event) {

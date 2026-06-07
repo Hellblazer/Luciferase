@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.lucien.tetree.Tet;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.MutationLocks;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
@@ -26,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
@@ -147,11 +150,11 @@ public class BubbleMerger {
         // partition coverage hole.
         //
         // Under RDR-018 Option B the only coverage-preserving merge is the inverse-Bey
-        // collapse of a COMPLETE set of sibling child leaves back into their parent leaf.
-        // That requires the refinement-forest leaf bookkeeping and the Bey-refinement
-        // splitter delivered by B-core (AC-2.5). No such complete sibling set exists in the
-        // current single-level (depth-0 base case) partition, so every arbitrary two-bubble
-        // merge is a coverage-hole-punching operation and is rejected here.
+        // collapse of a COMPLETE set of sibling child leaves back into their parent leaf — now
+        // implemented as executeCollapse(CollapseProposal) and driven via TopologyExecutor with a
+        // CollapseProposal. THIS arbitrary two-bubble path is NOT coverage-safe (the two bubbles are
+        // not a complete sibling set), so it remains a coverage-hole-punching operation and is
+        // rejected here. Use a CollapseProposal for the coverage-preserving merge.
         //
         // NOTE: unlike the RDR-012 split fence, a documentation-only note is INSUFFICIENT for
         // merge (RDR-018 gate S5): merge is reachable independently of the live tick path and
@@ -385,12 +388,13 @@ public class BubbleMerger {
 
         // Remove bubble2 from grid (all entities now in bubble1).
         //
-        // TODO(RDR-018 AC-2.5 / Luciferase-6a5o7): THIS LINE IS THE COVERAGE HOLE (F4). Removing
-        // bubble2 untiles its tetrahedral region. This mechanism is reachable ONLY via tests today
-        // because execute() hard-fences (RDR-018 AC-4). B-core MUST wrap this with the inverse-Bey
-        // re-tile step (collapse a COMPLETE sibling-leaf set into the parent leaf, re-registering
-        // the parent key so the region stays tiled) BEFORE lifting the execute() fence. Do not
-        // un-fence execute() while this remains a bare removeBubble.
+        // NOTE (RDR-018): THIS LINE IS THE COVERAGE HOLE (F4) for the ARBITRARY two-bubble mechanism.
+        // Removing bubble2 untiles its tetrahedral region, which is why execute(MergeProposal)
+        // hard-fences this path (AC-4) and it is reachable only via unit tests of the move machinery.
+        // The coverage-PRESERVING merge now lives separately as executeCollapse(CollapseProposal)
+        // (RDR-018 AC-3 prerequisite, Luciferase-q37mx): it collapses a COMPLETE sibling-leaf set into
+        // the re-registered parent leaf so the region stays tiled. Do NOT un-fence
+        // execute(MergeProposal) — arbitrary two-bubble merge stays a coverage-hole operation.
         boolean removed = bubbleGrid.removeBubble(bubble2Id);
         if (removed) {
             log.debug("Removed merged bubble {} from grid", bubble2Id);
@@ -403,6 +407,214 @@ public class BubbleMerger {
 
         return new MergeExecutionResult(true, "Merge successful",
                                        totalBefore, totalAfter, duplicates.size(), entitiesMoved);
+    }
+
+    /**
+     * Collapse a COMPLETE set of 8 sibling Bey child leaves back into their parent leaf — the
+     * coverage-preserving inverse-Bey merge under RDR-018 Option B (AC-3 prerequisite).
+     * <p>
+     * This is the coverage-safe counterpart to {@link #executeMerge(MergeProposal)}: where an
+     * arbitrary two-bubble merge untiles the removed bubble's region (F4 — hard-fenced at
+     * {@link #execute(MergeProposal)}), a sibling collapse removes a full set of 8 level-{@code (L+1)}
+     * children whose union is exactly their level-{@code L} parent tetrahedron, then re-registers
+     * that parent. Coverage is preserved by construction. The 8 children's entities are moved into
+     * the parent; the parent absorbs the entire region.
+     * <p>
+     * <b>Derivation.</b> The proposal carries one {@code anchorChild}; the parent and the full
+     * sibling set are derived from its registration key
+     * ({@code parent = Tet.tetrahedron(key).parent()}, {@code siblings = parent.geometricSubdivide()}).
+     * The collapse is rejected fail-loud (NO mutation) unless ALL 8 siblings are registered and the
+     * parent key is free.
+     * <p>
+     * <b>Re-tile atomicity (RDR-018 AC-2 carry-forward, surfaced by the pg344 router review).</b> The
+     * up-walk router {@link TetreeBubbleGrid#resolveLeafKey} prefers the DEEPEST existing leaf and
+     * reads {@code bubblesByKey} lock-free (the grid has no router-shared lock — see
+     * {@link TetreeBubbleGrid#getMaxLeafLevel} tolerated-race note). The grid re-tile therefore removes
+     * the 8 children FIRST and adds the parent LAST. The only transient a concurrent reader can observe
+     * is "children gone, parent not yet present" → {@code resolveLeafKey} returns {@code null} → the
+     * migration router treats the entity as staying (no relocation this tick), which is harmless. The
+     * inverse order (add parent first) would expose a window where the up-walk still finds an
+     * about-to-be-removed deeper child and routes an entity into it — the orphan-to-removed-bubble
+     * class (Luciferase-c1ka5) — and is deliberately NOT used. The {@code maxLeafLevel} watermark is
+     * monotonic-up and stays at {@code L+1} after collapse; the up-walk still resolves to the parent at
+     * {@code L} because {@link TetreeBubbleGrid#removeBubble} purges the child keys from
+     * {@code bubblesByKey}.
+     *
+     * @param proposal the collapse proposal carrying any one of the 8 sibling children
+     * @return execution result with success status and details
+     * @throws NullPointerException if proposal is null
+     */
+    CollapseExecutionResult executeCollapse(CollapseProposal proposal) {
+        java.util.Objects.requireNonNull(proposal, "proposal must not be null");
+
+        var correlationId = UUID.randomUUID().toString().substring(0, 8);
+        var anchorChildId = proposal.anchorChild();
+
+        // 1. Resolve the anchor child and its registration key.
+        var anchorChild = bubbleGrid.getBubbleById(anchorChildId);
+        if (anchorChild == null) {
+            return CollapseExecutionResult.failure("Anchor child bubble not found: " + anchorChildId);
+        }
+        var anchorKey = bubbleGrid.getKeyForBubble(anchorChildId);
+        if (anchorKey == null) {
+            return CollapseExecutionResult.failure("No grid key for anchor child: " + anchorChildId);
+        }
+
+        // 2. Derive the parent tetrahedron and the full 8-sibling key set.
+        var anchorTet = Tet.tetrahedron(anchorKey);
+        if (anchorTet.l() < 1) {
+            return CollapseExecutionResult.failure(
+                "Anchor child at level " + anchorTet.l() + " has no parent to collapse into");
+        }
+        var parentTet   = anchorTet.parent();
+        var parentKey   = parentTet.tmIndex();
+        byte parentLevel = parentTet.l();
+        if (bubbleGrid.containsBubble(parentKey)) {
+            return CollapseExecutionResult.failure(
+                "Parent key already registered (" + parentKey + ") — not a collapsible refinement state");
+        }
+
+        // 3. Verify the COMPLETE sibling set is present and collect the child bubbles. An incomplete
+        //    set cannot collapse without leaving the missing siblings' regions untiled (coverage hole).
+        var siblings     = parentTet.geometricSubdivide();   // 8 children in TM order
+        var childKeys    = new TetreeKey[8];
+        var childBubbles = new EnhancedBubble[8];
+        var childIds     = new UUID[8];
+        for (int i = 0; i < 8; i++) {
+            childKeys[i] = siblings[i].tmIndex();
+            if (!bubbleGrid.containsBubble(childKeys[i])) {
+                log.warn("[COLLAPSE-{}] Incomplete sibling set: child key {} not registered — rejecting collapse",
+                         correlationId, childKeys[i]);
+                metrics.recordMergeFailure();
+                return CollapseExecutionResult.failure(
+                    "Incomplete sibling set: child key " + childKeys[i]
+                    + " is not registered — cannot collapse without untiling its region");
+            }
+            childBubbles[i] = bubbleGrid.getBubble(childKeys[i]);
+            childIds[i]     = childBubbles[i].id();
+        }
+
+        // 4. Create the parent bubble (NOT yet registered in the grid — registered last, after moves).
+        var parentId     = UUID.randomUUID();
+        long targetFrameMs = anchorChild.getTargetFrameMs();
+        var parentBubble = new EnhancedBubble(parentId, parentLevel, targetFrameMs);
+
+        // 5. Acquire ascending-UUID locks across all 8 children + the parent (deadlock-free, n7io1).
+        var allBubbles = new EnhancedBubble[9];
+        System.arraycopy(childBubbles, 0, allBubbles, 0, 8);
+        allBubbles[8] = parentBubble;
+
+        // Track (record, sourceChildId) for fail-fast rollback of partial moves.
+        var movedRecords   = new ArrayList<EnhancedBubble.EntityRecord>();
+        var movedFromChild = new ArrayList<UUID>();
+        int entitiesBefore = 0;
+        int entitiesAfter  = 0;
+
+        try (var ignored = MutationLocks.lock(allBubbles)) {
+            for (int i = 0; i < 8; i++) {
+                entitiesBefore += accountant.entitiesInBubble(childIds[i]).size();
+            }
+
+            for (int i = 0; i < 8; i++) {
+                var childId = childIds[i];
+                var records = childBubbles[i].getAllEntityRecords();
+                for (var record : records) {
+                    var entityId = UUID.fromString(record.id());
+
+                    // Add to parent first, then move in accountant, then remove from child.
+                    parentBubble.addEntity(record.id(), record.position(), record.content());
+                    boolean moved = accountant.moveBetweenBubbles(entityId, childId, parentId);
+                    if (!moved) {
+                        log.error("[COLLAPSE-{}] moveBetweenBubbles failed for entity {} (child {} → parent {}) "
+                                  + "— aborting collapse, rolling back {} moves",
+                                  correlationId, entityId, childId, parentId, movedRecords.size());
+                        parentBubble.removeEntity(record.id()); // undo this entity's parent-side add
+                        rollbackCollapseMoves(correlationId, movedRecords, movedFromChild,
+                                              parentBubble, parentId, childBubbles, childIds);
+                        metrics.recordMergeFailure();
+                        return CollapseExecutionResult.failure(
+                            "moveBetweenBubbles failed for entity " + entityId + "; collapse aborted and rolled back");
+                    }
+                    childBubbles[i].removeEntity(record.id());
+                    movedRecords.add(record);
+                    movedFromChild.add(childId);
+                }
+            }
+
+            // 6. Validate entity conservation (authoritative) — STILL UNDER the mutation locks so the
+            //    rollback below cannot race a concurrent migration on one of the children/parent (H1).
+            var validation = accountant.validate();
+            if (!validation.success()) {
+                log.error("[COLLAPSE-{}] Entity validation failed after moves: {}", correlationId, validation.details());
+                // Moves completed but accountant is inconsistent: roll the moves back before any grid change.
+                rollbackCollapseMoves(correlationId, movedRecords, movedFromChild,
+                                      parentBubble, parentId, childBubbles, childIds);
+                metrics.recordMergeFailure();
+                return CollapseExecutionResult.failure(
+                    "Entity validation failed after collapse moves: " + validation.details().get(0));
+            }
+
+            // Measure the post-move parent count (still under lock — authoritative snapshot) rather
+            // than aliasing entitiesBefore, so the result reports a real count (S2).
+            entitiesAfter = accountant.entitiesInBubble(parentId).size();
+        }
+
+        int entitiesMoved = movedRecords.size();
+
+        // 7. SUCCESS grid re-tile. ORDER MATTERS (see javadoc): remove the 8 children FIRST, then
+        //    register the parent LAST, so the only observable transient resolves to null ("stay"),
+        //    never to an about-to-be-removed deeper child.
+        for (int i = 0; i < 8; i++) {
+            operationTracker.recordBubbleRemoved(childIds[i], childBubbles[i], childKeys[i]);
+            boolean removed = bubbleGrid.removeBubble(childIds[i]);
+            if (!removed) {
+                log.warn("[COLLAPSE-{}] Child bubble {} not found in grid during removal", correlationId, childIds[i]);
+            }
+        }
+        bubbleGrid.addBubble(parentBubble, parentKey);
+        operationTracker.recordBubbleAdded(parentId);
+
+        metrics.recordEntitiesMoved(entitiesMoved);
+        log.info("[COLLAPSE-{}] Collapse successful: 8 children → parent {} at level {} ({} entities absorbed)",
+                 correlationId, parentId, parentLevel, entitiesMoved);
+
+        var childIdList = new ArrayList<UUID>(8);
+        for (var id : childIds) {
+            childIdList.add(id);
+        }
+        return new CollapseExecutionResult(true, "Collapse successful", parentId, childIdList,
+                                           entitiesBefore, entitiesAfter, entitiesMoved);
+    }
+
+    /**
+     * Rolls back partial collapse moves: for each entity already moved into the parent, move it back
+     * to its source child (accountant + bubble membership). Best-effort — a failed reverse move is
+     * logged as a potential orphan but the unwind continues. No grid structural change has occurred at
+     * the point this is called, so only entity distribution must be restored.
+     */
+    private void rollbackCollapseMoves(String correlationId,
+                                       List<EnhancedBubble.EntityRecord> moved,
+                                       List<UUID> movedFromChild,
+                                       EnhancedBubble parentBubble, UUID parentId,
+                                       EnhancedBubble[] childBubbles, UUID[] childIds) {
+        for (int j = moved.size() - 1; j >= 0; j--) {
+            var record  = moved.get(j);
+            var srcChild = movedFromChild.get(j);
+            var entityId = UUID.fromString(record.id());
+            boolean ok = accountant.moveBetweenBubbles(entityId, parentId, srcChild);
+            if (!ok) {
+                log.error("[COLLAPSE-{}] Rollback: moveBetweenBubbles({}, parent {} → child {}) FAILED — entity may be orphaned",
+                          correlationId, entityId, parentId, srcChild);
+            }
+            // Restore child-side membership.
+            for (int i = 0; i < childIds.length; i++) {
+                if (childIds[i].equals(srcChild)) {
+                    childBubbles[i].addEntity(record.id(), record.position(), record.content());
+                    break;
+                }
+            }
+            parentBubble.removeEntity(record.id());
+        }
     }
 }
 
@@ -430,5 +642,31 @@ record MergeExecutionResult(
      */
     MergeExecutionResult(boolean success, String message, int entitiesBefore, int entitiesAfter, int duplicatesFound) {
         this(success, message, entitiesBefore, entitiesAfter, duplicatesFound, 0);
+    }
+}
+
+/**
+ * Result of a coverage-preserving sibling-collapse merge (RDR-018 AC-3 prerequisite).
+ *
+ * @param success         true if the collapse succeeded
+ * @param message         description of result or error
+ * @param parentBubbleId  the parent bubble re-registered by the collapse (null on failure)
+ * @param childBubbleIds  the 8 child bubbles that were collapsed (empty on failure)
+ * @param entitiesBefore  total entity count across the 8 children before the collapse
+ * @param entitiesAfter   measured entity count in the parent after the collapse moves (under lock);
+ *                        equals {@code entitiesBefore} for a conserving collapse
+ * @param entitiesMoved   number of entities moved from the children into the parent
+ */
+record CollapseExecutionResult(
+    boolean success,
+    String message,
+    UUID parentBubbleId,
+    List<UUID> childBubbleIds,
+    int entitiesBefore,
+    int entitiesAfter,
+    int entitiesMoved
+) {
+    static CollapseExecutionResult failure(String reason) {
+        return new CollapseExecutionResult(false, reason, null, List.of(), 0, 0, 0);
     }
 }
