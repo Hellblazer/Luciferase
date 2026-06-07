@@ -99,7 +99,8 @@ class DynamicTopologyDemo {
         );
 
         System.out.println("Executing split proposal...");
-        var splitResult0 = executor.execute(splitProposal0);
+        // TODO(RDR-018 AC-2.5): revert to executor.execute() once the split fence lifts.
+        var splitResult0 = executor.executeInternal(splitProposal0); // public execute(SplitProposal) fenced — RDR-018 AC-0; demo drives the mechanism
         System.out.println("Split result: " + (splitResult0.success() ? "SUCCESS" : "FAILED"));
         System.out.println("  " + splitResult0.message());
 
@@ -129,7 +130,8 @@ class DynamicTopologyDemo {
         );
 
         System.out.println("Executing split proposal...");
-        var splitResult1 = executor.execute(splitProposal1);
+        // TODO(RDR-018 AC-2.5): revert to executor.execute() once the split fence lifts.
+        var splitResult1 = executor.executeInternal(splitProposal1); // public execute(SplitProposal) fenced — RDR-018 AC-0; demo drives the mechanism
         System.out.println("Split result: " + (splitResult1.success() ? "SUCCESS" : "FAILED"));
         System.out.println("  " + splitResult1.message());
 

@@ -68,6 +68,16 @@ import java.util.function.Supplier;
  *   <li>Consensus voting parallelizes, execution serializes</li>
  * </ul>
  * <p>
+ * <b>Interim state (RDR-018 AC-0 + AC-4).</b> All three topology operations currently return a
+ * failure from the public {@link #execute(TopologyProposal)} boundary: split is hard-fenced here
+ * (AC-0, the current splitter is geometrically broken — F2), merge is hard-fenced inside
+ * {@link BubbleMerger#execute} (AC-4, the coverage hole — F4), and move is not yet implemented. So
+ * {@code execute()} commits no real topology change in production until B-core (AC-2.5) delivers the
+ * Bey-refinement splitter and the sibling-collapse merge. The executor's commit/event/rollback
+ * mechanism is preserved and exercised by scaffolding tests via the package-private
+ * {@link #executeInternal(TopologyProposal)} seam; AC-3's split+merge regression restores the
+ * happy-path coverage once the fences lift. This is a deliberate, tracked interim — not a regression.
+ * <p>
  * Phase 9C: Topology Reorganization & Execution
  *
  * @author hal.hildebrand
@@ -205,6 +215,60 @@ public class TopologyExecutor implements OperationTracker {
      * @throws NullPointerException if proposal is null
      */
     public TopologyExecutionResult execute(TopologyProposal proposal) {
+        java.util.Objects.requireNonNull(proposal, "proposal must not be null");
+
+        // RDR-018 AC-0 fence (gate S4) — documented failure, NOT an exception, NOT a silent no-op.
+        //
+        // The current BubbleSplitter is a plane-based logical split that is geometrically
+        // incompatible with the key-as-geometry migration partition and self-defeating under live
+        // migration (RDR-018 F2): it inserts an L+1 child the router cannot see, so split mis-routes
+        // or drops entities. Split is NOT on the live tick path (F1), so rather than drive a broken
+        // operation we fail-loud at the public boundary until B-core (AC-2.5) redesigns the splitter
+        // as true Bey refinement. Mirrors the RDR-012 D2 boundary-pinning pattern for the unconsumed
+        // split path. The executor's split-handling MECHANISM survives as executeInternal(), gated
+        // here and invoked directly by executor-scaffolding tests and (post-AC-2.5) production.
+        // TODO(RDR-018 AC-2.5 / Luciferase-6a5o7): lift this fence once BubbleSplitter is redesigned
+        // as true Bey refinement (every entity satisfies child.contains12DOP after the split). Until
+        // then execute(SplitProposal) routes here, NOT to executeInternal. Do not delete this branch
+        // while the splitter remains the plane-based F2 implementation.
+        if (proposal instanceof SplitProposal) {
+            // No lock: the fence mutates nothing, so there is nothing to serialise. getTotalEntityCount()
+            // reads thread-safe accountant aggregates; the reported total is informational on a rejected
+            // proposal (entities are conserved precisely because the operation is refused).
+            int total = getTotalEntityCount();
+            log.warn("Rejecting SplitProposal {} (RDR-018 AC-0 fence): the current splitter is "
+                     + "geometrically incompatible with the migration partition (F2); split is "
+                     + "deferred to B-core (AC-2.5)", proposal.proposalId());
+            return new TopologyExecutionResult(false,
+                                               "RDR-018 AC-0 fence: SplitProposal rejected — the current "
+                                               + "plane-based splitter mis-routes/drops entities under the "
+                                               + "key-as-geometry partition (F2); true Bey-refinement split "
+                                               + "deferred to B-core (AC-2.5)",
+                                               total, total);
+        }
+
+        return executeInternal(proposal);
+    }
+
+    /**
+     * The topology-change execution mechanism: snapshot, delegate to the split/merge/move executor,
+     * validate conservation, roll back on failure, and fire the deferred event.
+     * <p>
+     * <b>Package-private and intentionally NOT the public entry point for splits.</b>
+     * {@link #execute(TopologyProposal)} hard-fences {@link SplitProposal} (RDR-018 AC-0) because the
+     * current splitter is geometrically broken (F2); this method still drives it, and is invoked
+     * directly only by executor-scaffolding unit tests (event determinism, rollback, serialization,
+     * concurrency, metrics ownership) whose subject is the executor mechanism rather than split
+     * correctness. Once B-core (AC-2.5) supplies a correct Bey-refinement splitter, the AC-0 fence
+     * is lifted and {@code execute(SplitProposal)} routes here again. Merge/move are unchanged:
+     * merge reaches {@link BubbleMerger#execute} (itself AC-4-fenced) and move returns its
+     * not-yet-implemented failure.
+     *
+     * @param proposal the topology change proposal
+     * @return execution result with success status and details
+     * @throws NullPointerException if proposal is null
+     */
+    TopologyExecutionResult executeInternal(TopologyProposal proposal) {
         java.util.Objects.requireNonNull(proposal, "proposal must not be null");
 
         executionLock.lock();

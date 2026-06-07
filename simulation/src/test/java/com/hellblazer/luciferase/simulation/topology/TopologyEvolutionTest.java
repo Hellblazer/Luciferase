@@ -81,8 +81,8 @@ class TopologyEvolutionTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        // Execute split
-        var result = executor.execute(proposal);
+        // Execute split via the mechanism — public execute(SplitProposal) is AC-0-fenced
+        var result = executor.executeInternal(proposal);
 
         // Verify evolution
         assertTrue(result.success(), "Split should succeed: " + result.message());
@@ -234,7 +234,7 @@ class TopologyEvolutionTest {
         );
 
         int bubbleCountBefore = bubbleGrid.getAllBubbles().size();
-        var splitResult = executor.execute(splitProposal);
+        var splitResult = executor.executeInternal(splitProposal); // public execute(SplitProposal) fenced — AC-0
         assertTrue(splitResult.success(), "Split should succeed");
 
         // Verify bubble count increased after split
@@ -287,7 +287,7 @@ class TopologyEvolutionTest {
         );
 
         int bubbleCountBefore = bubbleGrid.getAllBubbles().size();
-        executor.execute(splitProposal);
+        executor.executeInternal(splitProposal); // public execute(SplitProposal) fenced — AC-0
 
         // Verify bubble count increased after split
         int bubbleCountAfterSplit = bubbleGrid.getAllBubbles().size();
