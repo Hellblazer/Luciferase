@@ -706,7 +706,9 @@ public class LifecycleCoordinator {
      * @return list of layers, each layer is a list of component names
      * @throws LifecycleException if circular dependency detected
      */
-    private List<List<String>> computeLayers() {
+    // Package-private (was private) so layering tests can assert the computed dependency
+    // grouping directly without driving a full start() (RDR-017 P0, Luciferase-vhhu0).
+    List<List<String>> computeLayers() {
         var layers = new ArrayList<List<String>>();
 
         // Build in-degree map (count of dependencies for each component)
