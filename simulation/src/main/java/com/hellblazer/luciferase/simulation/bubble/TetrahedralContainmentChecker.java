@@ -145,40 +145,13 @@ public class TetrahedralContainmentChecker {
      */
     public TetreeKey<?> locateDestinationBubble(Point3f position) {
         try {
-            // When the grid is a single-level spatial partition (RDR-015 AC4), the destination is the
-            // bubble at the partition level L directly containing the position — NOT the first level in a
-            // 0..N scan. The old level-0-first scan resolved escaped entities to the all-containing L0
-            // root (a catch-all) on the mixed-level grid, and could not reach a partition deeper than the
-            // scan's level cap at all (returning null). Query at L directly.
-            byte partitionLevel = bubbleGrid.getPartitionLevel();
-            if (partitionLevel > 0) {
-                var tet = tetree.locateTetrahedron(position, partitionLevel);
-                if (tet == null) {
-                    return null;
-                }
-                var key = tet.tmIndex();
-                return bubbleGrid.containsBubble(key) ? key : null;
-            }
-
-            // Legacy fallback (non-partition grid): scan a level range for the first existing bubble.
-            for (byte level = 0; level <= 10; level++) {
-                var tet = tetree.locateTetrahedron(position, level);
-                if (tet == null) {
-                    continue;  // Try next level
-                }
-
-                // Get TetreeKey from tetrahedron
-                var key = tet.tmIndex();
-
-                // Verify destination bubble exists in grid
-                if (bubbleGrid.containsBubble(key)) {
-                    return key;
-                }
-            }
-
-            // No bubble found at any level
-            return null;
-
+            // RDR-018 AC-2: resolve the destination via the deepest-leaf up-walk over the Option B
+            // mixed-level refinement forest. The grid locates the position at its finest plausible level
+            // (maxLeafLevel watermark), then walks the parent-key chain to the deepest existing leaf,
+            // terminating at the base partition level — never the L0 catch-all (RDR-015 R1). This
+            // supersedes the fixed-partition-level query: after a Bey split the destination may be an
+            // L+1 child leaf invisible to a query pinned at the base level L.
+            return bubbleGrid.resolveLeafKey(tetree, position);
         } catch (Exception e) {
             // Handle gracefully - return null on any error
             // (This prevents migration failures from crashing simulation)

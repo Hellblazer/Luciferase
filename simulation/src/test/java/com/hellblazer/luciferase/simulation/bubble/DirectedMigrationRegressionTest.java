@@ -70,7 +70,7 @@ class DirectedMigrationRegressionTest {
         var grid = new TetreeBubbleGrid((byte) 21);
         grid.createBubbles(BUBBLE_COUNT, WORLD, TARGET_FRAME);
 
-        byte level = grid.getPartitionLevel();
+        byte level = grid.getBaseLevel();
         assertTrue(level > 0, "grid must be a single-level partition");
         var spatial = grid.getSpatialIndex();
         int edge = Constants.lengthAtLevel(level);

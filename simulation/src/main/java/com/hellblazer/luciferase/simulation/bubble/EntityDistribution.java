@@ -97,7 +97,7 @@ public class EntityDistribution {
      * spatial partition (RDR-015), otherwise the legacy {@link #defaultLevel}.
      */
     private byte effectiveLevel() {
-        byte partitionLevel = bubbleGrid.getPartitionLevel();
+        byte partitionLevel = bubbleGrid.getBaseLevel();
         return partitionLevel > 0 ? partitionLevel : defaultLevel;
     }
 
