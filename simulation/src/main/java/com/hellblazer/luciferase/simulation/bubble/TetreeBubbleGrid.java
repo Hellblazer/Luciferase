@@ -65,6 +65,22 @@ public class TetreeBubbleGrid {
     private volatile byte partitionLevel = -1;
 
     /**
+     * RDR-018 AC-2: the deepest level at which any leaf bubble is currently registered — the
+     * "finest plausible level" watermark for deepest-leaf up-walk routing. Monotonic-up: raised by
+     * {@link #addBubble} when a deeper leaf appears (e.g. a Bey split inserting level {@code L+1}
+     * children), never lowered on removal (querying deeper than necessary is safe — the up-walk
+     * still terminates at the correct existing leaf). {@code -1} until the grid has any bubble;
+     * {@link #getMaxLeafLevel()} floors it at the base partition level.
+     * <p>
+     * {@link AtomicInteger} with a {@code getAndUpdate(max)} raise, NOT a plain volatile
+     * check-then-set: two concurrent {@code addBubble} calls inserting leaves at different levels
+     * (e.g. racing splits once AC-3 lifts the fences) must not clobber the deeper watermark with the
+     * shallower write, which would make the up-walk locate too shallow and silently mis-route to a
+     * coarser ancestor. Stored as an {@code int} (levels 0..21); read back as a byte.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger maxLeafLevel = new java.util.concurrent.atomic.AtomicInteger(-1);
+
+    /**
      * Create a new TetreeBubbleGrid.
      *
      * @param maxLevel Maximum refinement level for bubble distribution
@@ -117,6 +133,7 @@ public class TetreeBubbleGrid {
         // Clear existing bubbles. Legacy mixed-level distribution is NOT a single-level partition.
         bubblesByKey.clear();
         partitionLevel = -1;
+        maxLeafLevel.set(-1);
 
         // Determine number of levels to use
         int numLevels = Math.min(maxLevel + 1, count);
@@ -305,8 +322,88 @@ public class TetreeBubbleGrid {
      *
      * @return the partition level {@code L > 0}, or {@code -1} if not a single-level partition
      */
-    public byte getPartitionLevel() {
+    public byte getBaseLevel() {
         return partitionLevel;
+    }
+
+    /**
+     * The finest level at which any leaf bubble is currently registered (RDR-018 AC-2). Floored at the
+     * base partition level so it is always {@code >= getBaseLevel()} for a partition grid. The
+     * deepest-leaf up-walk router ({@link #resolveLeafKey}) locates a position at this level, then walks
+     * up to the deepest existing leaf.
+     *
+     * @return the deepest registered leaf level, or {@code -1} for an empty non-partition grid
+     */
+    public byte getMaxLeafLevel() {
+        // Two independent reads (atomic watermark + volatile base); their max() composition is benign
+        // under the tolerated race — resolveLeafKey runs under TopologyExecutor.executionLock in
+        // production, and locating one level too shallow/deep for an in-bounds point still up-walks to
+        // the correct leaf. Floor at the base partition level so a partition grid never locates above L.
+        int watermark = maxLeafLevel.get();
+        byte base = partitionLevel;
+        return (byte) Math.max(watermark, base);
+    }
+
+    /**
+     * Resolve the leaf bubble key that owns {@code position} in the Option B mixed-level refinement
+     * forest (RDR-018 AC-2).
+     * <p>
+     * Algorithm: locate {@code position} at the finest plausible level ({@link #getMaxLeafLevel()}),
+     * then walk the parent-key chain testing {@link #containsBubble}, returning the FIRST (deepest)
+     * existing leaf. The walk terminates at the base partition level — it never resolves to the L0 root
+     * catch-all and never above the base level (RDR-015 R1). A position with no owning leaf (out of the
+     * WorldBounds domain, or an uncovered region) returns {@code null}.
+     * <p>
+     * <b>Router invariants restated for Option B</b> (RDR-018 ## Decision): every point in the open
+     * interior of WorldBounds is owned by exactly one leaf bubble at level {@code >= getBaseLevel()}
+     * (full interior coverage, no interior overlap over the refinement forest); face-boundary ties are
+     * resolved by the {@code contains12DOP} closed-simplex strict ordering, consistent with
+     * {@link com.hellblazer.luciferase.lucien.tetree.Tet#tmIndex()} key derivation. A parent leaf and its
+     * Bey children are never simultaneously present (a split removes the parent — AC-2.5), so the up-walk
+     * finds exactly one owning leaf.
+     *
+     * @param tetree   the spatial index to locate against
+     * @param position the position to resolve
+     * @return the owning leaf's {@link TetreeKey}, or {@code null} if no leaf owns the position
+     */
+    public TetreeKey<?> resolveLeafKey(Tetree<?, ?> tetree, javax.vecmath.Point3f position) {
+        byte base = partitionLevel;
+
+        // Legacy non-partition grid (base == -1: built via createBubbles(int,byte,long), or empty):
+        // fall back to the coarse->fine scan for the first existing bubble. No base partition level to
+        // anchor an up-walk. NOTE: this is the same level-0-first pattern AC-2 replaces; it is R1-safe
+        // ONLY because such a grid is single-level (it never contains leaves deeper than its keys while
+        // the AC-0/AC-4 split/merge fences are up). choosePartitionLevel starts at level 1, so a
+        // partition grid never has base == 0 — only -1 reaches here.
+        if (base <= 0) {
+            for (byte level = 0; level <= 10; level++) {
+                var tet = tetree.locateTetrahedron(position, level);
+                if (tet != null && containsBubble(tet.tmIndex())) {
+                    return tet.tmIndex();
+                }
+            }
+            return null;
+        }
+
+        // Option B deepest-leaf up-walk: locate at the finest plausible level, walk up to the deepest
+        // existing leaf, terminate at the base level (never the L0 catch-all — R1).
+        var tet = tetree.locateTetrahedron(position, getMaxLeafLevel());
+        if (tet == null) {
+            // Defensive: with the current Tetree.locate() contract an in-domain (positive) position
+            // always yields a Tet (out-of-WorldBounds positions resolve to an unowned anchor tet and
+            // fall through to the containsBubble-miss path below). Kept in case that contract changes.
+            return null;
+        }
+        while (true) {
+            var key = tet.tmIndex();
+            if (containsBubble(key)) {
+                return key; // deepest existing leaf wins
+            }
+            if (tet.l() <= base) {
+                return null; // reached the base level with no owning leaf — uncovered/out-of-bounds
+            }
+            tet = tet.parent();
+        }
     }
 
     /**
@@ -656,6 +753,12 @@ public class TetreeBubbleGrid {
         // Record the fixed registration cell on the bubble so migration containment can test against it.
         bubble.setSpatialKey(key);
 
+        // RDR-018 AC-2: raise the deepest-leaf watermark so the up-walk router locates at a level fine
+        // enough to reach this leaf (monotonic-up; a Bey split inserting L+1 children raises it to L+1).
+        // Atomic max so concurrent inserts at different levels cannot clobber a deeper watermark.
+        int keyLevel = key.getLevel();
+        maxLeafLevel.getAndUpdate(cur -> Math.max(cur, keyLevel));
+
         // Add to key map
         bubblesByKey.put(key, bubble);
 
@@ -726,5 +829,6 @@ public class TetreeBubbleGrid {
         bubblesByKey.clear();
         neighborFinder.clearCache();
         partitionLevel = -1;
+        maxLeafLevel.set(-1);
     }
 }

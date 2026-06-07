@@ -85,43 +85,21 @@ public class TetrahedralMigrationRouter {
                          bubbleGrid.getBubble(migration.destBubbleKey()) : null;
 
         if (destBubble == null) {
-            // Fallback: try to relocate using current position.
+            // Fallback: relocate using current position via the RDR-018 AC-2 deepest-leaf up-walk.
+            // The grid locates the position at its finest plausible level (maxLeafLevel) and walks the
+            // parent-key chain to the deepest existing leaf, terminating at the base partition level —
+            // never the L0 catch-all (R1). This reaches an L+1 child leaf created by a Bey split that a
+            // query pinned at the base partition level would miss.
             try {
-                // On a single-level partition (RDR-015 AC4), relocate at the partition level L directly
-                // instead of scanning levels 0..10 (which resolves to a catch-all or misses a partition
-                // deeper than the cap).
-                byte partitionLevel = bubbleGrid.getPartitionLevel();
-                if (partitionLevel > 0) {
-                    var tet = tetree.locateTetrahedron(migration.position(), partitionLevel);
-                    if (tet != null && bubbleGrid.containsBubble(tet.tmIndex())) {
-                        return new MigrationDecision(
-                            migration.entityId(),
-                            migration.sourceBubbleKey(),
-                            tet.tmIndex(),
-                            1.0f,
-                            false
-                        );
-                    }
-                    return null;
-                }
-
-                // Legacy fallback (non-partition grid): scan a level range.
-                for (byte level = 0; level <= 10; level++) {
-                    var tet = tetree.locateTetrahedron(migration.position(), level);
-                    if (tet != null) {
-                        var newDest = tet.tmIndex();
-
-                        // Verify new destination exists
-                        if (bubbleGrid.containsBubble(newDest)) {
-                            return new MigrationDecision(
-                                migration.entityId(),
-                                migration.sourceBubbleKey(),
-                                newDest,
-                                1.0f,  // Confidence: high (deterministic)
-                                false  // Single destination (never multi-tet path)
-                            );
-                        }
-                    }
+                var newDest = bubbleGrid.resolveLeafKey(tetree, migration.position());
+                if (newDest != null) {
+                    return new MigrationDecision(
+                        migration.entityId(),
+                        migration.sourceBubbleKey(),
+                        newDest,
+                        1.0f,  // Confidence: high (deterministic)
+                        false  // Single destination (never multi-tet path)
+                    );
                 }
             } catch (Exception e) {
                 // Relocation failed - can't route

@@ -152,7 +152,7 @@ class TetreeBubbleGridPartitionTest {
     @Test
     void partitionCoversTheWorldDomainIncludingBoundary() {
         var grid = partitionGrid();
-        byte level = grid.getPartitionLevel();
+        byte level = grid.getBaseLevel();
         var spatial = grid.getSpatialIndex();
 
         // Sample a dense grid of in-bounds points (interior, faces, edges, corners). Every entity position
