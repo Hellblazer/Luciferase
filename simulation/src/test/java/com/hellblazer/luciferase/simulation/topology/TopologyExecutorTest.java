@@ -119,7 +119,9 @@ class TopologyExecutorTest {
         var result = executor.execute(proposal);
 
         // Verify
-        assertTrue(result.success(), "Merge should succeed: " + result.message());
+        // RDR-018 AC-4: the merge is fenced (coverage hole), but the executor still fires exactly
+        // one deterministic MergeEvent (committed=false) and conserves entities.
+        assertFalse(result.success(), "Arbitrary two-bubble merge must be fenced (RDR-018 AC-4): " + result.message());
         assertEquals(totalBefore, result.entitiesBefore(), "Entities before should match");
         assertEquals(totalBefore, result.entitiesAfter(), "Entities after should match (conservation)");
 
@@ -451,7 +453,9 @@ class TopologyExecutorTest {
 
         // Execute
         var result = executor.execute(proposal);
-        assertTrue(result.success(), "Merge should succeed: " + result.message());
+        // RDR-018 AC-4: the merge is fenced (coverage hole), but the executor still fires exactly
+        // one deterministic MergeEvent (committed=false) and conserves entities.
+        assertFalse(result.success(), "Arbitrary two-bubble merge must be fenced (RDR-018 AC-4): " + result.message());
 
         // Verify we got an event
         assertEquals(1, events.size(), "Should have captured one event");
@@ -461,6 +465,11 @@ class TopologyExecutorTest {
         assertTrue(event instanceof MergeEvent, "Event should be MergeEvent");
         var mergeEvent = (MergeEvent) event;
         assertEquals(1000L, mergeEvent.timestamp(), "Event timestamp should match TestClock time");
+        // Acknowledge the weakened invariant: the fenced merge relocates nothing, so entitiesMoved
+        // is deterministically 0. When B-core (AC-2.5) un-fences merge, this becomes > 0 and the
+        // determinism assertion regains its non-trivial content.
+        assertEquals(0, mergeEvent.entitiesMoved(), "Fenced merge moves no entities (deterministic 0 until B-core)");
+        assertFalse(mergeEvent.success(), "Fenced merge event must carry success=false");
     }
 
     @Test
@@ -488,7 +497,7 @@ class TopologyExecutorTest {
             DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result1 = executor1.execute(proposal1);
-        assertTrue(result1.success(), "Merge 1 should succeed");
+        assertFalse(result1.success(), "Merge 1 is fenced (RDR-018 AC-4) — event determinism still holds");
 
         // Second run with same clock time
         var testClock2 = new TestClock(fixedTime);
@@ -510,7 +519,7 @@ class TopologyExecutorTest {
             DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result2 = executor2.execute(proposal2);
-        assertTrue(result2.success(), "Merge 2 should succeed");
+        assertFalse(result2.success(), "Merge 2 is fenced (RDR-018 AC-4) — event determinism still holds");
 
         // Verify both runs produced same timestamps
         assertEquals(1, events1.size(), "Run 1 should have one event");
@@ -584,10 +593,14 @@ class TopologyExecutorTest {
 
         // Execute
         var result = executor.execute(proposal);
-        assertTrue(result.success(), "Merge should succeed: " + result.message());
+        // RDR-018 AC-4: the merge is fenced (coverage hole), but the executor still fires exactly
+        // one deterministic MergeEvent (committed=false) and conserves entities.
+        assertFalse(result.success(), "Arbitrary two-bubble merge must be fenced (RDR-018 AC-4): " + result.message());
 
         // Verify we got an event
         assertEquals(1, events.size(), "Should have captured one event");
+        // Weakened-invariant acknowledgement (fenced merge moves nothing; non-trivial again post-B-core)
+        assertEquals(0, ((MergeEvent) events.get(0)).entitiesMoved(), "Fenced merge moves no entities");
 
         // Verify event has deterministic ID from SeededUuidSupplier
         var eventId = events.get(0).eventId();
@@ -623,7 +636,7 @@ class TopologyExecutorTest {
             DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result1 = executor1.execute(proposal1);
-        assertTrue(result1.success(), "Merge 1 should succeed");
+        assertFalse(result1.success(), "Merge 1 is fenced (RDR-018 AC-4) — event determinism still holds");
 
         // Second run with same seed
         var uuidSupplier2 = new SeededUuidSupplier(seed);
@@ -645,7 +658,7 @@ class TopologyExecutorTest {
             DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis()
         );
         var result2 = executor2.execute(proposal2);
-        assertTrue(result2.success(), "Merge 2 should succeed");
+        assertFalse(result2.success(), "Merge 2 is fenced (RDR-018 AC-4) — event determinism still holds");
 
         // Verify both runs produced same event IDs
         assertEquals(1, events1.size(), "Run 1 should have one event");

@@ -127,14 +127,18 @@ class TopologyEvolutionTest {
         // Execute merge
         var result = executor.execute(proposal);
 
-        // Verify evolution
-        assertTrue(result.success(), "Merge should succeed: " + result.message());
+        // RDR-018 AC-4: an arbitrary two-bubble merge is fenced (it would untile bubble2's region).
+        // The "natural merge evolution" is no longer a supported single-step operation; it becomes
+        // available once B-core (AC-2.5) supplies coverage-preserving sibling-collapse merges.
+        assertFalse(result.success(), "Arbitrary two-bubble merge must be fenced (RDR-018 AC-4): " + result.message());
         assertEquals(500, totalEntitiesBefore, "Should start with 500 entities");
-        assertEquals(500, getTotalEntityCount(), "Entity count should be conserved");
+        assertEquals(500, getTotalEntityCount(), "Entity count must be conserved by a fenced merge");
 
-        // Verify all entities moved to bubble1
-        int bubble1Entities = accountant.entitiesInBubble(bubble1.id()).size();
-        assertEquals(500, bubble1Entities, "Bubble1 should have all 500 entities");
+        // No entity moved and no bubble removed — partition stays intact (no coverage hole)
+        assertEquals(bubbleCountBefore, bubbleGrid.getAllBubbles().size(),
+                     "Bubble count must be unchanged by a fenced merge");
+        assertEquals(300, accountant.entitiesInBubble(bubble1.id()).size(), "bubble1 entities unchanged");
+        assertEquals(200, accountant.entitiesInBubble(bubble2.id()).size(), "bubble2 entities unchanged");
 
         // Verify entity conservation
         var validation = accountant.validate();
@@ -302,14 +306,16 @@ class TopologyEvolutionTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        executor.execute(mergeProposal);
+        var mergeResult = executor.execute(mergeProposal);
 
-        // Verify bubble count decreased after merge
+        // RDR-018 AC-4: the merge is fenced. Conservation across operations — the property this
+        // test pins — still holds: the fenced merge mutates nothing, so the count is unchanged.
+        assertFalse(mergeResult.success(), "Arbitrary two-bubble merge must be fenced (RDR-018 AC-4)");
         int bubbleCountAfterMerge = bubbleGrid.getAllBubbles().size();
-        assertEquals(bubbleCountAfterSplit - 1, bubbleCountAfterMerge,
-            "Bubble count should decrease from " + bubbleCountAfterSplit + " to " + (bubbleCountAfterSplit - 1) + " after merge");
+        assertEquals(bubbleCountAfterSplit, bubbleCountAfterMerge,
+            "Bubble count must be unchanged by a fenced merge (no region untiled)");
 
-        // Verify conservation after merge
+        // Verify conservation after the fenced merge
         assertEquals(initialTotal, getTotalEntityCount(), "Entity count should be conserved after merge");
 
         // Final validation

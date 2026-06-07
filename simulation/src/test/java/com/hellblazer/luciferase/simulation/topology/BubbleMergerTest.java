@@ -43,7 +43,16 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.doReturn;
 
 /**
- * Tests for BubbleMerger with duplicate detection.
+ * Tests for the BubbleMerger entity-move <em>mechanism</em> (move + duplicate detection +
+ * conservation + atomic rollback + mutation-lock protocol).
+ * <p>
+ * <b>RDR-018 AC-4:</b> the public {@link BubbleMerger#execute} entry point now hard-fences every
+ * arbitrary two-bubble merge (it would punch a partition coverage hole — see
+ * {@link BubbleMergerCoverageFenceTest}). The move machinery these tests exercise is still
+ * correct and is the foundation B-core (AC-2.5) will wrap with a coverage-preserving re-tile, so
+ * they drive it directly through the package-private {@link BubbleMerger#executeMerge} seam.
+ * Tests of the public contract that survive unchanged (null proposal, "not found") still call
+ * {@link BubbleMerger#execute}.
  *
  * @author hal.hildebrand
  */
@@ -87,8 +96,8 @@ class BubbleMergerTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        // Execute merge
-        var result = merger.execute(proposal);
+        // Execute the merge mechanism directly (public execute() is fenced — AC-4)
+        var result = merger.executeMerge(proposal);
 
         // Verify result
         assertTrue(result.success(), "Merge should succeed: " + result.message());
@@ -146,7 +155,7 @@ class BubbleMergerTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        var result = merger.execute(proposal);
+        var result = merger.executeMerge(proposal);
 
         // Should succeed and skip duplicates
         assertTrue(result.success(), "Merge should succeed even with duplicates");
@@ -179,7 +188,7 @@ class BubbleMergerTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        var result = merger.execute(proposal);
+        var result = merger.executeMerge(proposal);
 
         // Verify conservation
         assertTrue(result.success(), "Merge should succeed");
@@ -248,7 +257,7 @@ class BubbleMergerTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        var result = merger.execute(proposal);
+        var result = merger.executeMerge(proposal);
 
         // Should succeed (merging empty bubble is valid)
         assertTrue(result.success(), "Merge should succeed even with empty bubble2");
@@ -320,7 +329,7 @@ class BubbleMergerTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        var result = failingMerger.execute(proposal);
+        var result = failingMerger.executeMerge(proposal);
 
         // Merge must fail
         assertFalse(result.success(), "Merge must fail when a forward move fails");
@@ -372,7 +381,7 @@ class BubbleMergerTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        var result = merger.execute(proposal);
+        var result = merger.executeMerge(proposal);
 
         assertTrue(result.success(), "Merge should succeed: " + result.message());
 
@@ -427,7 +436,7 @@ class BubbleMergerTest {
         );
 
         // Must NOT throw even though rollback moves also fail.
-        var result = assertDoesNotThrow(() -> failingMerger.execute(proposal),
+        var result = assertDoesNotThrow(() -> failingMerger.executeMerge(proposal),
             "Merger must not throw when rollback moves fail");
 
         assertFalse(result.success(), "Merge must report failure when forward move fails");
@@ -495,7 +504,7 @@ class BubbleMergerTest {
         pool.submit(() -> {
             ready.countDown();
             try { start.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
-            try { concurrentMerger.execute(proposal); }
+            try { concurrentMerger.executeMerge(proposal); }
             catch (Throwable t) { errors.add(t); }
         });
 

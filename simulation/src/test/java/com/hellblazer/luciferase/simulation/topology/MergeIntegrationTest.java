@@ -119,30 +119,32 @@ class MergeIntegrationTest {
         log.info("Executing merge: {} + {}", bubble1.id(), bubble2.id());
         var result = executor.execute(mergeProposal);
 
-        // Verify merge succeeded
+        // RDR-018 AC-4: an arbitrary two-bubble merge is fenced because removing bubble2 would
+        // leave its tetrahedral region untiled (coverage hole). The executor must report failure
+        // and leave the partition fully intact.
         assertThat(result.success())
-            .as("Merge should succeed: %s", result.message())
-            .isTrue();
+            .as("Arbitrary two-bubble merge must be fenced (AC-4): %s", result.message())
+            .isFalse();
         log.info("Merge result: {}", result.message());
 
-        // Verify entity conservation
+        // Verify entity conservation — the fenced merge mutates nothing
         int totalEntitiesAfter = accountant.getDistribution().values().stream().mapToInt(Integer::intValue).sum();
         assertThat(totalEntitiesAfter)
-            .as("Total entities should be conserved after merge")
+            .as("Total entities must be conserved when a merge is fenced")
             .isEqualTo(totalEntitiesBefore);
 
-        // Verify bubble count decreased
+        // Verify bubble count is UNCHANGED — no bubble removed, so no coverage hole
         int bubbleCountAfter = bubbleGrid.getAllBubbles().size();
         assertThat(bubbleCountAfter)
-            .as("Bubble count should decrease after merge")
-            .isEqualTo(bubbleCountBefore - 1);
+            .as("Bubble count must be unchanged when a merge is fenced (no region untiled)")
+            .isEqualTo(bubbleCountBefore);
 
-        log.info("After merge: {} bubbles, {} total entities", bubbleCountAfter, totalEntitiesAfter);
+        log.info("After fenced merge: {} bubbles, {} total entities", bubbleCountAfter, totalEntitiesAfter);
 
         // Verify validation passes
         var validation = accountant.validate();
         assertThat(validation.success())
-            .as("Entity validation should pass after merge")
+            .as("Entity validation should pass after fenced merge")
             .isTrue();
     }
 
@@ -183,18 +185,19 @@ class MergeIntegrationTest {
 
         var result = executor.execute(mergeProposal);
 
-        // Merge of empty bubble should succeed
+        // RDR-018 AC-4: even a merge with an empty bubble2 is fenced — removing bubble2 still
+        // untiles its region. The empty-bubble case is no longer a special-cased success.
         assertThat(result.success())
-            .as("Merge with empty bubble should succeed")
-            .isTrue();
+            .as("Merge with empty bubble must be fenced (AC-4)")
+            .isFalse();
 
         // Entity count unchanged
         assertThat(accountant.getDistribution().values().stream().mapToInt(Integer::intValue).sum()).isEqualTo(totalBefore);
 
-        // Bubble count decreased
-        assertThat(bubbleGrid.getAllBubbles()).hasSize(1);
+        // Bubble count unchanged — bubble2 not removed, region stays tiled
+        assertThat(bubbleGrid.getAllBubbles()).hasSize(2);
 
-        log.info("Merged empty bubble into bubble1, total entities: {}", totalBefore);
+        log.info("Fenced empty-bubble merge, total entities: {}", totalBefore);
     }
 
     @Test
@@ -222,23 +225,26 @@ class MergeIntegrationTest {
         );
 
         var result = executor.execute(mergeProposal);
-        assertThat(result.success()).isTrue();
 
-        // Verify all entities from both groups are now in bubble1
+        // RDR-018 AC-4: merge is fenced, so no entity is relocated — each group's entities stay
+        // in their original bubble and no data is lost.
+        assertThat(result.success()).as("Merge must be fenced (AC-4): %s", result.message()).isFalse();
+
         var entitiesInBubble1 = accountant.entitiesInBubble(bubble1.id());
-        assertThat(entitiesInBubble1).hasSize(50);
+        var entitiesInBubble2 = accountant.entitiesInBubble(bubble2.id());
+        assertThat(entitiesInBubble1).hasSize(30);
+        assertThat(entitiesInBubble2).hasSize(20);
 
-        // Verify entities from group-A are present
+        // group-A entities remain in bubble1
         for (var entityId : entityIds1) {
             assertThat(entitiesInBubble1).contains(entityId);
         }
-
-        // Verify entities from group-B are present
+        // group-B entities remain in bubble2 (NOT moved — merge fenced)
         for (var entityId : entityIds2) {
-            assertThat(entitiesInBubble1).contains(entityId);
+            assertThat(entitiesInBubble2).contains(entityId);
         }
 
-        log.info("All 50 entities preserved in merged bubble");
+        log.info("Fenced merge preserved all 50 entities in their original bubbles");
     }
 
     @Test
@@ -254,6 +260,7 @@ class MergeIntegrationTest {
         addEntities(bubble2.id(), 40);
 
         long mergesBefore = metrics.getTotalMerges();
+        long failuresBefore = metrics.getMetrics().getOrDefault("topology_merges_failed_total", 0L);
 
         // Execute merge
         var mergeProposal = new MergeProposal(
@@ -266,11 +273,14 @@ class MergeIntegrationTest {
 
         executor.execute(mergeProposal);
 
-        // Verify metrics updated
+        // The merge is fenced (AC-4): it is counted as an attempted merge that FAILED.
         long mergesAfter = metrics.getTotalMerges();
         assertThat(mergesAfter)
-            .as("Merge count should increment")
+            .as("Merge attempt should still increment the total (success + failed)")
             .isEqualTo(mergesBefore + 1);
+        assertThat(metrics.getMetrics().get("topology_merges_failed_total"))
+            .as("A fenced merge must be recorded as a failure, not a success")
+            .isEqualTo(failuresBefore + 1);
     }
 
     @Test
