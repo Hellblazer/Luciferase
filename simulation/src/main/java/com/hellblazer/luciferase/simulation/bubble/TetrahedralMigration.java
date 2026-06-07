@@ -16,10 +16,12 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Objects;
@@ -141,14 +143,8 @@ public class TetrahedralMigration {
         // PREPARE: Collect all candidate migrations
         for (var bubble : bubbleGrid.getAllBubbles()) {
             var bubbleMigrations = checker.checkMigrations(bubble);
-
-            // Hysteresis is measured against the FIXED partition cell, consistent with the escape test
-            // (RDR-015). The adaptive bubble.bounds() wraps its entities, so overshoot past it is ~0 and
-            // would re-suppress every migration the containment check just admitted.
-            var cellKey = bubble.spatialKey();
-            var bounds = cellKey != null ? BubbleBounds.fromTetreeKey(cellKey) : bubble.bounds();
             for (var migration : bubbleMigrations) {
-                if (migrationCandidate(migration, currentTick, bounds)) {
+                if (migrationCandidate(migration, currentTick)) {
                     allMigrations.add(migration);
                 }
             }
@@ -189,11 +185,9 @@ public class TetrahedralMigration {
      *
      * @param migration   Migration record
      * @param currentTick Current simulation tick
-     * @param bounds      The source bubble's spatial bounds (used for hysteresis distance check)
      * @return true if entity should migrate, false otherwise
      */
-    private boolean migrationCandidate(TetrahedralContainmentChecker.MigrationRecord migration, long currentTick,
-                                       BubbleBounds bounds) {
+    private boolean migrationCandidate(TetrahedralContainmentChecker.MigrationRecord migration, long currentTick) {
         var entityId = migration.entityId();
 
         // Check cooldown: wait 30 ticks minimum
@@ -202,42 +196,72 @@ public class TetrahedralMigration {
             return false;  // Still cooling down
         }
 
-        // Check hysteresis: entity must be sufficiently far past the boundary.
-        // Uses RDGCS coordinates: toRDG computes round((-x+y+z)/√2), so
-        // 1 RDGCS integer unit ≈ √2 Cartesian units (not the other way around).
-        // overshootCartesian = overshootRdg_euclidean * √2.
-        // For HYSTERESIS_DIST=2.0 Cartesian:
-        //   rdg overshoot 1 → Cartesian ≈ 1*√2 ≈ 1.41 < 2.0 → BLOCKED
-        //   rdg overshoot 2 → Cartesian ≈ 2*√2 ≈ 2.83 > 2.0 → ALLOWED
-        if (bounds != null) {
-            var rdg = bounds.toRDG(migration.position());
-            var rdgMin = bounds.rdgMin();
-            var rdgMax = bounds.rdgMax();
-
-            // Compute the minimum overshoot (distance past the nearest boundary face
-            // in RDGCS space). The entity has already escaped so at least one component
-            // is outside; we want the maximum — the "most-escaped" dimension — to be
-            // large enough to confirm genuine displacement rather than jitter.
-            // We use the minimum non-zero overshoot (closest boundary axis).
-            int overshootX = rdg.x < rdgMin.x ? rdgMin.x - rdg.x : (rdg.x > rdgMax.x ? rdg.x - rdgMax.x : 0);
-            int overshootY = rdg.y < rdgMin.y ? rdgMin.y - rdg.y : (rdg.y > rdgMax.y ? rdg.y - rdgMax.y : 0);
-            int overshootZ = rdg.z < rdgMin.z ? rdgMin.z - rdg.z : (rdg.z > rdgMax.z ? rdg.z - rdgMax.z : 0);
-
-            // Total Euclidean RDGCS overshoot magnitude
-            double overshootRdg = Math.sqrt(
-                (double) overshootX * overshootX + (double) overshootY * overshootY + (double) overshootZ * overshootZ);
-
-            // Convert to approximate Cartesian distance: each RDGCS unit ≈ √2 Cartesian units
-            double overshootCartesian = overshootRdg * Math.sqrt(2.0);
-
-            if (overshootCartesian < HYSTERESIS_DIST) {
+        // EXACT spatial hysteresis (Luciferase-6kod9): require the entity to be at least HYSTERESIS_DIST Cartesian
+        // units past the nearest FACE of its source partition tetrahedron before migrating. The escape test now
+        // uses exact tetrahedral containment, so the old RDG-AABB overshoot collapsed to ~0 for an entity just
+        // over a true face (the AABB face is not the tet face) and would re-suppress every migration the exact
+        // containment check just admitted. Distance-to-nearest-face is the geometrically correct anti-jitter
+        // measure and is computed in the same raw-Cartesian space as the entity position (the partition cell's
+        // Tet coordinates are raw-Cartesian-aligned, matching locateTetrahedron(position, level)).
+        var srcKey = migration.sourceBubbleKey();
+        if (srcKey != null) {
+            var srcTet = Tet.tetrahedron(srcKey);
+            double overshoot = overshootPastNearestFace(srcTet, migration.position());
+            if (overshoot < HYSTERESIS_DIST) {
                 log.trace("Hysteresis suppressed migration for entity {}: overshoot={} < threshold={}",
-                          entityId, String.format("%.3f", overshootCartesian), HYSTERESIS_DIST);
-                return false;  // Too close to boundary — suppress thrashing migration
+                          entityId, String.format("%.3f", overshoot), HYSTERESIS_DIST);
+                return false;  // Too close to the source boundary — suppress thrashing migration
             }
         }
 
         return true;  // Passed all checks
+    }
+
+    /**
+     * Maximum outward signed distance (in Cartesian units) from {@code p} to any face plane of {@code tet}.
+     * <p>
+     * Each of the four faces is opposite one vertex; its plane normal is oriented outward (away from that opposite
+     * apex vertex), so a positive signed distance means {@code p} lies outside that face. The maximum over the four
+     * faces is how far the entity has crossed past the nearest boundary face it exited through. The value is
+     * {@code <= 0} when {@code p} is inside (or on the surface of) the tet — i.e. jitter at/inside the boundary
+     * yields no overshoot and is suppressed. The tet's {@code coordinates()} are raw-Cartesian-aligned partition
+     * coordinates, matching the entity position's space (Luciferase-6kod9).
+     *
+     * @param tet the source partition tetrahedron
+     * @param p   the entity position (raw Cartesian)
+     * @return the maximum outward face overshoot in Cartesian units
+     */
+    private static double overshootPastNearestFace(Tet tet, Point3f p) {
+        var v = tet.coordinates(); // Point3i[4]
+        double max = Double.NEGATIVE_INFINITY;
+        for (int i = 0; i < 4; i++) {
+            // Face i is opposite vertex i; the other three vertices span the face.
+            var a = v[(i + 1) & 3];
+            var b = v[(i + 2) & 3];
+            var c = v[(i + 3) & 3];
+            var apex = v[i];
+
+            // Face plane normal n = (b - a) x (c - a).
+            double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+            double acx = c.x - a.x, acy = c.y - a.y, acz = c.z - a.z;
+            double nx = aby * acz - abz * acy;
+            double ny = abz * acx - abx * acz;
+            double nz = abx * acy - aby * acx;
+            double len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (len == 0.0) {
+                continue; // degenerate face — skip
+            }
+
+            // Orient outward: flip if the normal points toward the opposite apex (i.e. toward the interior).
+            double towardApex = nx * (apex.x - a.x) + ny * (apex.y - a.y) + nz * (apex.z - a.z);
+            double sign = towardApex > 0 ? -1.0 : 1.0;
+
+            double d = sign * (nx * (p.x - a.x) + ny * (p.y - a.y) + nz * (p.z - a.z)) / len;
+            if (d > max) {
+                max = d;
+            }
+        }
+        return max;
     }
 
     /**

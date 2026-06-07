@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 
@@ -93,29 +94,33 @@ public class TetrahedralContainmentChecker {
             // Bubble not registered in a partition grid (e.g. legacy/standalone) - skip migration check.
             return migrations;
         }
-        var cellBounds = BubbleBounds.fromTetreeKey(bubbleKey);
 
-        // Check each entity for containment
+        // EXACT tetrahedral containment (Luciferase-6kod9): an entity has escaped iff the partition cell that
+        // geometrically contains its position is NOT this bubble's own cell. This replaces the
+        // BubbleBounds.fromTetreeKey(bubbleKey).contains(position) test, which applied toRDG (a basis ROTATION)
+        // then an AABB check — an OUTER approximation of the tetrahedron. That mixed coordinate spaces (the
+        // partition is tiled in RAW Cartesian, but escape was tested in RDG-rotated AABB space) and only
+        // registered an escape once the entity was ~1.5 cell-edges out, producing false negatives and asymmetric
+        // escape timing across reflected directions. contains12DOP is the exact 11-op Kuhn-simplex test; the
+        // source cell's Tet is both the authority and a cheap fast-path for the common "entity stayed put" case.
+        var srcTet = Tet.tetrahedron(bubbleKey);
+
         for (var entity : bubble.getAllEntityRecords()) {
             var position = entity.position();
 
-            // Containment check: is entity still within the fixed partition-cell bounds?
-            if (!cellBounds.contains(position)) {
-                // Entity escaped - find destination
-                var destKey = locateDestinationBubble(position);
+            // Exact fast-path: still inside its own partition cell → not escaped.
+            if (srcTet.contains12DOP(position.x, position.y, position.z)) {
+                continue;
+            }
 
-                if (destKey != null && !destKey.equals(bubbleKey)) {
-                    // Valid destination found - record migration
-                    // Velocity is not stored in EntityRecord, so pass null
-                    // (caller must retrieve velocity separately)
-                    migrations.add(new MigrationRecord(
-                        entity.id(),
-                        bubbleKey,
-                        destKey,
-                        position,
-                        null  // Velocity retrieved separately by migration manager
-                    ));
-                }
+            // Outside the source cell — find the destination cell that exactly contains the position.
+            // locateDestinationBubble queries locateTetrahedron(position, partitionLevel); the located key is the
+            // authority for whether (and where) the entity migrates. A null/equal key means stay (e.g. the
+            // position resolves to an empty cell, or a boundary tie-break maps it back to the source).
+            var destKey = locateDestinationBubble(position);
+            if (destKey != null && !destKey.equals(bubbleKey)) {
+                // Velocity is not stored in EntityRecord, so pass null (caller retrieves it separately).
+                migrations.add(new MigrationRecord(entity.id(), bubbleKey, destKey, position, null));
             }
         }
 
