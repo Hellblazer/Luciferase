@@ -85,9 +85,27 @@ public class TetrahedralMigrationRouter {
                          bubbleGrid.getBubble(migration.destBubbleKey()) : null;
 
         if (destBubble == null) {
-            // Fallback: try to relocate using current position
+            // Fallback: try to relocate using current position.
             try {
-                // Try multiple levels to find a bubble
+                // On a single-level partition (RDR-015 AC4), relocate at the partition level L directly
+                // instead of scanning levels 0..10 (which resolves to a catch-all or misses a partition
+                // deeper than the cap).
+                byte partitionLevel = bubbleGrid.getPartitionLevel();
+                if (partitionLevel > 0) {
+                    var tet = tetree.locateTetrahedron(migration.position(), partitionLevel);
+                    if (tet != null && bubbleGrid.containsBubble(tet.tmIndex())) {
+                        return new MigrationDecision(
+                            migration.entityId(),
+                            migration.sourceBubbleKey(),
+                            tet.tmIndex(),
+                            1.0f,
+                            false
+                        );
+                    }
+                    return null;
+                }
+
+                // Legacy fallback (non-partition grid): scan a level range.
                 for (byte level = 0; level <= 10; level++) {
                     var tet = tetree.locateTetrahedron(migration.position(), level);
                     if (tet != null) {

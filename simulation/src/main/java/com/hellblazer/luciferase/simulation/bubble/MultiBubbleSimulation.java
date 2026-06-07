@@ -159,7 +159,7 @@ public class MultiBubbleSimulation implements AutoCloseable {
         this.queryService = new SimulationQueryService(bubbleGrid, ghostSyncAdapter, populationManager, metrics);
 
         // Setup simulation: create bubbles and distribute entities
-        initializeSimulation(bubbleCount, entityCount);
+        initializeSimulation(bubbleCount, entityCount, worldBounds);
 
         // Phase 5D: Initialize migration log and manager
         this.migrationLog = new MigrationLog();
@@ -185,10 +185,12 @@ public class MultiBubbleSimulation implements AutoCloseable {
      * @param bubbleCount Number of bubbles to create
      * @param entityCount Number of entities to spawn
      */
-    private void initializeSimulation(int bubbleCount, int entityCount) {
-        // Step 1: Create bubbles distributed across tree levels
-        var maxEntitiesPerBubble = (entityCount / bubbleCount) + 50; // +50 buffer for migration
-        gridOrchestrator.createBubbles(bubbleCount, entityCount, maxEntitiesPerBubble);
+    private void initializeSimulation(int bubbleCount, int entityCount, WorldBounds worldBounds) {
+        // Step 1: Create bubbles as a single-level spatial partition tiling the world domain (RDR-015
+        // Option B). This replaces the legacy mixed-level distribution whose L0 root catch-all + nested
+        // keys made the migration path dead: entities confined to the world corner never escaped their
+        // (astronomically larger) bubble bounds, so no migration candidate was ever produced.
+        gridOrchestrator.createPartition(bubbleCount, worldBounds, DEFAULT_TICK_INTERVAL_MS);
 
         // Step 2: Generate entity positions
         var entities = populationManager.populateEntities(entityCount);

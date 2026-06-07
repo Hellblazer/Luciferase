@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 
 /**
@@ -107,5 +108,19 @@ public class BubbleGridOrchestrator {
      */
     public void createBubbles(int bubbleCount, int entityCount, int maxEntitiesPerBubble) {
         TetreeBubbleFactory.createBubbles(bubbleGrid, bubbleCount, maxLevel, maxEntitiesPerBubble);
+    }
+
+    /**
+     * Build the bubble grid as a single-level spatial partition tiling the world domain (RDR-015 AC2,
+     * Option B), so a face-crossing entity routes to a real neighbor bubble. Replaces the legacy
+     * mixed-level {@link #createBubbles(int, int, int)} on the migration-live path.
+     *
+     * @param bubbleCount   granularity hint (drives partition-level selection)
+     * @param worldBounds   the entity world domain to tile
+     * @param targetFrameMs per-bubble frame-time budget
+     * @return the chosen partition level {@code L}
+     */
+    public byte createPartition(int bubbleCount, WorldBounds worldBounds, long targetFrameMs) {
+        return bubbleGrid.createBubbles(bubbleCount, worldBounds, targetFrameMs);
     }
 }

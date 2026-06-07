@@ -1,9 +1,12 @@
 ---
 id: RDR-015
 title: Reconcile Simulation Bubble-Grid Coordinate Space — Revive the Dead Migration Path
-status: accepted
+status: closed
 date: 2026-06-06
 accepted_date: 2026-06-06
+closed_date: 2026-06-06
+close_reason: implemented
+post_mortem: post-mortem/015-revive-dead-migration-path.md
 reviewed-by: self
 supersedes: []
 related: [RDR-003]
@@ -202,6 +205,20 @@ conversion, direct `grid.addBubble(bubble, key)`) — evidence the author knew `
 partition. Option B's construction uses `TetreeNeighborFinder.findFaceNeighbor`/`findNeighborsAtLevel` (the
 RDR-014 work) to enumerate adjacent same-level tets via reciprocity-correct BFS (validate adjacency by
 involution, NOT shared-vertex count — the Bey-SFC face neighbor is non-conforming).
+
+**F6 — Adaptive bubble bounds are a THIRD, independent dead-migration cause (discovered during P3
+implementation, 2026-06-06).** The original root-cause analysis (coordinate-space mismatch + mixed-level
+non-partition) was necessary but **not sufficient**. After P1 (single-level partition) + P2 (partition-level
+router), an end-to-end diagnostic still committed ZERO migrations. Cause:
+`TetrahedralContainmentChecker.checkMigrations` tested escape against `EnhancedBubble.bounds()`, which is the
+**adaptive entity-derived AABB** — `BubbleBoundsTracker.onEntityMoved → recalculateBounds →
+BubbleBounds.fromEntityPositions` recomputes `rdgMin/rdgMax` to the entities' own min/max every tick. That box
+always wraps its own entities, so `!bounds.contains(position)` is never true and no migration candidate is ever
+produced (the same false-negative also gated `migrationCandidate`'s hysteresis). **Fix (P3):** containment and
+hysteresis test against the bubble's **fixed registration cell** (`EnhancedBubble.spatialKey()` →
+`BubbleBounds.fromTetreeKey`), which does not move. After the fix the live `tick()` path commits migrations
+(≈1982 over 3000 ticks at 200 entities, 0 failures, exact conservation). The directed regression (AC5) was
+upgraded from a unit-level router probe to a true end-to-end subsystem test that exercises this gate.
 
 **F5 — RDR-003 reinforces Option B and conflicts with Option C.** RDR-003's `SpatialLevelHeuristic` is built
 on the explicit premise that "VoN entity positions are placed directly into [Tetree absolute coordinate

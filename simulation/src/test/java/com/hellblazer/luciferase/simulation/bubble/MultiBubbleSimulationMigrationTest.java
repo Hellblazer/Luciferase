@@ -104,8 +104,11 @@ class MultiBubbleSimulationMigrationTest {
 
         assertTrue(simulation.getTickCount() >= 2000, "simulation must have advanced the driven ticks");
         assertNotNull(simulation.getMigrationMetrics());
-        // Invariant that holds whether or not a migration commits: the per-tick migration CHECK must never lose
-        // or duplicate an entity. (The old assertTrue(getTotalMigrations() >= 0) was trivially true.)
+        // RDR-015: migration is revived on the live tick() path — entities crossing a bubble face now
+        // route to the real neighbor bubble. This previously committed ZERO migrations (dead path).
+        assertTrue(simulation.getMigrationMetrics().getTotalMigrations() > 0,
+                   "migration must be live: entities crossing bubble faces must commit migrations");
+        // Conservation invariant: the per-tick migration must never lose or duplicate an entity.
         assertConservedAndUnique(initialReal);
     }
 
@@ -114,12 +117,11 @@ class MultiBubbleSimulationMigrationTest {
      * {@code finalEntities >= initialEntities * 0.9}, which tolerated dropping up to 10% of entities every run,
      * and the non-deterministic Thread.sleep). Asserts no loss AND no duplication (Luciferase-j6ybd).
      *
-     * <p><b>Finding (not silent scope reduction):</b> the original AC also asked for a positive-migration
-     * assertion ({@code getTotalMigrations() > 0}). That is NOT asserted here because this simulation commits
-     * ZERO successful migrations through normal {@code tick()} operation — verified across fixtures up to 600
-     * entities in a 15-unit world over 20,000 ticks (all yielded 0). Asserting a migration would be either
-     * impossible or contrived. The likely-dead migration-commit path is filed as a separate defect bead; this
-     * test pins the conservation/uniqueness invariants, which is the load-bearing guarantee regardless.
+     * <p><b>History:</b> this previously could not assert {@code getTotalMigrations() > 0} because the
+     * simulation committed ZERO migrations through normal {@code tick()} (the dead path that motivated
+     * RDR-015). That is now fixed — see {@code testSimulationRunsWithMigration}, which asserts migration is
+     * live. This test pins the conservation/uniqueness invariants that must hold ACROSS those migrations
+     * (RDR-015 AC6): no entity is lost or duplicated when it moves between bubbles.
      */
     @Test
     void testNoEntityLossDuringMigration() {

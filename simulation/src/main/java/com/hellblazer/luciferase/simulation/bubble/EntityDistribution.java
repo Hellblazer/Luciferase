@@ -64,7 +64,10 @@ public class EntityDistribution {
      * Records entity identity, position, and optional velocity for initialization.
      *
      * @param id       Entity identifier (must be unique)
-     * @param position Entity position in RDGCS coordinates
+     * @param position Entity position in WorldBounds-scale Cartesian coordinates, placed directly into
+     *                 the Tetree absolute coordinate space without rescaling (RDR-015 AC1, F1/F5). The
+     *                 earlier "RDGCS coordinates" wording was aspirational and never implemented — there
+     *                 is no world&harr;RDGCS scale transform (Option C rejected).
      * @param velocity Entity velocity (may be null, initialized later if needed)
      */
     public record EntitySpec(String id, Point3f position, Vector3f velocity) {
@@ -86,7 +89,16 @@ public class EntityDistribution {
         this.bubbleGrid = Objects.requireNonNull(grid, "TetreeBubbleGrid cannot be null");
         this.tetree = Objects.requireNonNull(tetree, "Tetree cannot be null");
         this.entityToBubbleMapping = new ConcurrentHashMap<>();
-        this.defaultLevel = 10; // Middle-range level for locating entities
+        this.defaultLevel = 10; // Fallback locate level for legacy (non-partition) grids
+    }
+
+    /**
+     * The level at which to locate entities: the grid's partition level when it is a single-level
+     * spatial partition (RDR-015), otherwise the legacy {@link #defaultLevel}.
+     */
+    private byte effectiveLevel() {
+        byte partitionLevel = bubbleGrid.getPartitionLevel();
+        return partitionLevel > 0 ? partitionLevel : defaultLevel;
     }
 
     /**
@@ -127,10 +139,13 @@ public class EntityDistribution {
      * @throws IllegalArgumentException if entity position is invalid or out of bounds
      */
     private void distributeEntity(EntitySpec entity) {
-        // Locate tetrahedron containing this position
+        // Locate tetrahedron containing this position. On a single-level partition (RDR-015) entities
+        // must be placed at the partition level L so they land in the bubble that actually contains them;
+        // a coarser/finer default level would mis-key the entity and force the arbitrary nearest-bubble
+        // fallback (which breaks face-crossing migration).
         Tet tet;
         try {
-            tet = tetree.locateTetrahedron(entity.position, defaultLevel);
+            tet = tetree.locateTetrahedron(entity.position, effectiveLevel());
         } catch (Exception e) {
             throw new IllegalArgumentException(
                 "Failed to locate tetrahedron for entity " + entity.id +
@@ -294,7 +309,7 @@ public class EntityDistribution {
             // Locate where entity should be based on position
             Tet tet;
             try {
-                tet = tetree.locateTetrahedron(entity.position, defaultLevel);
+                tet = tetree.locateTetrahedron(entity.position, effectiveLevel());
             } catch (Exception e) {
                 return false; // Position invalid
             }

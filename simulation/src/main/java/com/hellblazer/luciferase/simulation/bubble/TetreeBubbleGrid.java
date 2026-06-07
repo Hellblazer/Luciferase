@@ -16,9 +16,11 @@
  */
 package com.hellblazer.luciferase.simulation.bubble;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.simulation.config.WorldBounds;
 import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
 
@@ -53,6 +55,14 @@ public class TetreeBubbleGrid {
     private final Tetree<StringEntityID, BubbleLocation> spatialIndex;
     private final TetreeNeighborFinder neighborFinder;
     private final byte maxLevel;
+
+    /**
+     * The single level at which all bubbles reside when this grid was built as a spatial partition
+     * (RDR-015 AC2). {@code -1} means "not a single-level partition" — the grid is empty or was built
+     * via the legacy mixed-level {@link #createBubbles(int, byte, long)}. Routing/distribution query
+     * directly at this level when it is {@code > 0}, instead of scanning levels.
+     */
+    private volatile byte partitionLevel = -1;
 
     /**
      * Create a new TetreeBubbleGrid.
@@ -104,8 +114,9 @@ public class TetreeBubbleGrid {
             throw new IllegalArgumentException("Target frame time must be positive, got: " + targetFrameMs);
         }
 
-        // Clear existing bubbles
+        // Clear existing bubbles. Legacy mixed-level distribution is NOT a single-level partition.
         bubblesByKey.clear();
+        partitionLevel = -1;
 
         // Determine number of levels to use
         int numLevels = Math.min(maxLevel + 1, count);
@@ -157,6 +168,9 @@ public class TetreeBubbleGrid {
                 var bounds = BubbleBounds.fromTetreeKey(key);
                 var location = new BubbleLocation(key, bounds);
 
+                // Record the fixed registration cell on the bubble.
+                bubble.setSpatialKey(key);
+
                 // Register in maps
                 bubblesByKey.put(key, bubble);
 
@@ -173,6 +187,165 @@ public class TetreeBubbleGrid {
                 createdCount++;
             }
         }
+    }
+
+    /**
+     * Build the bubble grid as a SINGLE-LEVEL adjacent spatial partition tiling the
+     * {@link WorldBounds} domain (RDR-015 AC2, Option B).
+     * <p>
+     * Unlike the legacy {@link #createBubbles(int, byte, long)} — which distributes bubbles across
+     * <em>mixed</em> tree levels (an L0 root catch-all plus nested children) and is therefore not a
+     * spatial partition — this method emits a set of <em>same-level</em>, face-adjacent tetrahedra
+     * that tile the world domain, so an entity crossing a bubble face lands in a real neighbor bubble
+     * and the migration path is well-defined.
+     * <p>
+     * Coordinates are placed directly into the Tetree absolute integer-coordinate space without
+     * rescaling (RDR-003 / RDR-015 F5): a world coordinate {@code w} is the Tetree coordinate {@code w}.
+     * <p>
+     * <b>Level selection.</b> The partition level {@code L} is the finest level whose cell-edge is no
+     * coarser than the requested granularity: {@code lengthAtLevel(L) <= WorldBounds.size() / cbrt(N)}.
+     * {@code L} is clamped to {@code [1, MAX_REFINEMENT_LEVEL]} — never the L0 root.
+     * <p>
+     * <b>Seeding + tiling.</b> Seeds from the level-{@code L} tet containing the world centre, then
+     * BFS over <b>same-level face neighbors</b>, including a neighbor iff its centroid lies inside the
+     * world bounds. Adjacency is confirmed by <b>involution reciprocity</b>
+     * ({@code faceNeighbor(faceNeighbor(t,f).face()).tet() == t}), never a shared-vertex count: the
+     * Bey-SFC face neighbor is non-conforming (shares 0–3 vertices — see CLAUDE.md). The in-bounds
+     * level-{@code L} tet set is finite, so BFS terminates.
+     *
+     * @param targetBubbleCount granularity hint {@code N} (drives level selection; the realized count
+     *                          is the number of in-bounds level-{@code L} tets, which may exceed {@code N})
+     * @param worldBounds       the entity world domain to tile
+     * @param targetFrameMs     per-bubble frame-time budget
+     * @return the chosen partition level {@code L}
+     * @throws IllegalArgumentException if {@code targetBubbleCount <= 0} or {@code targetFrameMs <= 0}
+     * @throws NullPointerException     if {@code worldBounds} is null
+     */
+    public byte createBubbles(int targetBubbleCount, WorldBounds worldBounds, long targetFrameMs) {
+        if (targetBubbleCount <= 0) {
+            throw new IllegalArgumentException("Target bubble count must be positive, got: " + targetBubbleCount);
+        }
+        Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
+        if (targetFrameMs <= 0) {
+            throw new IllegalArgumentException("Target frame time must be positive, got: " + targetFrameMs);
+        }
+        // The Tetree coordinate domain is non-negative ([0, 2^21)); WorldBounds-Cartesian entity positions are
+        // placed directly into it without rescaling (RDR-015 F1/F5). A negative world bound would yield entity
+        // positions that fail Tetree.locateTetrahedron at distribution/migration time — fail loud at setup.
+        if (worldBounds.min() < 0f) {
+            throw new IllegalArgumentException(
+                "WorldBounds.min must be >= 0 for a Tetree partition (non-negative coordinate domain), got: "
+                + worldBounds.min());
+        }
+
+        var level = choosePartitionLevel(worldBounds, targetBubbleCount);
+
+        // Seed from the level-L tet containing the world centre.
+        var centre = worldBounds.center();
+        var seed = Tet.locatePointBeyRefinementFromRoot(centre, centre, centre, level);
+        if (seed == null) {
+            throw new IllegalArgumentException(
+                "World centre " + centre + " is outside the Tetree domain [0, 2^21); check WorldBounds");
+        }
+
+        // NOTE: construction is not thread-safe; callers must build the partition before exposing the grid to
+        // concurrent readers. partitionLevel is published last, so a racing reader could transiently observe an
+        // empty/partial grid with partitionLevel == -1 (legacy fallback). Acceptable: MultiBubbleSimulation
+        // builds the grid in its constructor, single-threaded, before tick().
+        //
+        // BFS over same-level reciprocal face neighbors whose CELL overlaps the world domain (so the tiling
+        // covers the WorldBounds boundary shell, not just cells whose centroid is interior).
+        var partition = new LinkedHashMap<TetreeKey<?>, Tet>();
+        var queue = new ArrayDeque<Tet>();
+        partition.put(seed.tmIndex(), seed);
+        queue.add(seed);
+
+        while (!queue.isEmpty()) {
+            var current = queue.poll();
+            for (int face = 0; face < 4; face++) {
+                var fn = current.faceNeighbor(face);
+                if (fn == null) {
+                    continue; // domain boundary
+                }
+                // Involution reciprocity: the dual face must point back to current.
+                var back = fn.tet().faceNeighbor(fn.face());
+                if (back == null || !current.equals(back.tet())) {
+                    continue;
+                }
+                var neighbor = fn.tet();
+                if (!cellOverlapsBounds(neighbor, worldBounds)) {
+                    continue;
+                }
+                var key = neighbor.tmIndex();
+                if (partition.containsKey(key)) {
+                    continue;
+                }
+                partition.put(key, neighbor);
+                queue.add(neighbor);
+            }
+        }
+
+        // Materialize the partition.
+        bubblesByKey.clear();
+        neighborFinder.clearCache();
+        for (var entry : partition.entrySet()) {
+            var bubble = new EnhancedBubble(UUID.randomUUID(), level, targetFrameMs);
+            addBubble(bubble, entry.getKey());
+        }
+
+        partitionLevel = level;
+        return level;
+    }
+
+    /**
+     * The single level at which all bubbles reside when this grid is a spatial partition (RDR-015 AC2),
+     * or {@code -1} if the grid is empty or was built via the legacy mixed-level
+     * {@link #createBubbles(int, byte, long)}. Routing and distribution query the Tetree directly at
+     * this level instead of scanning a level range.
+     *
+     * @return the partition level {@code L > 0}, or {@code -1} if not a single-level partition
+     */
+    public byte getPartitionLevel() {
+        return partitionLevel;
+    }
+
+    /**
+     * Choose the coarsest partition level whose cell-edge is no larger than
+     * {@code WorldBounds.size() / cbrt(targetBubbleCount)} (RDR-015 AC2) — i.e. cells are no coarser than the
+     * requested granularity. Iterates from level 1 upward (coarse → fine) and returns the first level that
+     * fits, so the partition uses the fewest cells satisfying the granularity bound. Clamped to
+     * {@code [1, MAX_REFINEMENT_LEVEL]} so the partition is never the L0 root.
+     */
+    private static byte choosePartitionLevel(WorldBounds worldBounds, int targetBubbleCount) {
+        double cellTarget = worldBounds.size() / Math.cbrt(targetBubbleCount);
+        byte maxLevel = Constants.getMaxRefinementLevel();
+        // lengthAtLevel(L) = 2^(maxLevel - L); want 2^(maxLevel - L) <= cellTarget.
+        for (byte level = 1; level < maxLevel; level++) {
+            if (Constants.lengthAtLevel(level) <= cellTarget) {
+                return level;
+            }
+        }
+        return maxLevel;
+    }
+
+    /**
+     * True iff the tetrahedral cell's axis-aligned bounding box overlaps the world bounds. Used as the BFS
+     * inclusion criterion so the partition covers the entire WorldBounds domain — including the boundary shell,
+     * where a cell can contain in-bounds points (reachable by entities clamped to the world wall) while its
+     * centroid lies just outside. AABB-overlap is a superset of "the cell contains an in-bounds point", so it
+     * guarantees coverage (at the cost of a few empty boundary cells).
+     */
+    private static boolean cellOverlapsBounds(Tet tet, WorldBounds worldBounds) {
+        var c = tet.coordinates();
+        int minX = Math.min(Math.min(c[0].x, c[1].x), Math.min(c[2].x, c[3].x));
+        int maxX = Math.max(Math.max(c[0].x, c[1].x), Math.max(c[2].x, c[3].x));
+        int minY = Math.min(Math.min(c[0].y, c[1].y), Math.min(c[2].y, c[3].y));
+        int maxY = Math.max(Math.max(c[0].y, c[1].y), Math.max(c[2].y, c[3].y));
+        int minZ = Math.min(Math.min(c[0].z, c[1].z), Math.min(c[2].z, c[3].z));
+        int maxZ = Math.max(Math.max(c[0].z, c[1].z), Math.max(c[2].z, c[3].z));
+        float lo = worldBounds.min();
+        float hi = worldBounds.max();
+        return maxX >= lo && minX <= hi && maxY >= lo && minY <= hi && maxZ >= lo && minZ <= hi;
     }
 
     /**
@@ -480,6 +653,9 @@ public class TetreeBubbleGrid {
             throw new IllegalArgumentException("Bubble already exists at key: " + key);
         }
 
+        // Record the fixed registration cell on the bubble so migration containment can test against it.
+        bubble.setSpatialKey(key);
+
         // Add to key map
         bubblesByKey.put(key, bubble);
 
@@ -549,5 +725,6 @@ public class TetreeBubbleGrid {
     public void clear() {
         bubblesByKey.clear();
         neighborFinder.clearCache();
+        partitionLevel = -1;
     }
 }
