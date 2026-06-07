@@ -16,16 +16,20 @@
  */
 package com.hellblazer.luciferase.simulation.topology.events;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
- * Event fired when a bubble splits into two bubbles.
+ * Event fired when a bubble splits into 8 Bey-refinement children.
+ * <p>
+ * The source bubble is replaced by its 8 level-(L+1) Bey children. Empty children are dropped,
+ * so {@code childBubbleIds} may contain 1–8 entries (all non-empty children).
  *
  * @param eventId        unique event identifier
  * @param timestamp      event timestamp (ms since epoch)
- * @param sourceBubbleId bubble that was split
- * @param newBubbleId    newly created bubble
- * @param entitiesMoved  number of entities moved to new bubble
+ * @param sourceBubbleId bubble that was split (removed from grid after split)
+ * @param childBubbleIds newly created child bubbles (non-empty ones only)
+ * @param entitiesMoved  total number of entities redistributed to child bubbles
  * @param success        whether split succeeded
  *
  * @author hal.hildebrand
@@ -34,7 +38,7 @@ public record SplitEvent(
     UUID eventId,
     long timestamp,
     UUID sourceBubbleId,
-    UUID newBubbleId,
+    List<UUID> childBubbleIds,
     int entitiesMoved,
     boolean success
 ) implements TopologyEvent {

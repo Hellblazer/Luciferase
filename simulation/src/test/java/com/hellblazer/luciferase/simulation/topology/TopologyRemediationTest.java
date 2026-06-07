@@ -53,34 +53,64 @@ class TopologyRemediationTest {
         executor   = new TopologyExecutor(bubbleGrid, accountant, metrics);
     }
 
-    // ---- .40: degenerate one-sided plane rejected -------------------------
+    // ---- .40: max-level source rejected (Bey refinement cannot go past level 21) ----
+    //
+    // With the Bey-refinement redesign (AC-2.5) the SplitPlane strategy is no longer
+    // consulted for geometry; "degenerate plane" is not a meaningful failure mode.
+    // The real hard guard is MAX_LEVEL: a bubble at level 21 cannot be subdivided further.
+    // This replaces the old "degenerate plane" test with the current canonical failure path.
 
     @Test
-    void degenerateOneSidedPlaneFailsFast() {
+    void maxLevelSourceFailsFast() {
+        // Create a level-0 bubble and immediately promote it to a key at level 21
+        // by registering a manually-constructed Tet key so the splitter's max-level
+        // guard fires.
         bubbleGrid.createBubbles(1, (byte) 1, 10);
         var bubble = bubbleGrid.getAllBubbles().iterator().next();
-        addEntities(bubble, 5100);
+        addEntities(bubble, 100);
 
-        // Strategy is recomputed in execute(); we drive a degenerate partition by
-        // forcing a plane whose normal puts EVERY entity on the positive side.
-        // Use a strategy that returns a plane far below all positions so signed
-        // distance >= 0 for all of them.
-        var degenerateStrategy = (SplitPlaneStrategy) (bounds, records) ->
-            new SplitPlane(new Point3f(1f, 0f, 0f), -1_000_000f, SplitPlane.SplitAxis.X);
+        // Re-register the bubble at a level-21 key (same bubble, new key)
+        var key21 = bubbleGrid.getKeyForBubble(bubble.id());
 
-        var splitter = new BubbleSplitter(bubbleGrid, accountant, new NoopTracker(), metrics, degenerateStrategy);
+        // Build a max-level Tet from the existing key, then descend 21 levels from
+        // the current level to reach a level-21 key.  Since this is a test for the
+        // guard condition itself, use a direct splitter instantiation and pass a
+        // proposal whose source is a bubble that the grid registers at level 21.
+        // The simplest approach: swap the bubble's registration key directly.
+        // Because TetreeBubbleGrid may not expose a re-register API, we use a
+        // mock/stub-free variant: create a second grid with the bubble at level 21.
+        var grid21 = new TetreeBubbleGrid((byte) 2);
+        var maxLevelTet = buildMaxLevelTet();
+        var maxKey = maxLevelTet.tmIndex();
+        grid21.addBubble(bubble, maxKey);
+        var acct21 = new EntityAccountant();
+        acct21.register(bubble.id(), UUID.randomUUID());
 
+        var splitter = new BubbleSplitter(grid21, acct21, new NoopTracker(), metrics);
         var proposal = new SplitProposal(UUID.randomUUID(), bubble.id(),
                                          new SplitPlane(new Point3f(1f, 0f, 0f), 0f),
                                          DigestAlgorithm.DEFAULT.getOrigin(), 0L);
 
         var result = splitter.execute(proposal);
-        assertFalse(result.success(), "Degenerate one-sided split plane must fail fast");
-        assertEquals(5100, accountant.entitiesInBubble(bubble.id()).size(),
-                     "Source bubble must retain all entities on a degenerate-plane rejection");
+        assertFalse(result.success(), "Source at MAX_LEVEL must fail fast — cannot subdivide further");
+        // Entity conservation: failure must not move entities
+        assertEquals(1, acct21.entitiesInBubble(bubble.id()).size(),
+                     "Source bubble must retain all entities when MAX_LEVEL guard fires");
     }
 
-    // ---- .41: no entity leak; grid bubble added before moves --------------
+    /** Returns a valid Tet at level 21 (max refinement). */
+    private com.hellblazer.luciferase.lucien.tetree.Tet buildMaxLevelTet() {
+        var t = new com.hellblazer.luciferase.lucien.tetree.Tet(0, 0, 0, (byte) 0, (byte) 0);
+        for (int i = 0; i < 21; i++) {
+            t = t.child(0);
+        }
+        return t;
+    }
+
+    // ---- .41: no entity leak; children added to grid, source removed ------
+    //
+    // After Bey-refinement split: source bubble is REMOVED, 1-8 non-empty children
+    // are present in the grid.  Total entity count must be conserved.
 
     @Test
     void newBubbleInGridForSuccessfulSplit() {
@@ -93,12 +123,24 @@ class TopologyRemediationTest {
         var result = executor.executeInternal(proposal); // public execute(SplitProposal) fenced — AC-0
 
         assertTrue(result.success(), () -> "Split should succeed: " + result.message());
-        assertEquals(before, getTotal(), "Conservation across the whole grid");
-        // Every entity recorded in the accountant must live in a bubble that exists in the grid.
-        var newBubbleId = findNewBubbleId(bubble.id());
-        assertNotNull(newBubbleId, "A new bubble must have been created");
-        assertNotNull(bubbleGrid.getBubbleById(newBubbleId),
-                      "New bubble holding migrated entities must be present in the grid (no leak)");
+        assertEquals(before, getTotal(), "Entity conservation: total must equal pre-split count");
+
+        // Source is REMOVED after a successful Bey split.
+        assertNull(bubbleGrid.getBubbleById(bubble.id()),
+                   "Source bubble must be removed from the grid after a successful Bey split");
+
+        // At least one child bubble must exist in the grid with entities.
+        // executor.executeInternal returns TopologyExecutionResult (no childBubbleIds field);
+        // find child bubbles by scanning the accountant for non-empty, non-source IDs.
+        var childIds = accountant.getDistribution().keySet().stream()
+                                 .filter(id -> !id.equals(bubble.id()))
+                                 .filter(id -> !accountant.entitiesInBubble(id).isEmpty())
+                                 .toList();
+        assertFalse(childIds.isEmpty(), "At least one non-empty child bubble must be created");
+        for (var childId : childIds) {
+            assertNotNull(bubbleGrid.getBubbleById(childId),
+                          "Every non-empty child bubble must be present in the grid (no leak): " + childId);
+        }
     }
 
     // ---- .42 / .45: split metrics not double-counted ----------------------
@@ -146,6 +188,9 @@ class TopologyRemediationTest {
         var split = assertInstanceOf(SplitEvent.class, events.get(0));
         assertTrue(split.entitiesMoved() > 0,
                    "entitiesMoved must reflect the real relocation count, not (after-before)=0");
+        // Bey split: event must carry non-empty childBubbleIds (source removed, children present)
+        assertFalse(split.childBubbleIds().isEmpty(),
+                    "SplitEvent must carry at least one childBubbleId after a successful Bey split");
     }
 
     // ---- .70: merge relocation count is the real moved count, not (after-before) --------
@@ -254,15 +299,6 @@ class TopologyRemediationTest {
         var plane = new SplitPlane(new Point3f(1f, 0f, 0f), (float) centroid.getX());
         return new SplitProposal(UUID.randomUUID(), bubble.id(), plane,
                                  DigestAlgorithm.DEFAULT.getOrigin(), 0L);
-    }
-
-    private UUID findNewBubbleId(UUID source) {
-        for (var id : accountant.getDistribution().keySet()) {
-            if (!id.equals(source) && !accountant.entitiesInBubble(id).isEmpty()) {
-                return id;
-            }
-        }
-        return null;
     }
 
     private void addEntities(EnhancedBubble bubble, int count) {

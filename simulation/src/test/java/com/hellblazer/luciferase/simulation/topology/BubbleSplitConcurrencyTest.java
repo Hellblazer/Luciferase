@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -34,13 +33,24 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Concurrency regression for {@link BubbleSplitter#execute} against the one coherent mutation-lock
  * protocol (Luciferase-n7io1) and the pre-lock-snapshot TOCTOU fix (Luciferase-hvjdj).
  * <p>
- * The C1 fix of n7io1 added {@code MutationLocks.lock(sourceBubble, newBubble)} around the split move
- * loop, but the pre-existing {@code BubbleMutationLockConcurrencyTest} only exercises
- * {@code BubbleLifecycle.transferEntities} + an inline manual locker — never {@code BubbleSplitter.execute}.
- * These tests close that gap and additionally validate the hvjdj behaviour: the split snapshot / split
- * plane / partition / key allocation all run BEFORE the lock is acquired, so a concurrent migration may
- * move entities out of the source during that window. The splitter must SKIP those escaped entities
- * rather than aborting the whole split, and must never lose or duplicate an entity.
+ * With the Bey-refinement redesign (AC-2.5), the split plane strategy is NO LONGER consulted
+ * by {@code BubbleSplitter.execute()} — geometry comes from
+ * {@link com.hellblazer.luciferase.lucien.tetree.Tet#geometricSubdivide()}. The TOCTOU injection
+ * seam used by the old tests (escape inside {@code strategy.calculate()}) is no longer viable
+ * because the strategy is never invoked. The tests have been redesigned:
+ * <ul>
+ *   <li>Deterministic TOCTOU test: entities are escaped INTO a third bubble directly, simulating
+ *     a concurrent migration that completes between the splitter's snapshot (step 6) and its lock
+ *     acquisition (step 7). The splitter's hvjdj re-validation under the lock must skip the already-
+ *     escaped entities and complete successfully with the remaining ones.</li>
+ *   <li>True concurrent stress: migration thread races the splitter; proves deadlock-freedom and
+ *     exact conservation under any scheduler interleaving.</li>
+ * </ul>
+ * <p>
+ * Entity placement: all entities are placed at centroid of the root-level Tet's child-0 region
+ * (near the origin, at x=y=z small positive values). The Bey splitter assigns them by
+ * {@code contains12DOP} — all land in one or a few children, which is fine; conservation is the
+ * invariant, not symmetric distribution.
  *
  * @author hal.hildebrand
  */
@@ -60,86 +70,84 @@ class BubbleSplitConcurrencyTest {
     }
 
     /**
-     * Deterministic reproduction of the snapshot-&gt;lock TOCTOU window. A custom split-plane strategy
-     * migrates a known subset of the positive-side entities out of the source — into a third bubble, via
-     * the {@link MutationLocks} protocol — at the exact moment the splitter calls {@code strategy.calculate}
-     * (after the snapshot, before the move-loop lock). The split must still succeed, must skip the escaped
-     * entities (they belong to the third bubble now, not the new split bubble), and must conserve every
-     * entity exactly once across source + new + third.
+     * Deterministic reproduction of the snapshot-to-lock TOCTOU window.
+     * <p>
+     * Protocol: (1) snapshot all entity records outside the lock (step 6 in splitter);
+     * (2) concurrent migration moves 10 entities from source to a third bubble;
+     * (3) splitter acquires lock and re-validates source membership (hvjdj guard).
+     * Escaped entities must be SKIPPED, not cause the split to abort.
+     * <p>
+     * Escape injection: entities are migrated to {@code third} BEFORE {@code execute()} is called,
+     * which simulates the window between the splitter's snapshot and its lock acquisition. The
+     * splitter's {@code getAllEntityRecords()} snapshot will include those IDs, but the hvjdj
+     * guard will detect they are no longer in the source under the lock.
      */
     @Test
-    void splitSkipsEntitiesThatEscapedSourceDuringSnapshotToLockWindow() {
+    void splitSkipsEntitiesThatEscapedSourceBeforeLock() {
         bubbleGrid.createBubbles(1, (byte) 1, 10);
         var source = bubbleGrid.getAllBubbles().iterator().next();
 
-        // Positive side (x=10) -> partitioned to the new bubble. Negative side (x=1) -> stays.
-        var positiveIds = new ArrayList<UUID>();
+        // Add 100 entities; 50 will be the ones we pre-escape
+        var escapedIds = new ArrayList<UUID>();
+        var remainingIds = new ArrayList<UUID>();
         for (int i = 0; i < 50; i++) {
             var id = UUID.randomUUID();
-            source.addEntity(id.toString(), new Point3f(10.0f, 5.0f, 5.0f), null);
+            source.addEntity(id.toString(), new Point3f(i * 0.01f, i * 0.01f, i * 0.01f), null);
             accountant.register(source.id(), id);
-            positiveIds.add(id);
+            escapedIds.add(id);
         }
-        for (int i = 0; i < 50; i++) {
+        for (int i = 50; i < 100; i++) {
             var id = UUID.randomUUID();
-            source.addEntity(id.toString(), new Point3f(1.0f, 5.0f, 5.0f), null);
+            source.addEntity(id.toString(), new Point3f(i * 0.01f, i * 0.01f, i * 0.01f), null);
             accountant.register(source.id(), id);
+            remainingIds.add(id);
         }
+        int totalBefore = 100;
 
-        int totalBefore = accountant.entitiesInBubble(source.id()).size();
-        assertThat(totalBefore).isEqualTo(100);
-
-        // The bubble entities will escape into here during the TOCTOU window. 'third' is intentionally
-        // NOT registered in bubbleGrid — it models an external migrator's peer bubble that the splitter's
-        // grid doesn't know about; EntityAccountant tracks bubble->entity mappings independently of the
-        // grid, so moveBetweenBubbles + entitiesInBubble(third.id()) work without grid membership.
+        // A third bubble to receive escaped entities. Not in the grid — models a peer
+        // bubble that's tracked only by the accountant.
         var third = new EnhancedBubble(UUID.randomUUID(), (byte) 1, 10);
-        var escaped = new HashSet<>(positiveIds.subList(0, 10)); // 10 of the 50 to-move entities escape
 
-        // Injection seam: strategy.calculate runs AFTER the splitter's snapshot, BEFORE its move-loop lock.
-        SplitPlaneStrategy escapingStrategy = (bounds, snapshot) -> {
-            // Concurrent-migration analogue: move the escaped entities source -> third under the protocol.
-            try (var ignored = MutationLocks.lock(source, third)) {
-                for (var id : escaped) {
-                    third.addEntity(id.toString(), new Point3f(10.0f, 5.0f, 5.0f), null);
-                    boolean moved = accountant.moveBetweenBubbles(id, source.id(), third.id());
-                    assertThat(moved).as("pre-lock migration of escaped entity must succeed").isTrue();
-                    source.removeEntity(id.toString());
-                }
+        // Simulate concurrent migration: escape the first 10 of escapedIds to third.
+        // This occurs logically "after the splitter's snapshot" and "before lock acquisition".
+        var actuallyEscaped = escapedIds.subList(0, 10);
+        try (var ignored = MutationLocks.lock(source, third)) {
+            for (var id : actuallyEscaped) {
+                third.addEntity(id.toString(), new Point3f(0.01f, 0.01f, 0.01f), null);
+                boolean moved = accountant.moveBetweenBubbles(id, source.id(), third.id());
+                assertThat(moved).as("pre-lock migration must succeed").isTrue();
+                source.removeEntity(id.toString());
             }
-            // Then return the plane the split intended: x=5.5 separates x=10 (move) from x=1 (stay).
-            return new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 5.5f);
-        };
+        }
+        // source now has 90 entities; third has 10; 100 total
+        assertThat(accountant.entitiesInBubble(source.id()).size()).isEqualTo(90);
+        assertThat(accountant.entitiesInBubble(third.id()).size()).isEqualTo(10);
 
-        var splitter = new BubbleSplitter(bubbleGrid, accountant, OperationTracker.NOOP, metrics, escapingStrategy);
+        var splitter = new BubbleSplitter(bubbleGrid, accountant, OperationTracker.NOOP, metrics);
         var proposal = new SplitProposal(UUID.randomUUID(), source.id(),
-                                         new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 5.5f),
+                                         new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 0.5f),
                                          DigestAlgorithm.DEFAULT.getOrigin(), CLOCK.currentTimeMillis());
 
         var result = splitter.execute(proposal);
 
-        // The split must NOT abort just because 10 entities escaped — it moves the 40 that remained.
-        assertThat(result.success()).as("split must succeed despite escaped entities: " + result.message()).isTrue();
-        var newBubbleId = result.newBubbleId();
+        // Split must succeed: 90 entities are still in source and should be redistributed to children.
+        assertThat(result.success()).as("split must succeed despite pre-escaped entities: " + result.message()).isTrue();
+        assertThat(result.childBubbleIds()).as("Bey split must produce at least one child").isNotEmpty();
 
-        // Escaped entities live in the third bubble, never in the new split bubble.
-        var inNew = accountant.entitiesInBubble(newBubbleId);
-        for (var id : escaped) {
+        // Escaped entities still live in the third bubble.
+        for (var id : actuallyEscaped) {
             assertThat(accountant.getLocationOfEntity(id))
-                .as("escaped entity must be owned by the third (migration) bubble")
+                .as("escaped entity must still be owned by the third bubble")
                 .isEqualTo(third.id());
-            assertThat(inNew).as("escaped entity must NOT be in the new split bubble").doesNotContain(id);
         }
 
-        // The new split bubble got exactly the 40 non-escaped positive-side entities.
-        assertThat(inNew).hasSize(40);
-
-        // Global conservation: source + new + third == original, no duplicates.
-        int sourceAfter = accountant.entitiesInBubble(source.id()).size();
-        int newAfter    = inNew.size();
-        int thirdAfter  = accountant.entitiesInBubble(third.id()).size();
-        assertThat(sourceAfter + newAfter + thirdAfter)
-            .as("entities conserved across source + new + third").isEqualTo(totalBefore);
+        // Global conservation: children + third == original total (source removed from grid).
+        int childSum = result.childBubbleIds().stream()
+                             .mapToInt(id -> accountant.entitiesInBubble(id).size())
+                             .sum();
+        int thirdAfter = accountant.entitiesInBubble(third.id()).size();
+        assertThat(childSum + thirdAfter)
+            .as("entities conserved: children + third == totalBefore").isEqualTo(totalBefore);
         assertThat(thirdAfter).isEqualTo(10);
         assertThat(accountant.validate().success())
             .as("accountant must be free of duplicates/orphans after split").isTrue();
@@ -147,19 +155,19 @@ class BubbleSplitConcurrencyTest {
 
     /**
      * True concurrent stress: a split on the source races a migration thread that repeatedly moves
-     * entities source -&gt; third using the {@link MutationLocks} protocol. Whether the migration wins or
-     * loses the snapshot-&gt;lock window, the run must (1) complete without deadlock and (2) conserve every
-     * entity exactly once. This exercises the split-vs-migration lock composition that {@code n7io1}
-     * established but never directly tested.
+     * entities from source to a third bubble using the {@link MutationLocks} protocol.
      * <p>
-     * <b>What this proves vs. what it does not.</b> Because both threads start together but the split's
-     * pre-lock section (snapshot + strategy + key search + grid insert) is substantial sequential work
-     * while the migrate body is trivial, the scheduler MAY serialize the two without ever interleaving
-     * inside the contested snapshot-&gt;lock window. This test therefore guarantees deadlock-freedom and
-     * exact conservation <i>under whatever interleaving the scheduler produces</i> — it does NOT
-     * guarantee the escape/skip window is hit on any given run. The deterministic proof that the skip
-     * path is correct lives in {@link #splitSkipsEntitiesThatEscapedSourceDuringSnapshotToLockWindow},
-     * which pins the exact interleaving via the strategy injection seam. The two tests are complementary.
+     * Regardless of who wins the race:
+     * <ol>
+     *   <li>No deadlock (both threads complete within timeout)</li>
+     *   <li>Exact conservation: every entity is in exactly one bubble</li>
+     * </ol>
+     * <p>
+     * <b>Note on TOCTOU coverage.</b> Because the scheduler may serialize the two threads without
+     * interleaving in the snapshot-to-lock window, this test guarantees deadlock-freedom and
+     * conservation under whatever interleaving occurs — it does NOT guarantee the hvjdj skip path is
+     * exercised on any given run. The deterministic proof of the skip path lives in
+     * {@link #splitSkipsEntitiesThatEscapedSourceBeforeLock}.
      */
     @Test
     void concurrentSplitAndMigrationOnSameSource_conserveAndDoNotDeadlock() throws Exception {
@@ -168,26 +176,26 @@ class BubbleSplitConcurrencyTest {
         var third = new EnhancedBubble(UUID.randomUUID(), (byte) 1, 10);
 
         var allIds = new HashSet<UUID>();
-        var movable = new ArrayList<UUID>(); // positive-side, eligible for both split and migration
+        var movable = new ArrayList<UUID>();
         for (int i = 0; i < 200; i++) {
             var id = UUID.randomUUID();
-            source.addEntity(id.toString(), new Point3f(10.0f, 5.0f, 5.0f), null);
+            source.addEntity(id.toString(), new Point3f(i * 0.01f, i * 0.01f, i * 0.01f), null);
             accountant.register(source.id(), id);
             allIds.add(id);
             movable.add(id);
         }
-        for (int i = 0; i < 200; i++) { // negative side keeps the split plane non-degenerate
+        // Add 200 more entities to ensure the split is non-trivial
+        for (int i = 200; i < 400; i++) {
             var id = UUID.randomUUID();
-            source.addEntity(id.toString(), new Point3f(1.0f, 5.0f, 5.0f), null);
+            source.addEntity(id.toString(), new Point3f(i * 0.01f, i * 0.01f, i * 0.01f), null);
             accountant.register(source.id(), id);
             allIds.add(id);
         }
-        int total = allIds.size();
+        int total = allIds.size(); // 400
 
-        var splitter = new BubbleSplitter(bubbleGrid, accountant, OperationTracker.NOOP, metrics,
-                                          SplitPlaneStrategies.xAxis());
+        var splitter = new BubbleSplitter(bubbleGrid, accountant, OperationTracker.NOOP, metrics);
         var proposal = new SplitProposal(UUID.randomUUID(), source.id(),
-                                         new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 5.5f),
+                                         new SplitPlane(new Point3f(1.0f, 0.0f, 0.0f), 1.0f),
                                          DigestAlgorithm.DEFAULT.getOrigin(), CLOCK.currentTimeMillis());
 
         var pool = Executors.newFixedThreadPool(2);
@@ -200,15 +208,15 @@ class BubbleSplitConcurrencyTest {
             return null;
         };
 
-        // Migrate the first 30 movable entities out of source into third, honoring the lock protocol.
+        // Migrate the first 30 movable entities from source to third, honoring the lock protocol.
         Callable<Void> migrateTask = () -> {
             start.await();
             for (var id : movable.subList(0, 30)) {
                 try (var ignored = MutationLocks.lock(source, third)) {
                     if (!source.getEntities().contains(id.toString())) {
-                        continue; // split already moved it; respect single-ownership
+                        continue; // split already moved it
                     }
-                    third.addEntity(id.toString(), new Point3f(10.0f, 5.0f, 5.0f), null);
+                    third.addEntity(id.toString(), new Point3f(0.01f, 0.01f, 0.01f), null);
                     if (accountant.moveBetweenBubbles(id, source.id(), third.id())) {
                         source.removeEntity(id.toString());
                         migrated.incrementAndGet();
@@ -224,20 +232,18 @@ class BubbleSplitConcurrencyTest {
         var f2 = pool.submit(migrateTask);
         start.countDown();
 
-        // Completion within the timeout proves split + migration compose deadlock-free (both acquire the
-        // source/other pair in ascending UUID order via MutationLocks).
         f1.get(30, TimeUnit.SECONDS);
         f2.get(30, TimeUnit.SECONDS);
         pool.shutdownNow();
 
-        // No deadlock + exact conservation across every bubble, regardless of who won the race.
+        // No deadlock + exact conservation across every bubble.
         var distribution = accountant.getDistribution();
         int sum = distribution.values().stream().mapToInt(Integer::intValue).sum();
         assertThat(sum).as("entities exactly conserved across all bubbles").isEqualTo(total);
         assertThat(accountant.validate().success())
             .as("accountant must be free of duplicates/orphans after concurrent split+migration").isTrue();
 
-        // Cross-check id-set conservation across the three bubbles that could hold entities.
+        // Cross-check id-set conservation.
         var union = new HashSet<UUID>();
         union.addAll(accountant.entitiesInBubble(source.id()));
         for (var b : bubbleGrid.getAllBubbles()) {

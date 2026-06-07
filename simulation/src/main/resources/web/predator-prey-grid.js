@@ -725,8 +725,8 @@ function handleTopologyEvent(event) {
 
     switch (event.eventType) {
         case 'split':
-            console.log(`Split: Bubble ${event.sourceBubbleId} → ${event.newBubbleId} (${event.entitiesMoved} entities)`);
-            animateSplit(event.sourceBubbleId, event.newBubbleId, event.entitiesMoved);
+            console.log(`Split: Bubble ${event.sourceBubbleId} → [${(event.childBubbleIds || []).join(', ')}] (${event.entitiesMoved} entities)`);
+            animateSplit(event.sourceBubbleId, event.childBubbleIds, event.entitiesMoved);
             break;
         case 'merge':
             console.log(`Merge: Bubble ${event.sourceBubbleId} → ${event.targetBubbleId} (${event.entitiesMoved} entities)`);
@@ -748,10 +748,13 @@ function handleTopologyEvent(event) {
 }
 
 /**
- * Animate bubble split: source bubble splits into two with entity redistribution.
+ * Animate bubble split: source bubble splits into N Bey children (1-8).
  * Shows flash effect on source bubble, then fetches updated topology.
+ * @param {string} sourceBubbleId - ID of the source bubble (now removed from grid)
+ * @param {string[]} childBubbleIds - IDs of the non-empty child bubbles
+ * @param {number} entitiesMoved - number of entities redistributed
  */
-function animateSplit(sourceBubbleId, newBubbleId, entitiesMoved) {
+function animateSplit(sourceBubbleId, childBubbleIds, entitiesMoved) {
     const sourceBoundary = bubbleBoundaryMap.get(sourceBubbleId);
     if (!sourceBoundary) {
         console.warn(`Source bubble ${sourceBubbleId} not found for split animation`);
@@ -760,7 +763,6 @@ function animateSplit(sourceBubbleId, newBubbleId, entitiesMoved) {
     }
 
     // Flash animation: bright white pulse indicating split
-    const originalMaterial = sourceBoundary.material.clone();
     const flashMaterial = new THREE.LineBasicMaterial({
         color: 0xffffff,
         opacity: 1.0,
@@ -774,6 +776,7 @@ function animateSplit(sourceBubbleId, newBubbleId, entitiesMoved) {
     // Animate fade back to normal over 500ms, then fetch new topology
     const startTime = performance.now();
     const duration = 500;
+    const childIds = childBubbleIds || [];
 
     function animateFlash() {
         const elapsed = performance.now() - startTime;
@@ -785,7 +788,7 @@ function animateSplit(sourceBubbleId, newBubbleId, entitiesMoved) {
             requestAnimationFrame(animateFlash);
         } else {
             // Animation complete - fetch updated topology
-            console.log(`Split animation complete: ${sourceBubbleId} → [${sourceBubbleId}, ${newBubbleId}]`);
+            console.log(`Split animation complete: ${sourceBubbleId} → [${childIds.join(', ')}]`);
             fetchUpdatedBubbleGeometry();
         }
     }

@@ -16,14 +16,16 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.luciferase.lucien.tetree.Tet;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.MutationLocks;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
-import com.hellblazer.luciferase.simulation.distributed.integration.EntityValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -31,38 +33,34 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
- * Executes bubble split operations with atomic entity redistribution.
+ * Executes bubble split operations via TRUE Bey spatial refinement.
  * <p>
- * Splits an overcrowded bubble (>5000 entities) into two bubbles by:
- * <ol>
- *   <li>Partitioning entities based on split plane geometry</li>
- *   <li>Creating new child bubble</li>
- *   <li>Atomically moving entities to new bubble via EntityAccountant</li>
- *   <li>Validating 100% entity retention</li>
- * </ol>
+ * Replaces the source level-L leaf with its 8 level-(L+1) Bey children, assigns each entity to
+ * the child that exactly contains it (via {@code contains12DOP}), and removes the parent leaf.
+ * <p>
+ * <b>Capacity model</b>: a bubble with {@code >5000} entities triggers a split. All 8 children
+ * are created uniformly (RQ-6: ALL-8 uniform Bey refinement) to guarantee the leaf-partition
+ * coverage invariant (8 children tile the parent exactly, no overlap, no parent left behind).
+ * ALL 8 children are ALWAYS kept on the SUCCESS path — empty children are valid leaves that
+ * migration may fill later. Only on the FAILURE/abort rollback paths are all 8 children removed.
+ * <p>
+ * Entities that do not pass {@code contains12DOP} for any child (FP rounding / boundary escapees)
+ * are assigned to the geometrically NEAREST child (minimum Euclidean distance from entity position
+ * to child centroid). This guarantees every still-present entity lands in a live child — no orphan.
+ * <p>
+ * Partial/density-driven refinement (RQ-6 alternative) is a deferred boundary tracked on
+ * Luciferase-xtyki.
  * <p>
  * <b>Safety Guarantees</b>:
  * <ul>
  *   <li>Atomic entity transfer: All-or-nothing semantics via EntityAccountant</li>
- *   <li>100% retention validation: Pre/post entity counts must match</li>
+ *   <li>100% retention validation: entityAccountant.validate() post-split</li>
  *   <li>No duplicates: EntityAccountant validates each entity in exactly one bubble</li>
+ *   <li>Deadlock-free locking: ascending-UUID MutationLocks across source + all 8 children</li>
+ *   <li>No orphans: outside-containment entities fall back to nearest child by Euclidean distance</li>
  * </ul>
  * <p>
- * <b>Algorithm</b>:
- * <ol>
- *   <li>Get all entities from source bubble</li>
- *   <li>Partition entities by split plane (signed distance test)</li>
- *   <li>Create new child bubble at same spatial level</li>
- *   <li>For entities on positive side of plane:
- *     <ul>
- *       <li>Add entity to new bubble</li>
- *       <li>EntityAccountant.moveBetweenBubbles() (atomic)</li>
- *     </ul>
- *   </li>
- *   <li>Validate conservation: totalBefore == totalAfter</li>
- * </ol>
- * <p>
- * Phase 9C: Topology Reorganization & Execution
+ * Phase B-core (RDR-018 AC-2.5): Bey-refinement geometry.
  *
  * @author hal.hildebrand
  */
@@ -70,11 +68,14 @@ public class BubbleSplitter {
 
     private static final Logger log = LoggerFactory.getLogger(BubbleSplitter.class);
 
-    private final TetreeBubbleGrid bubbleGrid;
-    private final EntityAccountant accountant;
-    private final OperationTracker operationTracker;
-    private final TopologyMetrics metrics;
-    private final SplitPlaneStrategy strategy;
+    /** Maximum tetree refinement level; cannot subdivide further. */
+    private static final byte MAX_LEVEL = 21;
+
+    private final TetreeBubbleGrid  bubbleGrid;
+    private final EntityAccountant  accountant;
+    private final OperationTracker  operationTracker;
+    private final TopologyMetrics   metrics;
+    private final SplitPlaneStrategy strategy;   // retained for backward compat; not consulted for geometry
 
     // Pluggable UUID supplier for deterministic testing - defaults to random UUIDs
     private volatile Supplier<UUID> uuidSupplier = UUID::randomUUID;
@@ -97,21 +98,25 @@ public class BubbleSplitter {
 
     /**
      * Creates a bubble splitter with custom split plane strategy.
+     * <p>
+     * The strategy is retained for backward compatibility but is no longer consulted
+     * for geometry in the Bey-refinement path; child bubble keys come from
+     * {@link Tet#geometricSubdivide()} and containment from {@link Tet#contains12DOP}.
      *
      * @param bubbleGrid        the bubble grid
      * @param accountant        the entity accountant for atomic transfers
      * @param operationTracker  the operation tracker for rollback support
      * @param metrics           the metrics tracker for operational monitoring
-     * @param strategy          the split plane calculation strategy
+     * @param strategy          the split plane calculation strategy (legacy; unused for keys)
      * @throws NullPointerException if any parameter is null
      */
     public BubbleSplitter(TetreeBubbleGrid bubbleGrid, EntityAccountant accountant, OperationTracker operationTracker,
                           TopologyMetrics metrics, SplitPlaneStrategy strategy) {
-        this.bubbleGrid = java.util.Objects.requireNonNull(bubbleGrid, "bubbleGrid must not be null");
-        this.accountant = java.util.Objects.requireNonNull(accountant, "accountant must not be null");
-        this.operationTracker = java.util.Objects.requireNonNull(operationTracker, "operationTracker must not be null");
-        this.metrics = java.util.Objects.requireNonNull(metrics, "metrics must not be null");
-        this.strategy = java.util.Objects.requireNonNull(strategy, "strategy must not be null");
+        this.bubbleGrid       = Objects.requireNonNull(bubbleGrid,       "bubbleGrid must not be null");
+        this.accountant       = Objects.requireNonNull(accountant,       "accountant must not be null");
+        this.operationTracker = Objects.requireNonNull(operationTracker, "operationTracker must not be null");
+        this.metrics          = Objects.requireNonNull(metrics,          "metrics must not be null");
+        this.strategy         = Objects.requireNonNull(strategy,         "strategy must not be null");
     }
 
     /**
@@ -128,421 +133,319 @@ public class BubbleSplitter {
     }
 
     /**
-     * Executes a split operation on a bubble.
+     * Executes a split operation on a bubble using TRUE Bey spatial refinement.
      * <p>
-     * Partitions entities based on split plane and creates new child bubble.
-     * If key collision occurs at the initial child level, automatically retries
-     * at progressively deeper levels (up to tetree max level 21) to find an
-     * unoccupied key while preserving spatial locality and entity interactions.
+     * Replaces the source level-L leaf with its 8 level-(L+1) Bey children.
+     * Entities are assigned to children by exact {@code contains12DOP} containment;
+     * boundary/FP-rounding escapees are assigned to the nearest child by Euclidean distance
+     * from entity position to child centroid (no orphan path).
+     * <p>
+     * ALL 8 children are kept on the SUCCESS path (empty children are valid leaves for migration).
+     * On FAILURE/abort paths all 8 children are removed and the parent is preserved.
+     * <p>
+     * The {@link SplitProposal}'s embedded {@link SplitPlane} is no longer consulted for
+     * geometry or key selection; it may remain present in the proposal for consensus
+     * compatibility but is ignored by this method.
      *
-     * @param proposal the split proposal with source bubble and split plane
-     * @return execution result with success status and details
+     * @param proposal the split proposal with source bubble id
+     * @return execution result with success status, childBubbleIds, and entity counts
      * @throws NullPointerException if proposal is null
      */
     public SplitExecutionResult execute(SplitProposal proposal) {
-        java.util.Objects.requireNonNull(proposal, "proposal must not be null");
+        Objects.requireNonNull(proposal, "proposal must not be null");
 
-        // Generate correlation ID for tracking this operation across log statements
-        var correlationId = UUID.randomUUID().toString().substring(0, 8);
+        var correlationId  = UUID.randomUUID().toString().substring(0, 8);
         var sourceBubbleId = proposal.sourceBubble();
 
-        // Record split attempt for metrics
         metrics.recordSplitAttempt();
+        log.debug("[SPLIT-{}] Bubble {}: Starting Bey-refinement split", correlationId, sourceBubbleId);
 
-        log.debug("[SPLIT-{}] Bubble {}: Starting split operation", correlationId, sourceBubbleId);
-
-        // Get source bubble
+        // 1. Resolve source bubble
         var sourceBubble = bubbleGrid.getBubbleById(sourceBubbleId);
         if (sourceBubble == null) {
-            log.error("[SPLIT-{}] Bubble {}: Source bubble not found", correlationId, sourceBubbleId);
+            log.error("[SPLIT-{}] Source bubble {} not found", correlationId, sourceBubbleId);
             metrics.recordSplitFailure("SOURCE_BUBBLE_NOT_FOUND");
-            return new SplitExecutionResult(false, "Source bubble not found: " + sourceBubbleId, null, 0, 0);
+            return SplitExecutionResult.failure("Source bubble not found: " + sourceBubbleId);
         }
 
-        // Capture entity count before split
-        int entitiesBeforeSplit = accountant.entitiesInBubble(sourceBubbleId).size();
-        log.debug("[{}] Source bubble {} has {} entities before split", correlationId, sourceBubbleId, entitiesBeforeSplit);
-
-        // Get all entity records with positions
-        var allRecords = sourceBubble.getAllEntityRecords();
-        if (allRecords.isEmpty()) {
-            log.error("[SPLIT-{}] Bubble {}: Source bubble has no entities", correlationId, sourceBubbleId);
-            metrics.recordSplitFailure("NO_ENTITIES");
-            return new SplitExecutionResult(false, "Source bubble has no entities", null, 0, 0);
+        // 2. Resolve parent Tet and check max-level guard
+        var parentKey = bubbleGrid.getKeyForBubble(sourceBubbleId);
+        if (parentKey == null) {
+            log.error("[SPLIT-{}] No grid key for source bubble {}", correlationId, sourceBubbleId);
+            metrics.recordSplitFailure("NO_GRID_KEY");
+            return SplitExecutionResult.failure("No grid key for source bubble: " + sourceBubbleId);
+        }
+        var parentTet = Tet.tetrahedron(parentKey);
+        byte parentLevel = parentTet.l();
+        if (parentLevel >= MAX_LEVEL) {
+            log.error("[SPLIT-{}] Cannot refine at max level {} for bubble {}", correlationId, parentLevel,
+                      sourceBubbleId);
+            metrics.recordSplitFailure("MAX_LEVEL_EXCEEDED");
+            return SplitExecutionResult.failure(
+                "cannot refine at max level " + parentLevel + " for bubble " + sourceBubbleId);
         }
 
-        // Use strategy to compute split plane (replaces proposal's plane)
-        // Strategy computes split plane from actual entity positions
-        var splitPlane = strategy.calculate(sourceBubble.bounds(), allRecords);
-        log.debug("[SPLIT-{}] Strategy {} selected {} axis for split plane",
-                 correlationId, strategy.getClass().getSimpleName(), splitPlane.axis());
-
-        // Partition entities by split plane
-        var entitiesToMove = partitionEntities(allRecords, splitPlane);
-        log.debug("[SPLIT-{}] Split plane partitions {} entities to new bubble (out of {})",
-                 correlationId, entitiesToMove.size(), allRecords.size());
-
-        if (entitiesToMove.isEmpty()) {
-            log.error("[SPLIT-{}] Bubble {}: No entities to move based on split plane", correlationId, sourceBubbleId);
-            metrics.recordSplitFailure("NO_ENTITIES_TO_MOVE");
-            return new SplitExecutionResult(false, "No entities to move based on split plane", null, entitiesBeforeSplit, entitiesBeforeSplit);
+        // 3. Compute 8 Bey children and their TetreeKeys
+        var children    = parentTet.geometricSubdivide();   // guaranteed 8 children in TM order
+        var childKeys   = new TetreeKey[8];
+        for (int i = 0; i < 8; i++) {
+            childKeys[i] = children[i].tmIndex();
+            if (bubbleGrid.containsBubble(childKeys[i])) {
+                log.error("[SPLIT-{}] Child key {} already in grid — fresh refinement expected", correlationId,
+                          childKeys[i]);
+                metrics.recordSplitFailure("CHILD_KEY_COLLISION");
+                return SplitExecutionResult.failure(
+                    "Child key already in grid: " + childKeys[i] + " (source=" + sourceBubbleId + ")");
+            }
         }
 
-        // Validate the strategy-computed plane produces a non-empty partition on BOTH sides
-        // before committing to execution. The proposal's embedded plane was certified by
-        // consensus, but execute() recomputes a fresh plane from current entity positions;
-        // a concurrent position mutation could yield a degenerate one-sided partition (all
-        // entities moved, none retained). Fail fast rather than create an empty source bubble.
-        if (entitiesToMove.size() == allRecords.size()) {
-            log.error("[SPLIT-{}] Bubble {}: Strategy-computed split plane is degenerate (all {} entities on one side)",
-                     correlationId, sourceBubbleId, allRecords.size());
-            metrics.recordSplitFailure("DEGENERATE_SPLIT_PLANE");
-            return new SplitExecutionResult(false,
-                                           "Strategy-computed split plane produces a one-sided partition (all entities on one side)",
-                                           null, entitiesBeforeSplit, entitiesBeforeSplit);
-        }
-
-        // Create new child bubble
-        // Child bubble should be one level deeper in the tetree hierarchy
-        UUID newBubbleId = uuidSupplier.get();
-        byte parentLevel = sourceBubble.getSpatialLevel();
+        byte childLevel = (byte) (parentLevel + 1);
         long targetFrameMs = sourceBubble.getTargetFrameMs();
 
-        // IMPORTANT: Compute target key BEFORE moving entities to detect collisions early.
-        //
-        // KNOWN RESIDUAL (Luciferase-hvjdj): the centroid (and thus the new bubble's SFC key) is
-        // derived from the PRE-LOCK snapshot `entitiesToMove`. If entities escape the source during
-        // the snapshot->lock window they are skipped from the move (see the loop below) but their
-        // positions still influenced this centroid, so the new bubble's key may be anchored slightly
-        // off the actually-moved population's centroid. This is a spatial-locality quality gap, NOT a
-        // safety issue: the key is only required to be unoccupied (findAvailableKey guarantees that)
-        // and entity conservation is unaffected. Recomputing the key post-skip is not possible here
-        // because the bubble is registered in the grid before the move loop; closing the locality gap
-        // would require restructuring and is deferred (demand-driven).
-        var positions = entitiesToMove.stream()
-                                      .map(EnhancedBubble.EntityRecord::position)
-                                      .toList();
-        float cx = (float) positions.stream().mapToDouble(p -> p.x).average().orElseThrow();
-        float cy = (float) positions.stream().mapToDouble(p -> p.y).average().orElseThrow();
-        float cz = (float) positions.stream().mapToDouble(p -> p.z).average().orElseThrow();
-
-        // Try to find an unoccupied key, starting at child level and going deeper if collisions occur
-        byte startLevel = (byte) Math.min(parentLevel + 1, 21);  // Start one level deeper
-        var keyLevelResult = findAvailableKey(cx, cy, cz, startLevel, correlationId);
-
-        if (keyLevelResult == null) {
-            // Calculate levels attempted for diagnostic metrics
-            int levelsAttempted = 21 - startLevel + 1;
-            metrics.recordLevelsExhaustedOnFailure(levelsAttempted);
-            metrics.recordSplitFailure("NO_AVAILABLE_KEY");
-
-            log.error("[SPLIT-{}] Could not find available key at any level from {} to 21 for centroid ({},{},{}). Exhausted {} levels.",
-                     correlationId, startLevel, cx, cy, cz, levelsAttempted);
-            return new SplitExecutionResult(false,
-                                           "Could not find available key for split bubble after retrying deeper levels",
-                                           null, entitiesBeforeSplit, entitiesBeforeSplit);
+        // 4. Create 8 EnhancedBubble children and add to grid BEFORE moves
+        var childBubbles = new EnhancedBubble[8];
+        var childIds     = new UUID[8];
+        for (int i = 0; i < 8; i++) {
+            childIds[i]    = uuidSupplier.get();
+            childBubbles[i] = new EnhancedBubble(childIds[i], childLevel, targetFrameMs);
+            bubbleGrid.addBubble(childBubbles[i], childKeys[i]);
+            operationTracker.recordBubbleAdded(childIds[i]);
+            log.debug("[SPLIT-{}] Added child bubble {} at key {}", correlationId, childIds[i], childKeys[i]);
         }
 
-        // Extract the available key and the level at which it was found
-        var targetKey = keyLevelResult.key();
-        byte childLevel = keyLevelResult.level();
+        // 5. Snapshot entity records (pre-lock; TOCTOU window before lock is acquired)
+        //    NOTE: operationTracker.recordBubbleRemoved is called ONLY on the SUCCESS path
+        //    immediately before bubbleGrid.removeBubble, so failed splits never record removal
+        //    (FIX 3: avoids LIFO rollback collision when source was never removed).
+        var allRecords = sourceBubble.getAllEntityRecords();
+        log.debug("[SPLIT-{}] Source has {} entity records pre-lock", correlationId, allRecords.size());
 
-        log.debug("[{}] Found available key {} for new bubble at level {} (after collision retry if needed)",
-                 correlationId, targetKey, childLevel);
+        // Capture pre-split entity count for reporting
+        int entitiesBefore = accountant.entitiesInBubble(sourceBubbleId).size();
 
-        var newBubble = new EnhancedBubble(newBubbleId, childLevel, targetFrameMs);
+        // 6. Acquire ascending-UUID locks: source + all 8 children (deadlock-free, n7io1)
+        //
+        // children[0..7] are freshly created and not yet visible to concurrent writers
+        // (no other thread has a reference), so in practice only the source lock contends.
+        // We still include all children in the lock call to honour the invariant.
+        var allBubbles = new EnhancedBubble[9];
+        allBubbles[0] = sourceBubble;
+        System.arraycopy(childBubbles, 0, allBubbles, 1, 8);
 
-        // Add the new bubble to the grid BEFORE moving any entities into it. This makes the
-        // accountant move and the grid insertion recoverable as a single unit: if an unchecked
-        // exception is thrown during the move loop, the executor's rollback (BubbleAdded.undo =
-        // grid.removeBubble) removes the now-empty bubble, and the accountant move is the only
-        // structure carrying the entities. Inserting the bubble afterwards left a window where
-        // entities were recorded under newBubbleId in the accountant but the grid had no bubble
-        // for them, making them unreachable.
-        bubbleGrid.addBubble(newBubble, targetKey);
-        operationTracker.recordBubbleAdded(newBubbleId);
-        log.debug("[{}] Added new bubble {} to grid at level {} key {} (pre-move)",
-                 correlationId, newBubbleId, childLevel, targetKey);
+        var movedRecords    = new ArrayList<EnhancedBubble.EntityRecord>();
+        int skippedEscaped  = 0;
+        int nearestFallback = 0;
 
-        // Move entities to new bubble atomically.
-        //
-        // INVARIANT: any moveBetweenBubbles failure is fatal for the whole split.
-        //
-        // The old code used `continue` on failure, which allowed partial moves:
-        // some entities ended up in the new bubble, others silently stayed behind
-        // in the source bubble's EnhancedBubble structure but were already removed
-        // from the accountant — producing orphaned / duplicated state.  That was
-        // the TOCTOU/conservation bug reported in Luciferase-7wzml.70.
-        //
-        // The fix: on any failure, undo the entities already moved this invocation
-        // (reverse accountant moves + bubble membership), remove the new bubble,
-        // and return failure.  The caller (TopologyExecutor) is responsible for
-        // any higher-level rollback via OperationTracker.
-        var movedRecords = new ArrayList<EnhancedBubble.EntityRecord>(entitiesToMove.size());
-        // Hold source + new-bubble mutation locks (UUID order, deadlock-free) for the whole move loop —
-        // including the rollback branch — so the cross-bubble add/remove is atomic w.r.t. concurrent
-        // migration/merge writers (Luciferase-n7io1). newBubble was registered in the grid above, so it
-        // is reachable by concurrent readers/writers by the time the move starts.
-        //
-        // Why lock HERE and re-validate (option b), not lock-before-snapshot (option a) like
-        // BubbleMerger does: the merger's two bubbles BOTH pre-exist, so it can acquire the pair in
-        // ascending-UUID order before snapshotting. The splitter's newBubble does not exist until the
-        // snapshot-derived plane/centroid/key have been computed, so the pair cannot be locked upfront.
-        // Locking only sourceBubble early and acquiring newBubble later would acquire locks OUT of
-        // ascending-UUID order, breaking the one global ordering invariant that makes n7io1 deadlock-
-        // free. So the splitter instead re-validates each entity's source membership under the pair
-        // lock and skips those that escaped during the snapshot->lock window (Luciferase-hvjdj).
-        int skippedEscaped = 0;
-        try (var ignored = MutationLocks.lock(sourceBubble, newBubble)) {
-            for (var entityRecord : entitiesToMove) {
+        try (var ignored = MutationLocks.lock(allBubbles)) {
+            for (var entityRecord : allRecords) {
                 var entityId = UUID.fromString(entityRecord.id());
 
-                // Re-validate source membership UNDER the lock. The snapshot (getAllEntityRecords),
-                // split-plane calc, partition, and key allocation above all ran BEFORE this lock was
-                // acquired, so a concurrent migration/merge may have moved this entity out of source
-                // during that window. Skipping the escaped entity (rather than aborting + rolling back
-                // the whole split) avoids spurious split aborts under contention while preserving
-                // conservation: the entity is already accounted for in its new owner, and the per-
-                // entity loop below moves only entities source still holds (Luciferase-hvjdj). This is
-                // the multi-entity analogue of the single-entity stale-intent guard in
-                // MultiDirectionalMigration.commitMigration (n7io1 S-2).
+                // Re-validate source membership UNDER the lock (hvjdj TOCTOU guard)
                 if (!sourceBubble.getEntities().contains(entityRecord.id())) {
-                    log.debug("[{}] Entity {} no longer in source {} at split commit (concurrent move during snapshot->lock window); skipping",
-                              correlationId, entityId, sourceBubbleId);
+                    log.debug("[SPLIT-{}] Entity {} escaped source before lock — skipping", correlationId, entityId);
                     skippedEscaped++;
                     continue;
                 }
 
-                // Add entity to new bubble first
-                newBubble.addEntity(entityRecord.id(), entityRecord.position(), entityRecord.content());
+                var pos = entityRecord.position();
 
-                // Move in accountant (atomic under its internal lock)
-                boolean moved = accountant.moveBetweenBubbles(entityId, sourceBubbleId, newBubbleId);
-                if (!moved) {
-                    // FAIL FAST: undo all in-progress moves and abort the split.
-                    log.error("[{}] Failed to move entity {} from {} to {} — aborting split, rolling back {} partial moves",
-                              correlationId, entityId, sourceBubbleId, newBubbleId, movedRecords.size());
-                    // Undo: move already-moved entities back to source.
-                    // Rollback is best-effort: if a rollback move itself fails, the entity is
-                    // logged as an orphan but we continue reversing the rest.  Full 2PC
-                    // (rollback-of-rollback) is out of scope; the log.error below makes
-                    // any orphan diagnosable.
-                    newBubble.removeEntity(entityRecord.id()); // undo bubble-side add for this entity
-                    for (var done : movedRecords) {
-                        var doneId = UUID.fromString(done.id());
-                        boolean rolledBack = accountant.moveBetweenBubbles(doneId, newBubbleId, sourceBubbleId);
-                        if (!rolledBack) {
-                            log.error("[{}] Rollback move FAILED for entity {} (from newBubble {} back to source {}) — entity may be orphaned",
-                                      correlationId, doneId, newBubbleId, sourceBubbleId);
-                        }
-                        sourceBubble.addEntity(done.id(), done.position(), done.content());
-                        newBubble.removeEntity(done.id());
+                // Find the first child that contains this entity (boundary ties → first-child-wins)
+                EnhancedBubble assignedChild   = null;
+                UUID            assignedChildId = null;
+                for (int i = 0; i < 8; i++) {
+                    if (children[i].contains12DOP(pos.x, pos.y, pos.z)) {
+                        assignedChild   = childBubbles[i];
+                        assignedChildId = childIds[i];
+                        break;
                     }
-                    // Remove the pre-registered empty/reverted new bubble from the grid.
-                    bubbleGrid.removeBubble(newBubbleId);
-                    metrics.recordSplitFailure("MOVE_FAILED");
-                    return new SplitExecutionResult(false,
-                                                   "moveBetweenBubbles failed for entity " + entityId
-                                                   + "; split aborted and rolled back",
-                                                   null, entitiesBeforeSplit, entitiesBeforeSplit);
                 }
 
-                // Remove from source bubble only after accountant confirms the move
+                if (assignedChild == null) {
+                    // FIX 1: Entity position not contained by any child (FP rounding / boundary escapee).
+                    // NEVER orphan: assign to the geometrically nearest child by Euclidean distance
+                    // from entity position to child centroid (average of 4 Tet vertices).
+                    int nearestIdx = nearestChildIndex(children, pos);
+                    assignedChild   = childBubbles[nearestIdx];
+                    assignedChildId = childIds[nearestIdx];
+                    log.warn("[SPLIT-{}] Entity {} at {} outside all children (FP rounding/escapee?); "
+                             + "assigned to nearest child {}", correlationId, entityId, pos, assignedChildId);
+                    nearestFallback++;
+                }
+
+                // Add entity to assigned child bubble
+                assignedChild.addEntity(entityRecord.id(), pos, entityRecord.content());
+
+                // Move in accountant (atomic under its internal lock)
+                boolean moved = accountant.moveBetweenBubbles(entityId, sourceBubbleId, assignedChildId);
+                if (!moved) {
+                    // FAIL FAST: undo all in-progress moves and abort the split
+                    log.error("[SPLIT-{}] moveBetweenBubbles failed for entity {} — aborting split, rolling back {} moves",
+                              correlationId, entityId, movedRecords.size());
+                    assignedChild.removeEntity(entityRecord.id()); // undo bubble-side add for this entity
+                    rollbackMovedRecords(correlationId, movedRecords, sourceBubble, sourceBubbleId,
+                                        childBubbles, childIds);
+                    removeChildBubbles(childIds);
+                    metrics.recordSplitFailure("MOVE_FAILED");
+                    return SplitExecutionResult.failure(
+                        "moveBetweenBubbles failed for entity " + entityId + "; split aborted and rolled back");
+                }
+
+                // Remove from source after accountant confirms the move
                 sourceBubble.removeEntity(entityRecord.id());
                 movedRecords.add(entityRecord);
             }
         }
 
-        int entitiesMoved = movedRecords.size();
-
+        int entitiesRedistributed = movedRecords.size();
         if (skippedEscaped > 0) {
-            log.info("[{}] Split bubble {}: {} of {} partitioned entities escaped source before lock and were skipped (concurrent migration/merge)",
-                    correlationId, sourceBubbleId, skippedEscaped, entitiesToMove.size());
+            log.info("[SPLIT-{}] {} of {} entities escaped source before lock; skipped", correlationId,
+                     skippedEscaped, allRecords.size());
+        }
+        if (nearestFallback > 0) {
+            log.info("[SPLIT-{}] {} entities assigned to nearest child (FP rounding/boundary)",
+                     correlationId, nearestFallback);
         }
 
-        log.info("[{}] Split bubble {}: moved {} entities to new bubble {}",
-                correlationId, sourceBubbleId, entitiesMoved, newBubbleId);
+        // 7. All-empty abort: only happens when 0 entities remained in source (all escaped before lock).
+        //    After FIX 1 every still-present entity is assigned to a child, so all-empty means
+        //    entitiesRedistributed == 0.  In that case ABORT: remove all 8 children, keep parent.
+        //    Coverage is preserved by the surviving parent.
+        if (entitiesRedistributed == 0) {
+            log.error("[SPLIT-{}] No entities redistributed (all escaped) — aborting", correlationId);
+            removeChildBubbles(childIds);
+            metrics.recordSplitFailure("ALL_CHILDREN_EMPTY");
+            return SplitExecutionResult.failure("No entities redistributed; all escaped before lock — split aborted");
+        }
 
-        // Record entities moved in metrics
-        metrics.recordEntitiesMoved(entitiesMoved);
+        // 8. SUCCESS PATH: record source removal and remove parent leaf from grid.
+        //    recordBubbleRemoved is called HERE (not before the move loop) so it is NEVER
+        //    recorded when the split fails (FIX 3).
+        operationTracker.recordBubbleRemoved(sourceBubbleId, sourceBubble, parentKey);
+        bubbleGrid.removeBubble(sourceBubbleId);
 
-        // Validate entity conservation using snapshot arithmetic — NOT two live reads.
-        //
-        // The old code read accountant.entitiesInBubble(sourceBubbleId).size() +
-        // accountant.entitiesInBubble(newBubbleId).size() as two separate calls.
-        // Under concurrent mutation those two reads could observe different views,
-        // producing an inconsistent sum (the TOCTOU in conservation check identified
-        // in Luciferase-7wzml.70).
-        //
-        // The deterministic check: source should have (entitiesBeforeSplit - entitiesMoved)
-        // and new should have entitiesMoved; total == entitiesBeforeSplit by construction.
-        // We still call validate() for duplicate detection, but the conservation predicate
-        // is now derived from the snapshot + entitiesMoved, not two live reads.
-        //
-        // Note: entitiesBeforeSplit is a pre-lock read; if entities escaped source during the
-        // snapshot->lock window (skippedEscaped > 0) this reported total is approximate. The
-        // authoritative no-loss / no-duplicate guarantee is accountant.validate() below, which
-        // is computed over the live structures and covers entities that migrated elsewhere.
-        int entitiesAfterSplit = entitiesBeforeSplit; // reported snapshot total; see note above
+        // FIX 2: Keep ALL 8 children — empty children are valid leaves (migration may fill them).
+        // Do NOT drop empty children on the success path.  The leaf-partition coverage invariant
+        // requires that the 8 children tile the parent with no uncovered region.
+        // Net result: exactly 8 children replace the parent (+7 net bubbles on success).
+        var allChildIds = new ArrayList<UUID>(8);
+        for (UUID childId : childIds) {
+            allChildIds.add(childId);
+        }
 
-        // Validate no duplicates
+        // 9. Validate entity conservation
         var validation = accountant.validate();
         if (!validation.success()) {
-            log.error("[{}] Entity validation failed after split: {}", correlationId, validation.details());
+            log.error("[SPLIT-{}] Entity validation failed: {}", correlationId, validation.details());
             return new SplitExecutionResult(false,
-                                           "Entity validation failed: " + validation.details().get(0),
-                                           newBubbleId, entitiesBeforeSplit, entitiesAfterSplit);
+                                            "Entity validation failed: " + validation.details().get(0),
+                                            allChildIds, entitiesBefore, entitiesBefore, 0);
         }
 
-        // The new bubble was already added to the grid before the move loop (see above). If no
-        // entities actually moved, remove the empty bubble so we do not leak it into the grid.
-        if (entitiesMoved == 0) {
-            log.warn("New bubble {} has no entities after move loop, removing from grid", newBubbleId);
-            bubbleGrid.removeBubble(newBubbleId);
-            metrics.recordSplitFailure("NO_ENTITIES_TO_MOVE");
-            return new SplitExecutionResult(false, "No entities were moved to new bubble", null,
-                                           entitiesBeforeSplit, entitiesBeforeSplit);
-        }
+        log.info("[SPLIT-{}] Bey split successful: {} redistributed across 8 children "
+                 + "(escaped={}, nearestFallback={})",
+                 correlationId, entitiesRedistributed, skippedEscaped, nearestFallback);
 
-        log.info("[{}] Split successful: bubble {} split into {} (source: {} entities, new: {} entities)",
-                correlationId, sourceBubbleId, newBubbleId,
-                entitiesBeforeSplit - entitiesMoved, entitiesMoved);
-
-        // Record successful split in metrics
+        metrics.recordEntitiesMoved(entitiesRedistributed);
         metrics.recordSplitSuccess();
 
-        return new SplitExecutionResult(true, "Split successful",
-                                       newBubbleId, entitiesBeforeSplit, entitiesAfterSplit, entitiesMoved);
+        return new SplitExecutionResult(true, "Bey split successful",
+                                        allChildIds, entitiesBefore, entitiesBefore, entitiesRedistributed);
     }
 
+    // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
     /**
-     * Finds an available TetreeKey at the centroid, retrying at deeper levels if collisions occur.
-     * <p>
-     * Preserves spatial locality by using the same (cx, cy, cz) coordinates across all levels,
-     * but moves deeper in the tree hierarchy to find unoccupied key space.
+     * Returns the index (0..7) of the child whose centroid is nearest to {@code pos} by
+     * squared Euclidean distance.  Used as fallback when {@code contains12DOP} misses all
+     * children (FP rounding / boundary escapee).
      *
-     * @param cx the X coordinate of the entity centroid
-     * @param cy the Y coordinate of the entity centroid
-     * @param cz the Z coordinate of the entity centroid
-     * @param startLevel the starting level to search
-     * @param correlationId tracking ID for logging
-     * @return a KeyLevel record containing the available key and the level at which it was found, or null if no available key
+     * @param children 8-element Tet array from geometricSubdivide()
+     * @param pos      entity position
+     * @return index in [0,7] of the nearest child
      */
-    private KeyLevel findAvailableKey(float cx, float cy, float cz, byte startLevel, String correlationId) {
-        for (byte level = startLevel; level <= 21; level++) {
-            var tet = com.hellblazer.luciferase.lucien.tetree.Tet.locatePointBeyRefinementFromRoot(cx, cy, cz, level);
-            if (tet == null) {
-                log.debug("[{}] Could not locate tetrahedron at level {}", correlationId, level);
+    private static int nearestChildIndex(Tet[] children, Point3f pos) {
+        int   bestIdx   = 0;
+        float bestDist2 = Float.MAX_VALUE;
+        for (int i = 0; i < 8; i++) {
+            var verts = children[i].coordinates();
+            float cx  = (verts[0].x + verts[1].x + verts[2].x + verts[3].x) / 4.0f;
+            float cy  = (verts[0].y + verts[1].y + verts[2].y + verts[3].y) / 4.0f;
+            float cz  = (verts[0].z + verts[1].z + verts[2].z + verts[3].z) / 4.0f;
+            float dx  = pos.x - cx;
+            float dy  = pos.y - cy;
+            float dz  = pos.z - cz;
+            float d2  = dx * dx + dy * dy + dz * dz;
+            if (d2 < bestDist2) {
+                bestDist2 = d2;
+                bestIdx   = i;
+            }
+        }
+        return bestIdx;
+    }
+
+    /** Rolls back already-moved records: reverse accountant + bubble membership. */
+    private void rollbackMovedRecords(String correlationId,
+                                      List<EnhancedBubble.EntityRecord> moved,
+                                      EnhancedBubble sourceBubble, UUID sourceBubbleId,
+                                      EnhancedBubble[] childBubbles, UUID[] childIds) {
+        for (var done : moved) {
+            var doneId = UUID.fromString(done.id());
+            // Find which child currently holds this entity
+            UUID currentChild = null;
+            for (int i = 0; i < childIds.length; i++) {
+                if (accountant.entitiesInBubble(childIds[i]).contains(doneId)) {
+                    currentChild = childIds[i];
+                    childBubbles[i].removeEntity(done.id());
+                    break;
+                }
+            }
+            if (currentChild == null) {
+                log.error("[SPLIT-{}] Rollback: entity {} not found in any child", correlationId, doneId);
                 continue;
             }
-
-            var key = tet.tmIndex();
-
-            // Check if this key is available
-            if (!bubbleGrid.containsBubble(key)) {
-                log.debug("[{}] Found available key {} at level {}", correlationId, key, level);
-                return new KeyLevel(key, level);
+            boolean ok = accountant.moveBetweenBubbles(doneId, currentChild, sourceBubbleId);
+            if (!ok) {
+                log.error("[SPLIT-{}] Rollback: moveBetweenBubbles({}, {} → {}) FAILED — entity may be orphaned",
+                          correlationId, doneId, currentChild, sourceBubbleId);
             }
-
-            // Collision at this level, try next level
-            log.debug("[{}] Key collision at level {} (key={}), trying deeper level", correlationId, level, key);
+            sourceBubble.addEntity(done.id(), done.position(), done.content());
         }
-
-        // Exhausted all levels up to 21
-        return null;
     }
 
+    /** Removes all 8 child bubbles from the grid (cleanup on failure). */
+    private void removeChildBubbles(UUID[] childIds) {
+        for (var childId : childIds) {
+            bubbleGrid.removeBubble(childId);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Inner types
+    // -----------------------------------------------------------------------
+
     /**
-     * Partitions entities based on split plane.
-     * <p>
-     * Uses signed distance test: entities on positive side of plane are moved to new bubble.
+     * Result of a Bey-refinement split operation.
      *
-     * @param entityRecords all entity records with positions
-     * @param splitPlane    the split plane
-     * @return list of entities to move to new bubble
+     * @param success               true if split succeeded
+     * @param message               description of result or error
+     * @param childBubbleIds        IDs of the newly created child bubbles (empty if failed)
+     * @param entitiesBefore        entity count in source before split
+     * @param entitiesAfter         total entity count snapshot after split (== entitiesBefore for a conserving split)
+     * @param entitiesRedistributed number of entities actually moved into child bubbles
      */
-    private List<EnhancedBubble.EntityRecord> partitionEntities(
-        List<EnhancedBubble.EntityRecord> entityRecords,
-        SplitPlane splitPlane) {
-
-        var entitiesToMove = new ArrayList<EnhancedBubble.EntityRecord>();
-
-        // Debug: log split plane and first few entity positions
-        if (log.isDebugEnabled() && !entityRecords.isEmpty()) {
-            var firstPos = entityRecords.get(0).position();
-            var lastPos = entityRecords.get(Math.min(2, entityRecords.size() - 1)).position();
-            log.debug("Split plane: normal={}, distance={}", splitPlane.normal(), splitPlane.distance());
-            log.debug("First entity position: {}", firstPos);
-            if (entityRecords.size() > 2) {
-                log.debug("Sample entity position: {}", lastPos);
-            }
+    public record SplitExecutionResult(
+        boolean success,
+        String message,
+        List<UUID> childBubbleIds,
+        int entitiesBefore,
+        int entitiesAfter,
+        int entitiesRedistributed
+    ) {
+        /** Convenience constructor for failure paths. */
+        static SplitExecutionResult failure(String reason) {
+            return new SplitExecutionResult(false, reason, List.of(), 0, 0, 0);
         }
-
-        int positiveSide = 0, negativeSide = 0;
-        for (var record : entityRecords) {
-            // Skip null positions
-            if (record.position() == null) {
-                log.warn("Entity {} has null position, skipping", record.id());
-                continue;
-            }
-
-            // Calculate signed distance from plane
-            float signedDistance = splitPlane.normal().x * record.position().x +
-                                  splitPlane.normal().y * record.position().y +
-                                  splitPlane.normal().z * record.position().z -
-                                  splitPlane.distance();
-
-            // Move entities on positive side of plane to new bubble
-            if (signedDistance >= 0) {
-                entitiesToMove.add(record);
-                positiveSide++;
-            } else {
-                negativeSide++;
-            }
-        }
-
-        log.debug("Partition result: {} on positive side, {} on negative side", positiveSide, negativeSide);
-
-        return entitiesToMove;
-    }
-}
-
-/**
- * Represents a TetreeKey and the tree level at which it was found.
- * Used to track available keys when collision retry logic searches deeper levels.
- *
- * @param key   the available TetreeKey
- * @param level the tetree level at which this key was found
- */
-record KeyLevel(
-    com.hellblazer.luciferase.lucien.tetree.TetreeKey key,
-    byte level
-) {
-}
-
-/**
- * Result of a split operation execution.
- *
- * @param success           true if split succeeded
- * @param message           description of result or error
- * @param newBubbleId       ID of newly created bubble (null if failed)
- * @param entitiesBefore    entity count before split
- * @param entitiesAfter     total entity count after split (source + new)
- * @param entitiesMovedToNewBubble number of entities actually relocated to the new bubble
- */
-record SplitExecutionResult(
-    boolean success,
-    String message,
-    UUID newBubbleId,
-    int entitiesBefore,
-    int entitiesAfter,
-    int entitiesMovedToNewBubble
-) {
-    /**
-     * Backward-compatible constructor that defaults {@code entitiesMovedToNewBubble} to 0.
-     * Used by failure paths where no entities were relocated.
-     */
-    SplitExecutionResult(boolean success, String message, UUID newBubbleId, int entitiesBefore, int entitiesAfter) {
-        this(success, message, newBubbleId, entitiesBefore, entitiesAfter, 0);
     }
 }

@@ -143,10 +143,13 @@ public class TopologyEventStream implements TopologyEventListener {
     }
 
     private String splitEventToJson(SplitEvent event) {
+        var idsJson = event.childBubbleIds().stream()
+                           .map(id -> "\"" + id + "\"")
+                           .collect(java.util.stream.Collectors.joining(",", "[", "]"));
         return String.format(Locale.ROOT,
             """
-            {"eventType":"split","eventId":"%s","timestamp":%d,"sourceBubbleId":"%s","newBubbleId":"%s","entitiesMoved":%d,"success":%b}""",
-            event.eventId(), event.timestamp(), event.sourceBubbleId(), event.newBubbleId(),
+            {"eventType":"split","eventId":"%s","timestamp":%d,"sourceBubbleId":"%s","childBubbleIds":%s,"entitiesMoved":%d,"success":%b}""",
+            event.eventId(), event.timestamp(), event.sourceBubbleId(), idsJson,
             event.entitiesMoved(), event.success()
         );
     }

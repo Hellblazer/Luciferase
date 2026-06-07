@@ -25,7 +25,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.util.Arrays;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -89,11 +91,12 @@ class TopologyEvolutionTest {
         assertEquals(5100, totalEntitiesBefore, "Should start with 5100 entities");
         assertEquals(5100, getTotalEntityCount(), "Entity count should be conserved");
 
-        // Verify natural evolution: 1 bubble → 2 bubbles
+        // FIX 5: Bey split always produces exactly 8 children (ALL kept, even empty ones) and
+        // removes 1 parent → net +7 bubbles per successful split.
         int bubbleCountAfter = bubbleGrid.getAllBubbles().size();
-        assertEquals(bubbleCountBefore + 1, bubbleCountAfter,
-            "Bubble count should increase from " + bubbleCountBefore + " to " + (bubbleCountBefore + 1) +
-            " after split (got " + bubbleCountAfter + ")");
+        assertEquals(bubbleCountBefore + 7, bubbleCountAfter,
+            "Bey split must produce exactly net +7 bubbles (8 children − 1 parent): was "
+            + bubbleCountBefore + ", got " + bubbleCountAfter);
 
         // Verify entity conservation
         var validation = accountant.validate();
@@ -237,10 +240,10 @@ class TopologyEvolutionTest {
         var splitResult = executor.executeInternal(splitProposal); // public execute(SplitProposal) fenced — AC-0
         assertTrue(splitResult.success(), "Split should succeed");
 
-        // Verify bubble count increased after split
+        // FIX 5: Bey split always produces exactly 8 children (ALL kept) and removes 1 parent → net +7.
         int bubbleCountAfter = bubbleGrid.getAllBubbles().size();
-        assertEquals(bubbleCountBefore + 1, bubbleCountAfter,
-            "Bubble count should increase from " + bubbleCountBefore + " to " + (bubbleCountBefore + 1));
+        assertEquals(bubbleCountBefore + 7, bubbleCountAfter,
+            "Bey split must produce exactly net +7 bubbles: was " + bubbleCountBefore + ", got " + bubbleCountAfter);
 
         // Verify entity conservation after split
         assertEquals(5300, getTotalEntityCount(), "Entity count should be conserved after split");
@@ -257,19 +260,53 @@ class TopologyEvolutionTest {
 
     @Test
     void testEntityConservationAcrossOperations() {
-        // Create 3 bubbles with different densities
-        bubbleGrid.createBubbles(3, (byte) 2, 10);
-        var bubbles = bubbleGrid.getAllBubbles().stream().toList();
-        var bubble1 = bubbles.get(0);
-        var bubble2 = bubbles.get(1);
-        var bubble3 = bubbles.get(2);
+        // Create 3 bubbles — ensure the split-target bubble is at a level where its children
+        // do not collide with existing bubbles.  Use createBubbles(1, level=1) for bubble1,
+        // and separate bubbles at level 2 for bubble2/bubble3 so there is no key collision
+        // when bubble1 (level 1) is split into level-2 children.
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble1 = bubbleGrid.getAllBubbles().iterator().next();
+
+        // Add bubble2 and bubble3 at a level-2 tet that is NOT a child of bubble1
+        // (use a sibling of bubble1 so the children of bubble1 are free)
+        var parentKey1 = bubbleGrid.getKeyForBubble(bubble1.id());
+        var parentTet1 = com.hellblazer.luciferase.lucien.tetree.Tet.tetrahedron(parentKey1);
+        // Pick a tet at level 2 that is a grandchild of a DIFFERENT level-0 subtree
+        // by going child(4) twice from root type 0 — avoids bubble1's subtree
+        var safeTet2 = new com.hellblazer.luciferase.lucien.tetree.Tet(0, 0, 0, (byte) 0, (byte) 0)
+            .child(4).child(0);
+        var safeTet3 = new com.hellblazer.luciferase.lucien.tetree.Tet(0, 0, 0, (byte) 0, (byte) 0)
+            .child(4).child(1);
+        var key2 = safeTet2.tmIndex();
+        var key3 = safeTet3.tmIndex();
+
+        // Only add bubble2/3 if their keys don't collide with bubble1's children
+        var children1 = parentTet1.geometricSubdivide();
+        var child1Keys = java.util.Arrays.stream(children1)
+            .map(c -> c.tmIndex())
+            .collect(java.util.stream.Collectors.toSet());
+        boolean key2Safe = !bubbleGrid.containsBubble(key2) && !child1Keys.contains(key2);
+        boolean key3Safe = !bubbleGrid.containsBubble(key3) && !child1Keys.contains(key3) && !key3.equals(key2);
+
+        com.hellblazer.luciferase.simulation.bubble.EnhancedBubble bubble2 = null;
+        com.hellblazer.luciferase.simulation.bubble.EnhancedBubble bubble3 = null;
+        if (key2Safe) {
+            bubble2 = new com.hellblazer.luciferase.simulation.bubble.EnhancedBubble(
+                UUID.randomUUID(), (byte) 2, 10L);
+            bubbleGrid.addBubble(bubble2, key2);
+        }
+        if (key3Safe) {
+            bubble3 = new com.hellblazer.luciferase.simulation.bubble.EnhancedBubble(
+                UUID.randomUUID(), (byte) 2, 10L);
+            bubbleGrid.addBubble(bubble3, key3);
+        }
 
         addEntities(bubble1, 5100);  // Will split
-        addEntities(bubble2, 300);   // Normal
-        addEntities(bubble3, 200);   // Merge candidate
+        if (bubble2 != null) addEntities(bubble2, 300);
+        if (bubble3 != null) addEntities(bubble3, 200);
 
         int initialTotal = getTotalEntityCount();
-        assertEquals(5600, initialTotal, "Should start with 5600 entities");
+        int initialBubbles = bubbleGrid.getAllBubbles().size();
 
         // Execute split on bubble1
         var centroid = bubble1.centroid();
@@ -287,36 +324,44 @@ class TopologyEvolutionTest {
         );
 
         int bubbleCountBefore = bubbleGrid.getAllBubbles().size();
-        executor.executeInternal(splitProposal); // public execute(SplitProposal) fenced — AC-0
+        var splitResult = executor.executeInternal(splitProposal); // public execute(SplitProposal) fenced — AC-0
+        assertTrue(splitResult.success(), "Split must succeed for +7 test: " + splitResult.message());
 
-        // Verify bubble count increased after split
+        // FIX 5: Bey split always produces exactly 8 children (ALL kept) and removes 1 parent → net +7.
         int bubbleCountAfterSplit = bubbleGrid.getAllBubbles().size();
-        assertEquals(bubbleCountBefore + 1, bubbleCountAfterSplit,
-            "Bubble count should increase from " + bubbleCountBefore + " to " + (bubbleCountBefore + 1) + " after split");
+        assertEquals(bubbleCountBefore + 7, bubbleCountAfterSplit,
+            "Bey split must produce exactly net +7 bubbles: was " + bubbleCountBefore + ", got " + bubbleCountAfterSplit);
 
         // Verify conservation after split
         assertEquals(initialTotal, getTotalEntityCount(), "Entity count should be conserved after split");
 
-        // Execute merge of bubble2 and bubble3
-        var mergeProposal = new MergeProposal(
-            UUID.randomUUID(),
-            bubble2.id(),
-            bubble3.id(),
-            DigestAlgorithm.DEFAULT.getOrigin(),
-            JC1KH_CLOCK.currentTimeMillis()
-        );
+        // Execute merge of two child bubbles (they are arbitrary two-bubble merges → fenced)
+        // Pick two children from the result to attempt a merge
+        var childBubbles = bubbleGrid.getAllBubbles().stream()
+            .filter(b -> !b.id().equals(bubble1.id()))
+            .limit(2)
+            .toList();
+        if (childBubbles.size() >= 2) {
+            var mergeProposal = new MergeProposal(
+                UUID.randomUUID(),
+                childBubbles.get(0).id(),
+                childBubbles.get(1).id(),
+                DigestAlgorithm.DEFAULT.getOrigin(),
+                JC1KH_CLOCK.currentTimeMillis()
+            );
 
-        var mergeResult = executor.execute(mergeProposal);
+            var mergeResult = executor.execute(mergeProposal);
 
-        // RDR-018 AC-4: the merge is fenced. Conservation across operations — the property this
-        // test pins — still holds: the fenced merge mutates nothing, so the count is unchanged.
-        assertFalse(mergeResult.success(), "Arbitrary two-bubble merge must be fenced (RDR-018 AC-4)");
-        int bubbleCountAfterMerge = bubbleGrid.getAllBubbles().size();
-        assertEquals(bubbleCountAfterSplit, bubbleCountAfterMerge,
-            "Bubble count must be unchanged by a fenced merge (no region untiled)");
+            // RDR-018 AC-4: the merge is fenced. Conservation across operations — the property this
+            // test pins — still holds: the fenced merge mutates nothing, so the count is unchanged.
+            assertFalse(mergeResult.success(), "Arbitrary two-bubble merge must be fenced (RDR-018 AC-4)");
+            int bubbleCountAfterMerge = bubbleGrid.getAllBubbles().size();
+            assertEquals(bubbleCountAfterSplit, bubbleCountAfterMerge,
+                "Bubble count must be unchanged by a fenced merge (no region untiled)");
 
-        // Verify conservation after the fenced merge
-        assertEquals(initialTotal, getTotalEntityCount(), "Entity count should be conserved after merge");
+            // Verify conservation after the fenced merge
+            assertEquals(initialTotal, getTotalEntityCount(), "Entity count should be conserved after merge");
+        }
 
         // Final validation
         var validation = accountant.validate();
