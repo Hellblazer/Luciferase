@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.lucien.forest.ghost.grpc;
 
 import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
+import com.hellblazer.luciferase.common.grpc.GrpcServerHardening;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.ContentSerializer;
@@ -465,10 +466,14 @@ public class GhostServiceClient<Key extends SpatialKey<Key>, ID extends EntityID
             // RDR-005: credentials default to insecure (plaintext); mTLS is injected by the caller.
             // endpoint is a host:port target — Grpc.newChannelBuilder resolves it as
             // ManagedChannelBuilder.forTarget did (default name resolver).
+            // Luciferase-onzvy: bound the inbound (response) size on the client. Without this the receiving side has
+            // no cap on a SyncResponse, leaving it exposed to a response-amplification DoS from a compromised/buggy
+            // peer. Mirrors the server inbound bound (GrpcServerHardening.DEFAULT_MAX_INBOUND_MESSAGE_BYTES).
             return Grpc.newChannelBuilder(endpoint, channelCredentials)
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(5, TimeUnit.SECONDS)
                 .keepAliveWithoutCalls(true)
+                .maxInboundMessageSize(GrpcServerHardening.DEFAULT_MAX_INBOUND_MESSAGE_BYTES)
                 .build();
         });
     }
