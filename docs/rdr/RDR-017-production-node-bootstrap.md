@@ -64,7 +64,7 @@ crash `LifecycleCoordinator.computeLayers()`.
     **`Luciferase-s23eu`**; productionizing C is a separate decision gated on whether `FaultHandler`/partition
     topology ship.
 - **Scheduler-start hazard — deferred to `doStart()`.** `PersistenceManager` currently starts the batch-flush
-  + checkpoint schedulers **in its constructor** (`PersistenceManager.java:121-126`), before `recover()` runs —
+  and checkpoint schedulers **in its constructor** (`PersistenceManager.java:121-126`), before `recover()` runs —
   a checkpoint could overwrite an unrecovered log. Decision: move scheduler start out of the ctor into
   `PersistenceManagerAdapter.doStart()`, sequenced **after** `recover()`. Eliminates the window cleanly.
 - **nodeId source of truth — LOCKED to `FirefliesMemberLookup.digestToUuid(Member.getId())`** (gate C1). This
