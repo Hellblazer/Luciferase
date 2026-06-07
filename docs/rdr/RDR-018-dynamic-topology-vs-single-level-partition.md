@@ -244,7 +244,7 @@ leaf-partition invariant; **(3)** verify ghost cross-level (F5). The hvjdj "cent
 
 ## Open research questions (remaining for gate)
 
-_RQ-1 resolved by F1, RQ-3 by F3/F6, RQ-4 (merge) by F4, RQ-5 largely by F5. Genuinely open:_
+*RQ-1 resolved by F1, RQ-3 by F3/F6, RQ-4 (merge) by F4, RQ-5 largely by F5. Genuinely open:*
 
 2. **What is the per-cell capacity model?** `BubbleSplitter` triggers at >5000 entities; is the per-cell cap
    the binding constraint, or frame-time? Informs the split refinement policy (RQ-6).
