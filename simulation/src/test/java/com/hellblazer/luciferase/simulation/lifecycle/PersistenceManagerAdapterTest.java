@@ -86,10 +86,12 @@ class PersistenceManagerAdapterTest {
 
     @Test
     void testDependencies() {
+        // RDR-017 gate C2: PersistenceManager is Layer 0 — it has zero network surface (imports only
+        // java.io/java.nio.file/java.util.concurrent/Clock) and runs entirely from local WAL files.
+        // The former "SocketConnectionManager" dependency was spurious and crashed computeLayers().
         var deps = adapter.dependencies();
         assertNotNull(deps, "Dependencies should not be null");
-        assertEquals(1, deps.size(), "PersistenceManager depends on SocketConnectionManager (Layer 1)");
-        assertEquals("SocketConnectionManager", deps.get(0), "Should depend on SocketConnectionManager");
+        assertTrue(deps.isEmpty(), "PersistenceManager has no dependencies (Layer 0)");
     }
 
     @Test

@@ -21,7 +21,9 @@ import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.SpatialLevelHeuristic;
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.lifecycle.EnhancedBubbleAdapter;
+import com.hellblazer.luciferase.simulation.lifecycle.LifecycleComponent;
 import com.hellblazer.luciferase.simulation.lifecycle.LifecycleCoordinator;
+import com.hellblazer.luciferase.simulation.lifecycle.LifecycleException;
 import javax.vecmath.Point3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +71,11 @@ public class Manager {
     private final float aoiRadius;
     private volatile Clock clock;
     private final LifecycleCoordinator coordinator;
+    // RDR-017 P0 (Luciferase-vhhu0): lifecycle dependencies declared on every bubble adapter created
+    // by this manager. Default empty = bubbles register at Layer 0 (pre-RDR-017 behavior). The node
+    // bootstrap sets this to List.of("PersistenceManager") after registering the persistence adapter,
+    // so bubbles register at Layer 1 and start only after persistence is up.
+    private volatile List<String> bubbleDependencies = List.of();
 
     /**
      * Create a Manager with default configuration.
@@ -156,6 +163,53 @@ public class Manager {
     }
 
     /**
+     * Register an infrastructure lifecycle component (e.g. {@code SocketConnectionManagerAdapter},
+     * {@code PersistenceManagerAdapter}) with this manager's coordinator.
+     * <p>
+     * RDR-017 P0 (Luciferase-vhhu0): the node bootstrap calls this to register Layer-0 infrastructure
+     * <b>before</b> any bubble is created, so that bubble adapters declaring a dependency on those
+     * components (see {@link #setBubbleDependencies(List)}) resolve at registration time.
+     *
+     * @param component the infrastructure component to register and start
+     */
+    public void registerInfrastructure(LifecycleComponent component) {
+        Objects.requireNonNull(component, "component cannot be null");
+        coordinator.registerAndStart(component);
+        log.info("Registered infrastructure component: {}", component.name());
+    }
+
+    /**
+     * Set the lifecycle dependencies declared on every bubble adapter created by this manager.
+     * <p>
+     * RDR-017 P0: the node bootstrap sets this to {@code List.of("PersistenceManager")} after
+     * {@link #registerInfrastructure(LifecycleComponent)} so bubbles register at Layer 1 and start
+     * only after persistence. Each named dependency must already be registered (or be registered
+     * before the next {@code createBubble}) or {@code createBubble} will fail to register the bubble.
+     *
+     * @param dependencies component names new bubbles depend on (defensively copied)
+     */
+    public void setBubbleDependencies(List<String> dependencies) {
+        this.bubbleDependencies = List.copyOf(Objects.requireNonNull(dependencies, "dependencies cannot be null"));
+    }
+
+    /**
+     * @return the lifecycle dependencies declared on bubble adapters created by this manager
+     */
+    public List<String> getBubbleDependencies() {
+        return bubbleDependencies;
+    }
+
+    /**
+     * Package-private accessor to the lifecycle coordinator, for the node bootstrap and tests to
+     * observe component state and layering. Not part of the public API.
+     *
+     * @return this manager's lifecycle coordinator
+     */
+    LifecycleCoordinator coordinator() {
+        return coordinator;
+    }
+
+    /**
      * Create a new Bubble and register it with the manager.
      * <p>
      * The new bubble inherits the manager's clock for deterministic timestamps.
@@ -176,21 +230,7 @@ public class Manager {
 
         bubbles.put(id, bubble);
 
-        // Register with lifecycle coordinator for graceful shutdown
-        // Non-fatal if registration fails - bubble still works without coordinator
-        if (bubble instanceof EnhancedBubble enhanced) {
-            try {
-                var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController());
-                coordinator.registerAndStart(adapter);
-                log.debug("Created and registered bubble: {}", id);
-            } catch (Exception e) {
-                log.warn("Failed to register bubble {} with lifecycle coordinator: {}", id, e.getMessage());
-                // Continue - bubble still functional without coordinator
-            }
-        } else {
-            log.debug("Created bubble: {}", id);
-        }
-
+        registerBubbleAdapter(id, bubble);
         return bubble;
     }
 
@@ -213,24 +253,46 @@ public class Manager {
         // Forward events to manager listeners
         bubble.addEventListener(this::dispatchEvent);
 
-        bubbles.put(id, bubble);
+        registerBubbleAdapter(id, bubble);
+        return bubble;
+    }
 
-        // Register with lifecycle coordinator for graceful shutdown
-        // Non-fatal if registration fails - bubble still works without coordinator
+    /**
+     * Register a newly created bubble with the lifecycle coordinator.
+     * <p>
+     * RDR-017 P0 (Luciferase-vhhu0): registration failure handling depends on whether bubbles carry
+     * lifecycle dependencies. In the legacy/standalone path ({@code bubbleDependencies} empty) a
+     * registration failure is non-fatal — the bubble still works without coordinator management,
+     * preserving pre-RDR-017 behavior. In the composed-node path ({@code bubbleDependencies} non-empty,
+     * set by {@link com.hellblazer.luciferase.simulation.von.NodeBootstrap#assemble}) a failure means the
+     * declared dependency (e.g. {@code PersistenceManager}) is not registered — an ordering/wiring bug
+     * that must fail loud rather than silently produce a bubble outside the lifecycle graph (it would
+     * start before persistence and skip graceful shutdown/recovery). The half-registered bubble is
+     * removed from the manager before rethrowing.
+     */
+    private void registerBubbleAdapter(UUID id, Bubble bubble) {
         if (bubble instanceof EnhancedBubble enhanced) {
             try {
-                var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController());
+                var adapter = new EnhancedBubbleAdapter(enhanced, enhanced.getRealTimeController(),
+                                                        bubbleDependencies);
                 coordinator.registerAndStart(adapter);
-                log.debug("Created and registered bubble with ID: {}", id);
+                log.debug("Created and registered bubble: {}", id);
             } catch (Exception e) {
+                if (!bubbleDependencies.isEmpty()) {
+                    // Composed-node path: a dependency is unregistered — fail loud, do not leak an
+                    // unmanaged bubble into the lifecycle graph.
+                    bubbles.remove(id, bubble);
+                    throw new LifecycleException(
+                        "Failed to register bubble " + id + " with declared dependencies "
+                        + bubbleDependencies + " (is the persistence adapter registered via "
+                        + "NodeBootstrap.assemble() before createBubble()?)", e);
+                }
                 log.warn("Failed to register bubble {} with lifecycle coordinator: {}", id, e.getMessage());
-                // Continue - bubble still functional without coordinator
+                // Continue - bubble still functional without coordinator (legacy standalone path)
             }
         } else {
-            log.debug("Created bubble with ID: {}", id);
+            log.debug("Created bubble: {}", id);
         }
-
-        return bubble;
     }
 
     /**

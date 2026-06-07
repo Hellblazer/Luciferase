@@ -19,23 +19,20 @@ import java.util.Objects;
  * Wraps PersistenceManager to provide LifecycleComponent interface without modifying
  * the original class. Uses composition pattern for clean separation.
  * <p>
- * Dependency Layer: 1 (depends on SocketConnectionManager)
+ * Dependency Layer: 0 (no dependencies — RDR-017 gate C2; persistence has zero network surface)
  * <p>
  * Note: PersistenceManager auto-starts background tasks (batch flush, checkpoints) on construction.
  * The start() method is effectively a no-op but maintains lifecycle state consistency.
  * <p>
  * Extends {@link AbstractLifecycleAdapter} for common state management logic.
  * <p>
- * <b>Scaffolding — NOT composed in production (RDR-016).</b> This adapter, and the WAL persistence /
- * crash-recovery subsystem it wraps, are currently library scaffolding: no production node bootstrap
- * constructs a {@link PersistenceManager} or registers this adapter with a
- * {@code LifecycleCoordinator}. Consequences while uncomposed: {@link #doStart()} is a deliberate no-op
- * (recovery never runs in any live node), and {@code dependencies()} declares
- * {@code "SocketConnectionManager"} which is itself never registered — so registering this adapter as-is
- * would fail {@code LifecycleCoordinator.computeLayers()}. Productionizing persistence (constructing it
- * in a node bootstrap, calling {@code recover()} fail-loud from {@code doStart()}, choosing among the
- * three independent durability subsystems, and fixing the lifecycle dependency ordering) is deferred to
- * <b>RDR-017 (Production Node Bootstrap)</b>. Do not wire this adapter into a coordinator until RDR-017.
+ * <b>Composition status (RDR-017).</b> P0 (Production Node Bootstrap) fixes the lifecycle dependency
+ * ordering: {@code dependencies()} is now {@code List.of()} so this adapter sits at Layer 0, and
+ * {@link com.hellblazer.luciferase.simulation.von.NodeBootstrap} registers it alongside
+ * {@code SocketConnectionManagerAdapter}. {@link #doStart()} remains a deliberate no-op: making it call
+ * {@code recover()} fail-loud and relocating the batch-flush/checkpoint schedulers out of the
+ * {@link PersistenceManager} constructor into {@code doStart()} (so a checkpoint cannot overwrite an
+ * unrecovered log) is <b>RDR-017 P1</b> (Luciferase-pf1iu).
  *
  * @author hal.hildebrand
  */
@@ -74,7 +71,12 @@ public class PersistenceManagerAdapter extends AbstractLifecycleAdapter {
 
     @Override
     public List<String> dependencies() {
-        return List.of("SocketConnectionManager"); // Layer 1 - depends on SocketConnectionManager
+        // Layer 0 - no dependencies (RDR-017 gate C2). PersistenceManager imports only
+        // java.io/java.nio.file/java.util.concurrent/Clock — zero network surface — and runs
+        // flush/checkpoint/recover entirely from local WAL files. The former
+        // "SocketConnectionManager" dependency was spurious and crashed computeLayers() when SCM
+        // was not co-registered. Bubbles declare their own network dependency on the bubble adapter.
+        return List.of();
     }
 
     /**
