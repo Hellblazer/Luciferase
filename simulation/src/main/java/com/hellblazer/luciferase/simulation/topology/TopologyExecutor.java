@@ -311,16 +311,16 @@ public class TopologyExecutor implements OperationTracker {
                     if (!success) {
                         rollback(snapshot, "Split failed: " + message);
                     }
-                    // entitiesMoved must come from the actual relocation count, not
+                    // entitiesRedistributed is the actual relocation count, not
                     // (after - before): a conserving split has after == before, so that
                     // difference is always zero (Luciferase-0frcy.46).
-                    int entitiesMoved = result.entitiesMovedToNewBubble();
-                    var newBubbleId = result.newBubbleId();
+                    int entitiesMoved = result.entitiesRedistributed();
+                    var childBubbleIds = result.childBubbleIds();
                     eventFactory = committed -> new SplitEvent(
                         uuidSupplier.get(),
                         clock.currentTimeMillis(),
                         split.sourceBubble(),
-                        newBubbleId,
+                        childBubbleIds,
                         entitiesMoved,
                         committed
                     );

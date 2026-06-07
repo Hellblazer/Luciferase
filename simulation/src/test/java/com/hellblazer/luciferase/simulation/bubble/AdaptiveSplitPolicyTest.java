@@ -1,7 +1,5 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
-import com.hellblazer.luciferase.simulation.bubble.*;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -156,102 +154,6 @@ public class AdaptiveSplitPolicyTest {
     }
 
     /**
-     * Test 6: Split creates 2 child bubbles from 2 clusters
-     * <p>
-     * Validates: performSplit creates correct number of child bubbles
-     */
-    @Test
-    public void testPerformSplitTwoClusters() {
-        var content = new EnhancedBubble.EntityRecord("test", new Point3f(0, 0, 0), new Object(), 0);
-
-        // Create two distinct clusters
-        for (int i = 0; i < 100; i++) {
-            bubble.addEntity("cluster1-" + i, new Point3f(10 + i % 5, 10 + i % 5, 10 + i % 5), content);
-        }
-        for (int i = 0; i < 100; i++) {
-            bubble.addEntity("cluster2-" + i, new Point3f(50 + i % 5, 50 + i % 5, 50 + i % 5), content);
-        }
-
-        // Trigger split by exceeding frame budget
-        bubble.recordFrameTime(12_500_000L); // 12.5ms = 125% of budget
-
-        var splitResult = policy.analyzeSplit(bubble);
-
-        assertTrue(splitResult.feasible(), "Split should be feasible");
-        assertEquals(2, splitResult.clusters().size(), "Should have 2 clusters");
-
-        var childBubbles = policy.performSplit(bubble, splitResult);
-
-        assertNotNull(childBubbles, "Child bubbles should not be null");
-        assertEquals(2, childBubbles.size(), "Should create 2 child bubbles");
-    }
-
-    /**
-     * Test 7: Geometric split creates 8 children (octant subdivision)
-     * <p>
-     * Validates: Fallback geometric split creates octant bubbles
-     */
-    @Test
-    public void testPerformSplitGeometric() {
-        var content = new EnhancedBubble.EntityRecord("test", new Point3f(0, 0, 0), new Object(), 0);
-
-        // Add uniformly distributed entities (triggers geometric split)
-        for (int i = 0; i < 800; i++) {
-            float x = (float) (Math.random() * 100);
-            float y = (float) (Math.random() * 100);
-            float z = (float) (Math.random() * 100);
-            bubble.addEntity("entity-" + i, new Point3f(x, y, z), content);
-        }
-
-        // Trigger split by exceeding frame budget
-        bubble.recordFrameTime(12_500_000L); // 12.5ms = 125% of budget
-
-        var splitResult = policy.analyzeSplit(bubble);
-
-        assertTrue(splitResult.feasible(), "Geometric split should be feasible");
-
-        var childBubbles = policy.performSplit(bubble, splitResult);
-
-        assertNotNull(childBubbles, "Child bubbles should not be null");
-        // Geometric split may create up to 8 children, but only those with entities
-        assertTrue(childBubbles.size() >= 2 && childBubbles.size() <= 8,
-                  "Geometric split should create 2-8 child bubbles");
-    }
-
-    /**
-     * Test 8: All entities accounted for after redistribution
-     * <p>
-     * Validates: redistributeEntities preserves all entities
-     */
-    @Test
-    public void testRedistributeEntities() {
-        var content = new EnhancedBubble.EntityRecord("test", new Point3f(0, 0, 0), new Object(), 0);
-
-        // Add entities
-        for (int i = 0; i < 200; i++) {
-            bubble.addEntity("entity-" + i, new Point3f(i % 100, i % 100, i % 100), content);
-        }
-
-        int originalCount = bubble.entityCount();
-
-        // Trigger split by exceeding frame budget
-        bubble.recordFrameTime(12_500_000L); // 12.5ms = 125% of budget
-
-        var splitResult = policy.analyzeSplit(bubble);
-        // performSplit now populates children from cluster assignments
-        // (Luciferase-0frcy.3); no separate redistribute step is needed.
-        var childBubbles = policy.performSplit(bubble, splitResult);
-
-        // Count total entities in children
-        int totalChildEntities = childBubbles.stream()
-                                            .mapToInt(EnhancedBubble::entityCount)
-                                            .sum();
-
-        assertEquals(originalCount, totalChildEntities,
-                    "All entities should be redistributed to children");
-    }
-
-    /**
      * Test 9: Clusters below minimum threshold are merged
      * <p>
      * Validates: Small clusters are combined to meet minimum size
@@ -282,40 +184,4 @@ public class AdaptiveSplitPolicyTest {
         }
     }
 
-    /**
-     * Test 10: Split preserves all entities (no loss)
-     * <p>
-     * Validates: No entities are lost during split operation
-     */
-    @Test
-    public void testSplitPreservesEntities() {
-        var content = new EnhancedBubble.EntityRecord("test", new Point3f(0, 0, 0), new Object(), 0);
-
-        // Add entities
-        var entityIds = new java.util.HashSet<String>();
-        for (int i = 0; i < 300; i++) {
-            String id = "entity-" + i;
-            entityIds.add(id);
-            bubble.addEntity(id, new Point3f(i % 100, i % 100, i % 100), content);
-        }
-
-        int originalCount = bubble.entityCount();
-
-        // Trigger split by exceeding frame budget
-        bubble.recordFrameTime(12_500_000L); // 12.5ms = 125% of budget
-
-        var splitResult = policy.analyzeSplit(bubble);
-        var childBubbles = policy.performSplit(bubble, splitResult);
-
-        // Collect all entity IDs from children
-        var allChildEntityIds = new java.util.HashSet<String>();
-        for (var child : childBubbles) {
-            allChildEntityIds.addAll(child.getEntities());
-        }
-
-        assertEquals(originalCount, allChildEntityIds.size(),
-                    "All entities should be preserved");
-        assertTrue(allChildEntityIds.containsAll(entityIds),
-                  "All original entity IDs should be present in children");
-    }
 }

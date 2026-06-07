@@ -124,7 +124,7 @@ class TopologyEventStreamTest {
         var id1 = UUID.randomUUID();
         var id2 = UUID.randomUUID();
 
-        var splitEvent = new SplitEvent(id1, 1000L, id1, id2, 5, true);
+        var splitEvent = new SplitEvent(id1, 1000L, id1, java.util.List.of(id2), 5, true);
         var mergeEvent = new MergeEvent(id1, 1000L, id1, id2, 5, true);
 
         var previousLocale = Locale.getDefault();

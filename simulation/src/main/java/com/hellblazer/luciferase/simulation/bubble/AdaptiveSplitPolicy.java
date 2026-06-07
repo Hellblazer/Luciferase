@@ -1,12 +1,9 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
-import com.hellblazer.luciferase.simulation.bubble.*;
-
 import javax.vecmath.Point3d;
 
 import javax.vecmath.Point3f;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Adaptive split policy for overloaded bubbles using cluster-based tetrahedral subdivision.
@@ -139,52 +136,6 @@ public class AdaptiveSplitPolicy {
 
         return new SplitResult(true, clusters, estimatedFrameTimePerBubble,
                              "Split into " + clusters.size() + " bubbles");
-    }
-
-    /**
-     * Perform split operation, creating child bubbles from clusters.
-     *
-     * @param source   Source bubble to split
-     * @param analysis Split analysis result
-     * @return List of child bubbles
-     */
-    public List<EnhancedBubble> performSplit(EnhancedBubble source, SplitResult analysis) {
-        if (!analysis.feasible()) {
-            return Collections.emptyList();
-        }
-
-        // Index source records by id so each child can be populated from its
-        // cluster's entityIds (Luciferase-0frcy.3). The previous implementation
-        // returned empty child bubbles and relied on a separate round-robin
-        // redistributeEntities() that ignored the cluster assignments, wasting
-        // the k-means computation and placing entities in spatially wrong
-        // children. Population is now part of the split operation and preserves
-        // the cluster-entity correspondence.
-        // Snapshot the source under its mutation lock so the split sees a consistent entity set rather
-        // than one racing a concurrent migration/merge writer (Luciferase-n7io1). Only the source is a
-        // shared bubble here — the child bubbles are freshly constructed below and not yet visible to any
-        // other writer, so they need no locking.
-        var recordsById = new HashMap<String, EnhancedBubble.EntityRecord>();
-        try (var ignored = MutationLocks.lock(source)) {
-            for (var record : source.getAllEntityRecords()) {
-                recordsById.put(record.id(), record);
-            }
-        }
-
-        var childBubbles = new ArrayList<EnhancedBubble>();
-        for (var cluster : analysis.clusters()) {
-            var childId = UUID.randomUUID();
-            var child = new EnhancedBubble(childId, (byte) 10, 10);
-            for (var entityId : cluster.entityIds()) {
-                var record = recordsById.get(entityId);
-                if (record != null) {
-                    child.addEntity(record.id(), record.position(), record.content());
-                }
-            }
-            childBubbles.add(child);
-        }
-
-        return childBubbles;
     }
 
     /**
