@@ -124,6 +124,35 @@ crash `LifecycleCoordinator.computeLayers()`.
    recovery is opt-in, off in the default node. Any further deferral gets a tracked bead (phase-review-gate
    discipline).
 
+## Operational notes (P3 — gate O1 + Subsystem B/C disposition)
+
+**WAL directory lifecycle / cleanup (gate O1).** Per-node WAL lives at `.luciferase/wal/<nodeId>/`
+(`nodeId` from `digestToUuid`, stable across restarts — gate C1).
+
+- *Clean shutdown* (lifecycle stop → `PersistenceManagerAdapter.doStop()` → `PersistenceManager.closeClean()`):
+  write a checkpoint at the head sequence, then **truncate** the log segments (compaction). A cleanly-stopped
+  node has no in-flight migrations (the caller drains the migrator first — P2), so there is nothing to
+  recover; the next start replays nothing. The checkpoint `.meta` is retained and carries the high-water
+  sequence, so post-restart appends continue the monotonic sequence rather than colliding below the
+  checkpoint (`WriteAheadLog.restoreSequenceCounter` seeds from `max(log, checkpoint)`).
+- *Crash* (no clean stop; abrupt exit or the `doStart` recover-abort path → `PersistenceManager.close()`):
+  the WAL is flushed and retained in full. Recovery replays the post-(last-checkpoint) tail. This is the
+  durability path the round-trip test exercises.
+- *Retention across restarts*: a clean shutdown leaves a pristine WAL (empty segments + checkpoint); a crash
+  leaves the full segment set until the next clean shutdown compacts it.
+
+**Subsystem B (`MigrationLogPersistence` / `CrossProcessMigration` 2PC) — opt-in, OFF by default.**
+`CrossProcessMigration.walPersistence` is a nullable ctor arg, null in the default node. To opt in, construct
+`CrossProcessMigration` with a `MigrationLogPersistence` (its own dir `.luciferase/migration-wal/<processId>/`).
+**Consequence with B off (gate S3):** a crash between `recordPrepare()` and `recordCommit()` leaves an orphaned
+PREPARE with **no automatic rollback and no operator signal** — the shipped node's durability promise covers
+entity migration-FSM state (Subsystem A), not 2PC transaction recovery. B is defense-in-depth, NOT an
+alternative authoritative WAL.
+
+**Subsystem C (`von/RecoveryIntegration`) — orthogonal, not a WAL.** Zero disk I/O; it is a live VON-topology
+repair bridge (`onNeighborLeave()` → `faultHandler.reportSyncFailure()`). Out of scope for this RDR.
+Productionizing it (partition-fault self-healing) is tracked in **`Luciferase-s23eu`** — not duplicated here.
+
 ## Consequences / Risks
 
 - Large blast radius: node startup/shutdown semantics, lifecycle dependency graph, `BubbleMigrator`,

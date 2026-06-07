@@ -81,7 +81,10 @@ public class PersistenceManagerAdapter extends AbstractLifecycleAdapter {
 
     @Override
     protected void doStop() throws Exception {
-        persistenceManager.close();
+        // RDR-017 P3 (gate O1): a lifecycle stop is a CLEAN shutdown — checkpoint + truncate the WAL
+        // (compaction) so the next start recovers nothing. The crash path (abort in doStart) calls
+        // close() directly, retaining the WAL for recovery.
+        persistenceManager.closeClean();
     }
 
     @Override
