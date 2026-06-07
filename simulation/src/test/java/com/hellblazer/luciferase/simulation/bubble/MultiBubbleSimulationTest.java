@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.simulation.bubble;
 
 import com.hellblazer.luciferase.simulation.behavior.FlockingBehavior;
+import com.hellblazer.luciferase.simulation.behavior.RandomWalkBehavior;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.MultiBubbleSimulation;
 import com.hellblazer.luciferase.simulation.bubble.RealTimeController;
@@ -226,9 +227,72 @@ class MultiBubbleSimulationTest {
         assertNotNull(metrics);
     }
 
+    /**
+     * Deterministic correctness at scale (replaces the wall-clock {@code testLargePopulation_500Entities_60fps}).
+     * <p>
+     * The old test asserted {@code getTicksPerSecond() >= 25}, where {@code getTicksPerSecond() = 1000 /
+     * averageFrameTimeMs} and {@code frameTimeMs} is wall-elapsed {@code nanoTime} measured around the tick body
+     * ({@code MultiBubbleSimulation.tick()}). Under the full-suite batch (forkCount=15, reuseForks, no -Xmx) GC
+     * stop-the-world pauses and 15-way core contention bleed into that wall-elapsed measurement, collapsing the
+     * reported TPS from ~336 (isolation; genuine warm tick ≈ 3 ms) to single digits. That made it a contention
+     * artifact, not a correctness signal — and {@code @DisabledIfEnvironmentVariable(CI)} did not cover a local
+     * batch run (no {@code CI} var). Throughput now lives in the {@code @Tag("performance")} sibling below; this
+     * test pins what actually matters at 500 entities: the simulation advances and conserves entities exactly
+     * ACROSS real migrations, with no wall-clock dependency (Luciferase-9sysj).
+     * <p>
+     * Uses a <b>seeded</b> {@link RandomWalkBehavior} (not the unseeded {@code FlockingBehavior} the old test used)
+     * so the run is reproducible — matching the {@code MultiBubbleSimulationMigrationTest} pattern — and so it
+     * genuinely drives migrations: at this scale, 300 seeded ticks commit 162 migrations (measured), and the
+     * {@code getTotalMigrations() > 0} assertion fails loudly if a future change ever makes 300 ticks too short,
+     * preventing the conservation invariant from passing vacuously in a no-migration regime.
+     */
     @Test
-    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky performance test: CI environment achieves lower TPS than required 25 TPS with 500 entities")
-    void testLargePopulation_500Entities_60fps() throws InterruptedException {
+    void testLargePopulation_500Entities_deterministicConservation() {
+        simulation = new MultiBubbleSimulation(9, (byte) 2, 500, WorldBounds.DEFAULT, new RandomWalkBehavior(42L));
+
+        int initialReal = simulation.getRealEntities().size();
+        assertTrue(initialReal > 0, "fixture must start with real entities");
+
+        // Deterministic single-stepping (no start()/Thread.sleep) — fully reproducible (Luciferase-j6ybd).
+        for (int i = 0; i < 300; i++) {
+            simulation.tick();
+        }
+
+        assertTrue(simulation.getTickCount() >= 300, "simulation must have advanced the driven ticks");
+
+        // The conservation invariant must be exercised ACROSS migrations, not in a trivial no-migration regime.
+        assertTrue(simulation.getMigrationMetrics().getTotalMigrations() > 0,
+                   "300 ticks at 500-entity/9-bubble scale must commit migrations (else conservation is vacuous)");
+
+        // Conservation + uniqueness must hold across all migrations driven by the 300 ticks (no loss/duplication).
+        var realEntities = simulation.getRealEntities();
+        assertEquals(initialReal, realEntities.size(),
+                     "real entity count must be exactly conserved across 300 ticks (no loss / no creation)");
+        var bubblesById = new java.util.HashMap<String, java.util.Set<Object>>();
+        for (var e : realEntities) {
+            bubblesById.computeIfAbsent(e.id(), k -> new java.util.HashSet<>()).add(e.bubbleKey());
+        }
+        for (var entry : bubblesById.entrySet()) {
+            assertEquals(1, entry.getValue().size(),
+                         "entity " + entry.getKey() + " must reside in exactly one bubble (no duplication)");
+        }
+    }
+
+    /**
+     * Throughput smoke test at 500 entities. Tagged {@code performance} so it is excluded from the default suite
+     * and runs only under {@code -Pperformance} (isolated, uncontended) — see the root-cause note on
+     * {@link #testLargePopulation_500Entities_deterministicConservation}. The metric is wall-clock-derived and
+     * therefore only meaningful when not competing with the 15-fork batch.
+     * <p>
+     * The floor is deliberately <b>coarse</b> (5 TPS, not the old 25): {@code -Pperformance} flips the tag filter
+     * but does NOT set {@code forkCount=1}/{@code reuseForks=false}, so even here some contention is possible. The
+     * genuine warm tick is ≈ 3 ms (≈ 336 theoretical TPS), so 5 TPS = 200 ms/tick leaves ~66× headroom — it is an
+     * algorithmic-regression sentinel (e.g. an O(n²) per-tick blowup), not a tight throughput SLA. Tighten this
+     * only if the performance profile is changed to isolate forks.
+     */
+    @Test
+    @org.junit.jupiter.api.Tag("performance")
+    void testLargePopulation_500Entities_throughput() throws InterruptedException {
         simulation = new MultiBubbleSimulation(9, (byte) 2, 500, WorldBounds.DEFAULT, new FlockingBehavior());
 
         simulation.start();
@@ -239,8 +303,7 @@ class MultiBubbleSimulationTest {
 
         simulation.stop();
 
-        // Should achieve reasonable TPS (allow variance for CI environments)
-        assertTrue(tps >= 25, "Should achieve at least 25 TPS with 500 entities, got " + tps);
+        assertTrue(tps >= 5, "per-tick cost regressed badly (algorithmic): expected >= 5 TPS with 500 entities, got " + tps);
     }
 
     @Test
