@@ -90,7 +90,7 @@ class TopologyRemediationTest {
         int before = accountant.entitiesInBubble(bubble.id()).size();
 
         var proposal = splitProposal(bubble);
-        var result = executor.execute(proposal);
+        var result = executor.executeInternal(proposal); // public execute(SplitProposal) fenced — AC-0
 
         assertTrue(result.success(), () -> "Split should succeed: " + result.message());
         assertEquals(before, getTotal(), "Conservation across the whole grid");
@@ -109,7 +109,7 @@ class TopologyRemediationTest {
         var bubble = bubbleGrid.getAllBubbles().iterator().next();
         addEntities(bubble, 5100);
 
-        var result = executor.execute(splitProposal(bubble));
+        var result = executor.executeInternal(splitProposal(bubble));
         assertTrue(result.success(), () -> "Split should succeed: " + result.message());
 
         assertEquals(1L, metrics.getSplitMetrics().successfulSplits(),
@@ -123,7 +123,7 @@ class TopologyRemediationTest {
         var proposal = new SplitProposal(UUID.randomUUID(), missing,
                                          new SplitPlane(new Point3f(1f, 0f, 0f), 0f),
                                          DigestAlgorithm.DEFAULT.getOrigin(), 0L);
-        executor.execute(proposal);
+        executor.executeInternal(proposal); // public execute(SplitProposal) fenced — AC-0
         assertEquals(1L, metrics.getSplitMetrics().failedSplits(),
                      "recordSplitFailure must be invoked exactly once per failed split");
     }
@@ -139,7 +139,7 @@ class TopologyRemediationTest {
         List<TopologyEvent> events = new ArrayList<>();
         executor.addListener(events::add);
 
-        var result = executor.execute(splitProposal(bubble));
+        var result = executor.executeInternal(splitProposal(bubble));
         assertTrue(result.success(), () -> "Split should succeed: " + result.message());
 
         assertEquals(1, events.size());
@@ -189,7 +189,7 @@ class TopologyRemediationTest {
         List<TopologyEvent> events = new ArrayList<>();
         executor.addListener(events::add);
 
-        var result = executor.execute(splitProposal(bubble));
+        var result = executor.executeInternal(splitProposal(bubble));
         assertTrue(result.success());
         assertEquals(1, events.size());
         // On the committed happy path the event's success flag must be true.

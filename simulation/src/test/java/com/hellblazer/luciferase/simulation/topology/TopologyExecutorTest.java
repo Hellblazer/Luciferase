@@ -79,8 +79,10 @@ class TopologyExecutorTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        // Execute
-        var result = executor.execute(proposal);
+        // Execute the executor's split MECHANISM directly — public execute(SplitProposal) is fenced
+        // (RDR-018 AC-0); the fence is pinned separately by TopologyExecutorSplitFenceTest. This test
+        // covers the executeInternal happy-path (conservation), which B-core (AC-2.5) re-exposes.
+        var result = executor.executeInternal(proposal);
 
         // Verify
         assertTrue(result.success(), "Split should succeed: " + result.message());
@@ -231,7 +233,7 @@ class TopologyExecutorTest {
         var proposal = new SplitProposal(UUID.randomUUID(), bubble.id(), splitPlane,
                                          DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis());
 
-        var result = executor.execute(proposal);
+        var result = executor.executeInternal(proposal); // public execute(SplitProposal) fenced — AC-0
         assertTrue(result.success(), "split should succeed: " + result.message());
 
         var event = captured.get();
@@ -275,7 +277,9 @@ class TopologyExecutorTest {
         var errors = new java.util.concurrent.ConcurrentLinkedQueue<Throwable>();
 
         Runnable runSplit = () -> {
-            try { barrier.await(); results.add(executor.execute(split)); }
+            // executeInternal so the split actually mutates under executionLock (public execute is
+            // AC-0-fenced); the serialization-without-corruption invariant is what this test pins.
+            try { barrier.await(); results.add(executor.executeInternal(split)); }
             catch (Throwable t) { errors.add(t); }
         };
         Runnable runMerge = () -> {
@@ -313,7 +317,7 @@ class TopologyExecutorTest {
         var proposal = new SplitProposal(UUID.randomUUID(), bubble.id(), degenerate,
                                          DigestAlgorithm.DEFAULT.getOrigin(), JC1KH_CLOCK.currentTimeMillis());
 
-        var result = assertDoesNotThrow(() -> executor.execute(proposal),
+        var result = assertDoesNotThrow(() -> executor.executeInternal(proposal), // public execute fenced — AC-0
                                         "a degenerate split plane must not throw");
         assertNotNull(result, "execute must return a result for a degenerate plane");
         // Whether it succeeds (empty side) or fails cleanly, accounting must stay conserved (validate() checks
@@ -346,8 +350,8 @@ class TopologyExecutorTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        // Execute
-        var result = executor.execute(proposal);
+        // Execute the split mechanism (public execute(SplitProposal) is AC-0-fenced)
+        var result = executor.executeInternal(proposal);
 
         // Verify total entity count unchanged
         int totalAfter = getTotalEntityCount();
@@ -413,13 +417,13 @@ class TopologyExecutorTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        // Execute sequentially (second should fail because first already split)
-        var result1 = executor.execute(proposal1);
+        // Execute sequentially via the mechanism (public execute(SplitProposal) is AC-0-fenced)
+        var result1 = executor.executeInternal(proposal1);
         assertTrue(result1.success(), "First split should succeed");
 
         // Second split on source bubble won't work because entities already moved
         // This tests serialization (one operation at a time)
-        var result2 = executor.execute(proposal2);
+        var result2 = executor.executeInternal(proposal2);
         // Result depends on whether source bubble still has >5000 entities
         // (likely false after first split)
     }
@@ -735,8 +739,10 @@ class TopologyExecutorTest {
             JC1KH_CLOCK.currentTimeMillis()
         );
 
-        // Execute — must fail at executor-level validate (not at splitter level)
-        var result = executor2.execute(proposal);
+        // Execute the split mechanism — must fail at executor-level validate (not at splitter
+        // level). Public execute(SplitProposal) is AC-0-fenced; this test pins the executor's
+        // rollback-on-validate-failure scaffolding, so it drives executeInternal directly.
+        var result = executor2.executeInternal(proposal);
 
         assertFalse(result.success(),
                     "Execute must return failure when executor-level validate fails");
