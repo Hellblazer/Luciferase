@@ -74,6 +74,50 @@ class NodeBootstrapPersistenceWiringTest {
     }
 
     @Test
+    void assembledCleanShutdownCompactsWal_reopenReplaysNothing(@TempDir Path walDir) throws Exception {
+        // RDR-017 P3 (gate O1): a clean lifecycle stop (mgr.close() → coordinator stop → doStop →
+        // closeClean) must checkpoint + truncate the WAL. Guards the doStop→closeClean wiring against a
+        // regression to plain close() (which would leave the segments on disk).
+        var nodeId = UUID.randomUUID();
+        try (var writer = new PersistenceManager(nodeId, walDir, RecoveryStateSink.NOOP)) {
+            writer.logMigrationCommit(UUID.randomUUID());   // fsynced → segment has flushed content
+        }
+        assertTrue(Files.readAllLines(walDir.resolve("node-" + nodeId + ".log")).size() > 0,
+                   "precondition: WAL segment has content before clean shutdown");
+
+        var fsm1 = freshFsm();
+        var adapter1 = NodeBootstrap.persistenceAdapter(nodeId, walDir, fsm1);
+        var scm1 = new SocketConnectionManager(ProcessAddress.localhost("p3-clean1", 0), msg -> {});
+        var mgr1 = new Manager(LocalServerTransport.Registry.create(),
+                               SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL, 16L,
+                               SpatialLevelHeuristic.DEFAULT_AOI_RADIUS);
+        NodeBootstrap.assemble(mgr1, new SocketConnectionManagerAdapter(scm1), adapter1);
+        mgr1.close();   // clean lifecycle stop → doStop → closeClean (checkpoint + truncate)
+
+        assertEquals(0, Files.readAllLines(walDir.resolve("node-" + nodeId + ".log")).size(),
+                     "clean lifecycle stop must truncate the WAL segment (doStop → closeClean)");
+        assertTrue(Files.exists(walDir.resolve("node-" + nodeId + ".meta")),
+                   "clean lifecycle stop must leave a checkpoint");
+
+        // Reopen the assembled node: recovery replays nothing.
+        var fsm2 = freshFsm();
+        var adapter2 = NodeBootstrap.persistenceAdapter(nodeId, walDir, fsm2);
+        var pm2 = adapter2.getPersistenceManager();
+        var scm2 = new SocketConnectionManager(ProcessAddress.localhost("p3-clean2", 0), msg -> {});
+        var mgr2 = new Manager(LocalServerTransport.Registry.create(),
+                               SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL, 16L,
+                               SpatialLevelHeuristic.DEFAULT_AOI_RADIUS);
+        try {
+            NodeBootstrap.assemble(mgr2, new SocketConnectionManagerAdapter(scm2), adapter2);
+            assertEquals(LifecycleState.RUNNING, mgr2.coordinator().getState("PersistenceManager"),
+                         "reopen on a compacted WAL must start cleanly");
+            assertTrue(pm2.isSchedulersStarted(), "reopen must complete recovery and start schedulers");
+        } finally {
+            mgr2.close();
+        }
+    }
+
+    @Test
     void assembleAbortsOnCorruptWal(@TempDir Path walDir) throws Exception {
         var nodeId = UUID.randomUUID();
         try (var writer = new PersistenceManager(nodeId, walDir, RecoveryStateSink.NOOP)) {
