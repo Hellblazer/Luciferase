@@ -64,6 +64,7 @@ public class PersistenceManager implements AutoCloseable {
     private final ScheduledExecutorService executor;
     private final AtomicBoolean recoveryInProgress;
     private final AtomicBoolean schedulersStarted = new AtomicBoolean(false);
+    private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicLong lastCheckpointSeq;
     private final AtomicLong eventCounter;
 
@@ -152,11 +153,11 @@ public class PersistenceManager implements AutoCloseable {
 
     /**
      * @return the number of tasks currently queued on the scheduler executor. Zero before
-     *         {@link #startSchedulers()} runs; two once both schedulers are scheduled. Exposed so the
-     *         scheduler-relocation regression (RDR-017 P1) can prove no scheduler is queued in the
-     *         constructor — catching a re-introduction of either scheduler into the ctor.
+     *         {@link #startSchedulers()} runs; two once both schedulers are scheduled. Package-private
+     *         test-support: the scheduler-relocation regression (RDR-017 P1) uses it to prove no
+     *         scheduler is queued in the constructor — catching a re-introduction of either scheduler.
      */
-    public int scheduledTaskCount() {
+    int scheduledTaskCount() {
         if (executor instanceof java.util.concurrent.ScheduledThreadPoolExecutor stpe) {
             return stpe.getQueue().size();
         }
@@ -395,6 +396,11 @@ public class PersistenceManager implements AutoCloseable {
      */
     @Override
     public void close() throws IOException {
+        // Idempotent (RDR-017 P1): the corrupt-WAL abort path closes the PM from doStart(), and a
+        // caller's finally block may close again — a second close must not throw "WAL is closed".
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         log.info("Shutting down PersistenceManager for node {}", nodeId);
 
         // Shutdown executor

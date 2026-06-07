@@ -100,7 +100,6 @@ class NodeBootstrapPersistenceWiringTest {
                          () -> NodeBootstrap.assemble(manager, new SocketConnectionManagerAdapter(scm), adapter),
                          "corrupt WAL must abort node assembly");
             assertFalse(pm.isSchedulersStarted(), "schedulers must not start when assembly aborts");
-            assertEquals(0, pm.scheduledTaskCount(), "no scheduler may run when recover() aborts");
         } finally {
             // Best-effort: manager.close() stops the RUNNING SCM adapter; the FAILED persistence
             // adapter is not RUNNING so its PM is closed explicitly here.

@@ -58,7 +58,7 @@ class PersistenceManagerAdapterRecoveryTest {
         var pm = new PersistenceManager(nodeId, walDir, new MigrationRecoveryStateSink(fsm));
         var adapter = new PersistenceManagerAdapter(pm);
         try {
-            assertEquals(0, pm.scheduledTaskCount(), "schedulers must not run before doStart()");
+            assertFalse(pm.isSchedulersStarted(), "schedulers must not start before doStart()");
 
             adapter.start().get(5, TimeUnit.SECONDS);
 
@@ -66,7 +66,6 @@ class PersistenceManagerAdapterRecoveryTest {
             assertEquals(EntityMigrationState.MIGRATING_OUT, fsm.getState(entityId.toString()),
                          "doStart() must recover() and replay ENTITY_DEPARTURE into the FSM sink");
             assertTrue(pm.isSchedulersStarted(), "schedulers must start after a clean recover()");
-            assertEquals(2, pm.scheduledTaskCount(), "both schedulers must be running after doStart()");
         } finally {
             pm.close();
         }
@@ -98,7 +97,6 @@ class PersistenceManagerAdapterRecoveryTest {
             assertEquals(LifecycleState.FAILED, adapter.getState(), "adapter must be FAILED, not RUNNING");
             // recover-before-schedulers: a failed recover() must NOT have started the schedulers.
             assertFalse(pm.isSchedulersStarted(), "schedulers must not start when recover() fails");
-            assertEquals(0, pm.scheduledTaskCount(), "no scheduler may run when recover() aborts");
         } finally {
             pm.close();
         }
