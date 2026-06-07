@@ -407,6 +407,77 @@ public class TetreeBubbleGrid {
     }
 
     /**
+     * Resolve the REGISTERED leaf keys adjacent to {@code ownKey} across the Option B mixed-level
+     * refinement forest (RDR-018 AC-6 / gate O2 / RQ-5b).
+     * <p>
+     * lucien's {@link TetreeNeighborFinder#findNeighbors} (via {@code TetreeNeighborDetector}) returns
+     * geometric neighbour keys at {@code ownKey}'s OWN level only. In a mixed-level forest that is not the
+     * registered leaf set: a refined level-{@code (L+1)} child's coarse neighbour is registered one level
+     * up, and a coarse level-{@code L} leaf's neighbour region may be refined into deeper children. This
+     * method bridges both directions so a refined leaf's ghosts reach its coarser neighbour and vice-versa:
+     * <ol>
+     *   <li><b>Same-level / coarser (up-walk):</b> each same-level neighbour key is walked up its parent
+     *       chain to the first registered ancestor (the deepest existing leaf owning that region),
+     *       terminating at the base level. This resolves a refined child to its coarse neighbour.</li>
+     *   <li><b>Finer (down-resolve):</b> any registered leaf deeper than {@code ownKey} whose
+     *       ancestor at {@code ownKey}'s level is one of the same-level neighbour keys is included. This
+     *       resolves a coarse leaf to the children that refined its neighbour region.</li>
+     * </ol>
+     * The result is the registered leaves a ghost layer must exchange with; callers may further filter by
+     * bounds overlap / area-of-interest. {@code ownKey} itself is never included.
+     *
+     * @param ownKey the leaf whose adjacent registered leaves to resolve
+     * @return the set of registered adjacent leaf keys across levels (never includes {@code ownKey})
+     * @throws NullPointerException if {@code ownKey} is null
+     */
+    public Set<TetreeKey<?>> resolveAdjacentLeafKeys(TetreeKey<?> ownKey) {
+        Objects.requireNonNull(ownKey, "ownKey cannot be null");
+        var result    = new HashSet<TetreeKey<?>>();
+        byte base     = partitionLevel;
+        int  ownLevel = ownKey.getLevel();
+
+        // Geometric same-level neighbour keys (at ownKey's level).
+        var sameLevel = neighborFinder.findNeighbors(ownKey);
+
+        // (1) Same-level or coarser: up-walk each neighbour key to its deepest registered ancestor.
+        for (var nk : sameLevel) {
+            var t = Tet.tetrahedron(nk);
+            while (true) {
+                var k = t.tmIndex();
+                if (containsBubble(k)) {
+                    result.add(k);
+                    break;
+                }
+                if (base <= 0 || t.l() <= base) {
+                    break; // no registered owner up to the base level
+                }
+                t = t.parent();
+            }
+        }
+
+        // (2) Finer: registered leaves deeper than ownKey whose ancestor-at-ownLevel is a same-level
+        //     neighbour (a coarse leaf reaching the children that refined its neighbour region).
+        if (!sameLevel.isEmpty()) {
+            var neighborKeys = new HashSet<>(sameLevel);
+            for (var dk : bubblesByKey.keySet()) {
+                if (dk.getLevel() <= ownLevel) {
+                    continue;
+                }
+                var anc = Tet.tetrahedron(dk);
+                while (anc.l() > ownLevel) {
+                    anc = anc.parent();
+                }
+                if (neighborKeys.contains(anc.tmIndex())) {
+                    result.add(dk);
+                }
+            }
+        }
+
+        result.remove(ownKey);
+        return result;
+    }
+
+    /**
      * Choose the coarsest partition level whose cell-edge is no larger than
      * {@code WorldBounds.size() / cbrt(targetBubbleCount)} (RDR-015 AC2) — i.e. cells are no coarser than the
      * requested granularity. Iterates from level 1 upward (coarse → fine) and returns the first level that

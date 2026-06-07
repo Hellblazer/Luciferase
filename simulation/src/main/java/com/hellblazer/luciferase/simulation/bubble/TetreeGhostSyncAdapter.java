@@ -64,6 +64,15 @@ public class TetreeGhostSyncAdapter {
     private static final float AOI_RADIUS = 10.0f;
 
     private final TetreeBubbleGrid bubbleGrid;
+    /**
+     * Retained for constructor-API compatibility only — NOT used for neighbour resolution (RDR-018 AC-6).
+     * Cross-level ghost-neighbour discovery now delegates to {@link TetreeBubbleGrid#resolveAdjacentLeafKeys},
+     * which uses the grid's OWN {@link TetreeNeighborFinder} — the cache-coherent one, invalidated by
+     * {@code addBubble}/{@code removeBubble} on every leaf-set change. An adapter-held finder would carry an
+     * independent, never-invalidated cache, so resolving through it would be a stale-cache hazard. Kept (and
+     * null-checked) so existing call sites and the null-argument contract test are unaffected.
+     */
+    @SuppressWarnings("unused")
     private final TetreeNeighborFinder neighborFinder;
 
     /**
@@ -291,11 +300,15 @@ public class TetreeGhostSyncAdapter {
             return neighbors;
         }
 
-        // Get all topological neighbors via Tetree
-        var tetreeNeighbors = neighborFinder.findNeighbors(myKey);
+        // Resolve the REGISTERED adjacent leaves ACROSS LEVELS (RDR-018 AC-6): in a mixed-level forest a
+        // refined leaf's coarse neighbour is registered one level up, and a coarse leaf's neighbour region
+        // may be refined into deeper children — lucien's raw same-level findNeighbors misses both. The grid
+        // up-walks/down-resolves each geometric neighbour key to the actual registered leaf so a refined
+        // leaf's ghosts reach the coarser neighbour and vice-versa.
+        var adjacentLeafKeys = bubbleGrid.resolveAdjacentLeafKeys(myKey);
 
-        // Filter by bounds overlap
-        for (var neighborKey : tetreeNeighbors) {
+        // Filter by bounds overlap (area-of-interest)
+        for (var neighborKey : adjacentLeafKeys) {
             try {
                 var neighborBubble = bubbleGrid.getBubble(neighborKey);
                 var neighborBounds = neighborBubble.bounds();
