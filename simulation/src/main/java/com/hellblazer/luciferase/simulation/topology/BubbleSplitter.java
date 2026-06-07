@@ -208,7 +208,17 @@ public class BubbleSplitter {
         byte parentLevel = sourceBubble.getSpatialLevel();
         long targetFrameMs = sourceBubble.getTargetFrameMs();
 
-        // IMPORTANT: Compute target key BEFORE moving entities to detect collisions early
+        // IMPORTANT: Compute target key BEFORE moving entities to detect collisions early.
+        //
+        // KNOWN RESIDUAL (Luciferase-hvjdj): the centroid (and thus the new bubble's SFC key) is
+        // derived from the PRE-LOCK snapshot `entitiesToMove`. If entities escape the source during
+        // the snapshot->lock window they are skipped from the move (see the loop below) but their
+        // positions still influenced this centroid, so the new bubble's key may be anchored slightly
+        // off the actually-moved population's centroid. This is a spatial-locality quality gap, NOT a
+        // safety issue: the key is only required to be unoccupied (findAvailableKey guarantees that)
+        // and entity conservation is unaffected. Recomputing the key post-skip is not possible here
+        // because the bubble is registered in the grid before the move loop; closing the locality gap
+        // would require restructuring and is deferred (demand-driven).
         var positions = entitiesToMove.stream()
                                       .map(EnhancedBubble.EntityRecord::position)
                                       .toList();
@@ -273,9 +283,35 @@ public class BubbleSplitter {
         // including the rollback branch — so the cross-bubble add/remove is atomic w.r.t. concurrent
         // migration/merge writers (Luciferase-n7io1). newBubble was registered in the grid above, so it
         // is reachable by concurrent readers/writers by the time the move starts.
+        //
+        // Why lock HERE and re-validate (option b), not lock-before-snapshot (option a) like
+        // BubbleMerger does: the merger's two bubbles BOTH pre-exist, so it can acquire the pair in
+        // ascending-UUID order before snapshotting. The splitter's newBubble does not exist until the
+        // snapshot-derived plane/centroid/key have been computed, so the pair cannot be locked upfront.
+        // Locking only sourceBubble early and acquiring newBubble later would acquire locks OUT of
+        // ascending-UUID order, breaking the one global ordering invariant that makes n7io1 deadlock-
+        // free. So the splitter instead re-validates each entity's source membership under the pair
+        // lock and skips those that escaped during the snapshot->lock window (Luciferase-hvjdj).
+        int skippedEscaped = 0;
         try (var ignored = MutationLocks.lock(sourceBubble, newBubble)) {
             for (var entityRecord : entitiesToMove) {
                 var entityId = UUID.fromString(entityRecord.id());
+
+                // Re-validate source membership UNDER the lock. The snapshot (getAllEntityRecords),
+                // split-plane calc, partition, and key allocation above all ran BEFORE this lock was
+                // acquired, so a concurrent migration/merge may have moved this entity out of source
+                // during that window. Skipping the escaped entity (rather than aborting + rolling back
+                // the whole split) avoids spurious split aborts under contention while preserving
+                // conservation: the entity is already accounted for in its new owner, and the per-
+                // entity loop below moves only entities source still holds (Luciferase-hvjdj). This is
+                // the multi-entity analogue of the single-entity stale-intent guard in
+                // MultiDirectionalMigration.commitMigration (n7io1 S-2).
+                if (!sourceBubble.getEntities().contains(entityRecord.id())) {
+                    log.debug("[{}] Entity {} no longer in source {} at split commit (concurrent move during snapshot->lock window); skipping",
+                              correlationId, entityId, sourceBubbleId);
+                    skippedEscaped++;
+                    continue;
+                }
 
                 // Add entity to new bubble first
                 newBubble.addEntity(entityRecord.id(), entityRecord.position(), entityRecord.content());
@@ -319,6 +355,11 @@ public class BubbleSplitter {
 
         int entitiesMoved = movedRecords.size();
 
+        if (skippedEscaped > 0) {
+            log.info("[{}] Split bubble {}: {} of {} partitioned entities escaped source before lock and were skipped (concurrent migration/merge)",
+                    correlationId, sourceBubbleId, skippedEscaped, entitiesToMove.size());
+        }
+
         log.info("[{}] Split bubble {}: moved {} entities to new bubble {}",
                 correlationId, sourceBubbleId, entitiesMoved, newBubbleId);
 
@@ -337,7 +378,12 @@ public class BubbleSplitter {
         // and new should have entitiesMoved; total == entitiesBeforeSplit by construction.
         // We still call validate() for duplicate detection, but the conservation predicate
         // is now derived from the snapshot + entitiesMoved, not two live reads.
-        int entitiesAfterSplit = entitiesBeforeSplit; // by construction: snapshot - moved + moved
+        //
+        // Note: entitiesBeforeSplit is a pre-lock read; if entities escaped source during the
+        // snapshot->lock window (skippedEscaped > 0) this reported total is approximate. The
+        // authoritative no-loss / no-duplicate guarantee is accountant.validate() below, which
+        // is computed over the live structures and covers entities that migrated elsewhere.
+        int entitiesAfterSplit = entitiesBeforeSplit; // reported snapshot total; see note above
 
         // Validate no duplicates
         var validation = accountant.validate();
