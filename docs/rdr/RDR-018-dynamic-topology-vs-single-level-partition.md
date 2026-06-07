@@ -1,9 +1,10 @@
 ---
 id: RDR-018
 title: Dynamic Topology (Split/Merge) vs the RDR-015 Single-Level Migration Partition
-status: accepted
+status: implemented
 date: 2026-06-06
 accepted_date: 2026-06-06
+closed_date: 2026-06-07
 reviewed-by: self
 supersedes: []
 related: [RDR-015, RDR-010, RDR-012, RDR-014]
@@ -14,11 +15,16 @@ beads: [Luciferase-9eyqy, Luciferase-0frcy]
 
 ## Status
 
-Draft (2026-06-06). Created from `Luciferase-9eyqy`, the dynamic-topology follow-up that RDR-015 explicitly
+**Implemented (closed 2026-06-07).** Option B shipped in full; all 8 implementation ACs landed through
+stacked review (epic `Luciferase-3iony`), the original defect `Luciferase-9eyqy` is resolved, and the AC-7
+scope ledger (`Luciferase-xtyki`) is reconciled with 3 explicit forward deferrals (all benign while split/merge
+remain off the live tick path — F1/RDR-012 D2). Post-mortem: `docs/rdr/post-mortem/018-dynamic-topology-vs-single-level-partition.md`.
+
+Created from `Luciferase-9eyqy`, the dynamic-topology follow-up that RDR-015 explicitly
 deferred (RDR-015 `## Scope decision`, AC-7). **Decision direction locked: Option B (mixed-level hierarchical
 router)** — see `## Decision` below. Research recorded + verified (`018-research-1`, `-verification`). **Gate
 PASSED 2026-06-06** (0 critical; 5 significant + 4 observations from the Layer-3 critique all folded into the
-Decision/Design/Alternatives/AC sections — see the `(gate Sn/On)` markers). Ready for `/conexus:rdr-accept`.
+Decision/Design/Alternatives/AC sections — see the `(gate Sn/On)` markers).
 
 This RDR does **not revert RDR-015.** RDR-015's single-level partition remains correct as the *initial* grid
 state and for a non-splitting run, and reviving static migration was a genuine prerequisite (you cannot route
@@ -238,7 +244,7 @@ leaf-partition invariant; **(3)** verify ghost cross-level (F5). The hvjdj "cent
 
 ## Open research questions (remaining for gate)
 
-_RQ-1 resolved by F1, RQ-3 by F3/F6, RQ-4 (merge) by F4, RQ-5 largely by F5. Genuinely open:_
+*RQ-1 resolved by F1, RQ-3 by F3/F6, RQ-4 (merge) by F4, RQ-5 largely by F5. Genuinely open:*
 
 2. **What is the per-cell capacity model?** `BubbleSplitter` triggers at >5000 entities; is the per-cell cap
    the binding constraint, or frame-time? Informs the split refinement policy (RQ-6).
