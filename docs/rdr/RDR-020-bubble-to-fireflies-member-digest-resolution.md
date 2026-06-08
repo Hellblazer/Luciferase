@@ -52,6 +52,18 @@ whose node digests are genuine members of the current view — or **fail loud** 
 per the wave-20 review note on `vhbw3` (a membership-enforcing consensus must never be handed a
 silently-rejectable proposal).
 
+**Amendment (2026-06-08, S3 implementation finding) — topology proposals are single-region, not
+entity migrations.** A second collision surfaces once the digests are real: a split/merge/move/collapse
+restructures bubbles the proposing node already hosts, so the HRW owner of the affected region *is* the
+local member (always single-node; and at steady state whenever placement honors HRW). The entity-migration
+mapping (`source = localMember`, `target = owner(affectedBubble)`) then yields `source == target`, which
+`validateProposal` **rejects as a self-migration** (`:365-369`) — so the topology change never executes.
+Unlike an entity staying put (a genuine no-op, correctly rejected, §Approach), a topology change is **not**
+a no-op and must execute even single-node. Topology consensus therefore needs a **topology-aware validity
+path**: the proposal's single owning node must be in-view, but the self-migration check must not apply. The
+original RDR's A3 "no consensus-record change" held for the entity-migration path only; topology requires a
+proposal-kind discriminator (see Technical Design → Topology proposal node-identity model).
+
 #### Gap 3: Migrator consensus delegation is unavailable
 
 `OptimisticMigratorImpl.requestMigrationApproval` (`OptimisticMigratorImpl.java:125-149`) correctly throws
@@ -266,8 +278,50 @@ Introduce a thin **node-identity resolution boundary** and keep the consensus la
    used **only** for the node-UUID→`Digest` hint mapping (B4) — never for the active-membership ownership set,
    which comes from `MembershipView.activeMembers()` / `context.active()`.
 
-The consensus records, vote tally, and `isNodeInView` gate are unchanged (A3) — this is a boundary fix at the
-two entry points plus the new ownership function.
+The vote tally (keyed on `proposalId`, A3) and the `isNodeInView` gate are unchanged. The consensus *record*
+gains one back-compatible discriminator field for the entity-migration-vs-topology distinction (see below);
+the entity-migration path (S4/S5) is otherwise a pure boundary fix.
+
+#### Topology proposal node-identity model (S3 amendment, 2026-06-08)
+
+Topology proposals are single-region structural changes, so they cannot use the two-distinct-node migration
+shape. Model them as **single-owner**:
+
+1. `ownerNode = resolver.resolveOwningMember(primaryAffectedBubble)` — the HRW owner of the region being
+   restructured (primary bubble per `getAffectedBubbles`: split→`sourceBubble`, merge→`bubble1`,
+   move→`sourceBubble`, collapse→`anchorChild`).
+   - **Cross-region merge guard (gate finding).** `MergeProposal` is the one two-bubble case
+     (`bubble1`, `bubble2`); the others are genuinely single-region. A merge whose two bubbles fall in
+     different HRW regions has **two** owners, which the single-owner model cannot represent. `toMigrationProposal`
+     therefore asserts `resolver.resolveOwningMember(bubble1).equals(resolver.resolveOwningMember(bubble2))`
+     for merges and **throws (fail-loud) `IllegalStateException("cross-region merge not yet supported")`**
+     on mismatch — a cross-region merge needs a two-node merge protocol that is **explicitly out of scope**
+     here (named boundary, alongside the placement-honors-HRW contract; `s23eu`/RDR-015 follow-on). Same-owner
+     merges use the single-owner model normally. On the single-process live path both bubbles share the one
+     local owner, so the guard is a no-op there.
+2. **Fail-loud ownership guard**: assert `resolver.localMember().equals(ownerNode)` — a node may only propose
+   topology changes for a region it owns; throw (IllegalStateException) otherwise. This both gives the
+   proposal a meaningful, in-view source identity and prevents a node from restructuring another node's
+   region (a safety property the old `digestOf` hash silently lacked).
+3. Build `MigrationProposal(proposalId, entityId=primaryBubble, sourceNodeId=ownerNode,
+   targetNodeId=ownerNode, viewId, timestamp, kind=TOPOLOGY)`.
+4. **`MigrationProposal` gains `ProposalKind kind` (ENTITY_MIGRATION | TOPOLOGY)** as a trailing field, with
+   a back-compatible secondary constructor defaulting to `ENTITY_MIGRATION` so the ~70 existing construction
+   sites (entity-migration + tests) are untouched. `validateProposal` branches: TOPOLOGY proposals carry a
+   real (non-null) `viewId` exactly like entity migrations — the null-viewId reject and `isNodeInView(ownerNode)`
+   (active-only after S6) gates apply unchanged; the **only** difference is that the self-migration reject
+   (`:365`) is **skipped** for TOPOLOGY. ENTITY_MIGRATION is fully unchanged (self-migration reject retained).
+5. **`kind` on the wire is correctness-critical, not hygiene (gate finding).** `validateProposal` runs on
+   **every committee member that receives the proposal**, not just the proposer: `CommitteeServiceImpl`
+   (remote receipt) calls `fromProto` then `consensus.requestConsensus(...)` → `validateProposal`
+   (`ViewCommitteeConsensus.java:175`). So `kind` must be serialized — one optional `kind` enum field on
+   `CommitteeMigrationProposal` (default `ENTITY_MIGRATION`), `CommitteeProtoConverter` maps both ways. **Mixed-version
+   contract**: a committee member running pre-amendment code has no `kind` field → defaults to ENTITY_MIGRATION
+   → self-migration-rejects any TOPOLOGY proposal. **Therefore TOPOLOGY consensus requires all committee
+   members to run amended code**; until the cluster is fully upgraded a TOPOLOGY proposal cannot reach quorum.
+   This is acceptable because the live path today is single-process (`s23eu` multi-node unwired) where the
+   proposer is the only validator; the upgrade contract is documented as a named multi-node prerequisite. The
+   Test Plan adds a mixed-version scenario (old-default node rejects TOPOLOGY) so the limit is asserted, not implicit.
 
 ### Technical Design
 
@@ -303,9 +357,9 @@ interface SpatialOwnershipFunction {
 - **Ownership is not stored.** It is recomputed from the view at proposal time; a view change recomputes it.
   In-flight proposals carrying a now-stale owner are rejected by `isNodeInView` (visible), not mis-routed.
 
-- `TopologyConsensusCoordinator.toMigrationProposal(...)`: `sourceNodeId = resolver.localMember()` (the
-  source bubble is locally hosted by construction — no non-local-source path, gate S4),
-  `targetNodeId = resolver.resolveOwningMember(targetBubble)`; throw on unresolved. Delete `digestOf` (S3).
+- `TopologyConsensusCoordinator.toMigrationProposal(...)`: builds a **TOPOLOGY-kind** proposal per the
+  Topology proposal node-identity model below (single owning node, `source == target == owner(region)`);
+  throw on unresolved. Delete `digestOf` (S3).
 - `OptimisticMigratorImpl.requestMigrationApproval(entityId, targetBubble)`: note `targetBubble` is a
   **bubble** UUID, so `targetNodeId = resolver.resolveOwningMember(targetBubble)` (HRW direct — no node-UUID
   lookup here); `sourceId = resolver.localMember()`. Then delegate to
@@ -457,6 +511,19 @@ None anticipated (reuses Delos membership already on the classpath).
   only and the single-process live path is correct, not silently broken.
 - **Scenario**: Target bubble unresolvable to any current-view member — **Verify**: `toMigrationProposal` and
   `requestMigrationApproval` throw (fail-loud), no silent approve, no silently-rejected proposal.
+- **Scenario** (S3 topology, single-node): a TOPOLOGY proposal where `source == target == owner(region)` —
+  **Verify**: passes `validateProposal` against a real committee (NOT self-migration-rejected) and reaches
+  agreement; the same proposal as `ENTITY_MIGRATION` kind IS rejected (proves the discriminator is load-bearing).
+- **Scenario** (S3 topology, non-owner proposer): local member ≠ `owner(primaryAffectedBubble)` —
+  **Verify**: `toMigrationProposal` throws (fail-loud ownership guard), no off-region proposal is emitted.
+- **Scenario** (S3 cross-region merge): a `MergeProposal` whose `bubble1`/`bubble2` resolve to **different**
+  owners — **Verify**: `toMigrationProposal` throws `IllegalStateException("cross-region merge not yet supported")`
+  (fail-loud), no proposal emitted; a same-owner merge succeeds.
+- **Scenario** (S3 wire): a TOPOLOGY `MigrationProposal` round-trips through `CommitteeProtoConverter`
+  preserving `kind`; a proto with no `kind` field deserializes as `ENTITY_MIGRATION` (back-compat).
+- **Scenario** (S3 mixed-version): a committee member validating a TOPOLOGY proposal as `ENTITY_MIGRATION`
+  (the old-code/default-kind path) self-migration-rejects it — **Verify**: documents/asserts that TOPOLOGY
+  consensus requires all members on amended code (the upgrade contract), so the limit is explicit not silent.
 - **Scenario** (gate C2/B1): explicit `targetNodeId` node hint that disagrees with `owner(destKey)` —
   **Verify**: `initiateRemoteMigration` throws on mismatch; a hint that *agrees* passes.
 - **Scenario**: Resolver uses the **active-only** set (not the misnamed all-members backing) — **Verify**: an
@@ -497,7 +564,13 @@ silent reduction.
 
 ### Cross-Cutting Concerns
 
-- **Versioning**: N/A (no wire-format change; `MigrationProposal` unchanged).
+- **Versioning**: `MigrationProposal` and `CommitteeMigrationProposal` (proto) gain one **optional** `kind`
+  field defaulting to `ENTITY_MIGRATION` (S3 amendment). Wire-compatible at the encoding level (old peer omits
+  the field; new peer reads the default), but **semantically the field is load-bearing for remote validity**:
+  committee members re-validate received proposals (`CommitteeServiceImpl` → `validateProposal`), so a member
+  on pre-amendment code defaults a TOPOLOGY proposal to ENTITY_MIGRATION and self-migration-rejects it. Hence
+  the documented **upgrade contract**: TOPOLOGY consensus requires all committee members on amended code;
+  ENTITY_MIGRATION is fully back-compatible. Existing construction sites use the back-compat secondary constructor.
 - **Secret/credential lifecycle**: N/A (uses existing Fireflies identities).
 - **Incremental adoption**: resolver is injected; fail-loud preserves current behavior until wired.
 - **Test-caller impact (gate observation)**: `PerformanceResilienceValidationTest` (9 `initiateRemoteMigration`
@@ -559,6 +632,22 @@ than absorbed here.
   convergence test added to MVV; **S3** `digestOf` deletion scope enumerated (2 sites, one class); **S4**
   non-local-source path removed (source = local, always). Test-caller impact (random-UUID migrations) folded
   into the plan as Step 7.
+- 2026-06-08: **S3 amendment — topology proposal node-identity model** (surfaced during S1/S2 implementation,
+  owner chose "amend + topology-aware validity"). Finding: topology proposals (split/merge/move/collapse) are
+  single-region structural changes, so `source == target == owner(region)` and `validateProposal`'s
+  self-migration reject (`:365`) would block every real-committee topology change — the entity-migration
+  mapping does not fit. Resolution: model topology as single-owner (`source == target == owner`), add a
+  fail-loud ownership guard (proposer must own the region), and a `MigrationProposal.kind`
+  (ENTITY_MIGRATION | TOPOLOGY) discriminator — back-compatible (default ENTITY_MIGRATION, ~70 sites
+  untouched; one optional proto field) — with `validateProposal` skipping the self-migration check for
+  TOPOLOGY only. Entity-migration path (S4/S5) unaffected. Bead `Luciferase-e8gl4` scope widened to include
+  `MigrationProposal` + `ViewCommitteeConsensus.validateProposal` + `CommitteeProtoConverter`.
+  **Amendment gate (substantive-critic) BLOCKED v1 (2 critical), fixed:** (C1) `validateProposal` is NOT
+  proposer-local — `CommitteeServiceImpl` re-validates on remote receipt, so `kind` is correctness-critical on
+  the wire and a mixed-version cluster self-migration-rejects TOPOLOGY on old nodes → documented upgrade
+  contract + mixed-version test scenario. (C2) `MergeProposal` is two-bubble; single-owner silently
+  restructures a second region → added fail-loud cross-region merge guard (`owner(bubble1)==owner(bubble2)`,
+  else throw; cross-region merge protocol out of scope). Garbled "null-viewId" wording corrected.
 - 2026-06-08: **re-gate PASSED** (substantive-critic; 0 Critical, 2 implementation-scoped Significant). Folded
   in: `ViewCommitteeSelector.isNodeInView` uses `allMembers()` not `active()` — the active-only RDR-005
   invariant must also be enforced at the validator (new Step 6 / Approach item 6); and the `digestOf` scope
