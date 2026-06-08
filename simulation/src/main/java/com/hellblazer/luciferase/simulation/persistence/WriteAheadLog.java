@@ -27,6 +27,7 @@ import java.io.*;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.*;
@@ -189,6 +190,25 @@ public class WriteAheadLog implements AutoCloseable {
      */
     public long getSequence() {
         return sequenceCounter.get();
+    }
+
+    /**
+     * Total bytes across all retained log segments for this node (sealed + active). Used by the
+     * size-based compaction trigger (RDR-019 Phase 2). Returns 0 if the directory cannot be listed.
+     *
+     * @return summed size in bytes of all {@code node-<id>*.log} segments
+     */
+    public long retainedLogBytes() {
+        try {
+            long total = 0;
+            for (var seg : findLogFiles()) {
+                total += Files.size(seg);
+            }
+            return total;
+        } catch (IOException e) {
+            log.warn("Failed to measure retained log bytes for node {}", nodeId, e);
+            return 0;
+        }
     }
 
     /**
@@ -425,6 +445,273 @@ public class WriteAheadLog implements AutoCloseable {
         currentSize.set(0);
 
         log.info("WriteAheadLog truncated for node {} (clean-shutdown compaction)", nodeId);
+    }
+
+    /**
+     * Result of a {@link #compactCompletedMigrations()} run.
+     *
+     * @param sealedSegments  number of sealed segments scanned
+     * @param prunedEvents    number of events removed (whole completed DEPARTURE+COMMIT pairs)
+     * @param retainedEvents  number of events kept (in-flight departures + non-migration events)
+     * @param watermark       highest sequence number pruned (0 if nothing pruned)
+     * @param aborted         true if compaction made no changes (e.g. corrupt sealed segment); the log
+     *                        is left intact so recovery can fail loud on the corruption
+     */
+    public record CompactionStats(int sealedSegments, long prunedEvents, long retainedEvents,
+                                  long watermark, boolean aborted) {}
+
+    /**
+     * Mid-run compaction (RDR-019 Phase 2, gate S2): bound the retained log by pruning WHOLE completed
+     * migration cycles — an {@code ENTITY_DEPARTURE} together with its matching {@code MIGRATION_COMMIT} —
+     * while never dropping an in-flight (uncommitted) departure or a non-migration event.
+     *
+     * <p><b>Gate S2 — concurrent-write safety.</b> The active segment is SEALED first (roll to a fresh
+     * segment via {@link #rotate()}); compaction then scans and rewrites ONLY the now-sealed segments.
+     * The live segment that subsequent {@link #append(Map)} calls write to is never rewritten. (This
+     * method is also {@code synchronized} on the WAL monitor, so no append interleaves — belt and
+     * suspenders; the seal-then-compact-sealed design is the load-bearing guarantee.)
+     *
+     * <p><b>Pruning rule (Q2 order constraint).</b> An entity's events are prunable only if BOTH an
+     * {@code ENTITY_DEPARTURE} and a {@code MIGRATION_COMMIT} for it appear among the sealed events. Only
+     * those two event types, for such completed entities, are dropped — never a partial pair, never an
+     * in-flight departure, and never a non-migration event ({@code DEFERRED_UPDATE}, {@code VIEW_SYNC_ACK},
+     * consensus types are retained conservatively — gate O3; no recovery consumer, so never assumed
+     * prunable). Relative order of retained events is preserved.
+     *
+     * <p><b>Bounded replay without logical filtering.</b> Pruned events are physically removed from disk,
+     * so the next recovery's FULL replay (RDR-019 Phase 1 contract) is naturally bounded — there is no
+     * watermark-filtered replay. This is deliberate: re-introducing a logical replay bound is the exact
+     * RDR-019 data-loss class. The watermark is recorded in metadata for diagnostics/versioning only.
+     *
+     * <p><b>Crash safety.</b> Write-new-then-rename: retained sealed events are streamed to a temp file,
+     * fsync'd, then atomically renamed over the base segment; the other sealed segments are deleted only
+     * afterwards. A crash at any point leaves a fully recoverable (possibly un- or partially-compacted)
+     * log with no event loss — replay is idempotent (duplicate migrations are deduped on recovery).
+     *
+     * <p><b>Corruption.</b> If a sealed segment contains a mid-file corrupt line, compaction ABORTS
+     * (returns {@code aborted=true}, no changes) so the corruption survives for the recovery fail-loud
+     * gate rather than being silently rewritten away. A torn final line of the last sealed segment
+     * (crash-flush) is tolerated and dropped, mirroring recovery.
+     *
+     * @return statistics describing the compaction
+     * @throws IOException if compaction I/O fails
+     */
+    public synchronized CompactionStats compactCompletedMigrations() throws IOException {
+        checkNotClosed();
+
+        // Seal the active segment: everything that exists before this roll becomes sealed (read-only);
+        // appends after this point land in the fresh active segment, which compaction never touches.
+        rotate();
+        var activeSegment = currentLogFile;
+
+        var sealed = new ArrayList<Path>();
+        for (var f : findLogFiles()) {
+            if (!f.equals(activeSegment)) {
+                sealed.add(f);
+            }
+        }
+        if (sealed.isEmpty()) {
+            return new CompactionStats(0, 0, 0, 0, false);
+        }
+
+        // Pass 1: per-entity CYCLE accounting. An entity may migrate more than once within the retained
+        // log (DEPARTURE→COMMIT, then DEPARTURE again, ...). We must prune only events of COMPLETED
+        // cycles and NEVER an in-flight (uncommitted) departure — otherwise a re-migration's trailing
+        // DEPARTURE is dropped and recovery reconstructs null instead of MIGRATING_OUT (the RDR-004-class
+        // data loss this RDR closes; substantive-critic RDR-019 P2.4).
+        //
+        // By the Q2 append-order guarantee, an entity's events are DEPARTURE,COMMIT,DEPARTURE,COMMIT,...
+        // optionally ending in a trailing in-flight DEPARTURE. With d departures and c commits in sealed,
+        // the number of completed cycles is min(d, c); the trailing max(0, d - c) departures are in-flight.
+        // So: prune every COMMIT (each closes a cycle whose DEPARTURE is also pruned, or is an orphan whose
+        // DEPARTURE was pruned by an earlier compaction), and prune the FIRST min(d, c) departures (by
+        // order), retaining the trailing in-flight ones. (A COMMIT can never appear in sealed with its
+        // DEPARTURE in the still-active segment: DEPARTURE precedes COMMIT in time, and the seal is a
+        // single point in time.)
+        var departureCounts = new HashMap<String, Integer>();
+        var commitCounts = new HashMap<String, Integer>();
+        for (int i = 0; i < sealed.size(); i++) {
+            List<Map<String, Object>> events;
+            try {
+                events = parseSegmentForCompaction(sealed.get(i), i == sealed.size() - 1);
+            } catch (CompactionAbortException e) {
+                log.warn("Compaction aborted for node {}: {} — leaving log intact for fail-loud recovery",
+                         nodeId, e.getMessage());
+                return new CompactionStats(sealed.size(), 0, 0, 0, true);
+            }
+            for (var event : events) {
+                var type = (String) event.get("type");
+                var entityId = event.get("entityId");
+                if (entityId == null) {
+                    continue;
+                }
+                if ("ENTITY_DEPARTURE".equals(type)) {
+                    departureCounts.merge(entityId.toString(), 1, Integer::sum);
+                } else if ("MIGRATION_COMMIT".equals(type)) {
+                    commitCounts.merge(entityId.toString(), 1, Integer::sum);
+                }
+            }
+        }
+
+        long totalCommits = commitCounts.values().stream().mapToLong(Integer::longValue).sum();
+        if (totalCommits == 0) {
+            // No completed cycle anywhere in sealed → nothing prunable (every departure is in-flight).
+            // The seal already happened (harmless empty active segment).
+            return new CompactionStats(sealed.size(), 0, countSealed(sealed), 0, false);
+        }
+
+        // Per entity, the number of departures (oldest-first) that belong to completed cycles and are
+        // therefore prunable; the remaining trailing departures are in-flight and retained.
+        var prunableDepartures = new HashMap<String, Integer>();
+        for (var e : departureCounts.entrySet()) {
+            prunableDepartures.put(e.getKey(), Math.min(e.getValue(), commitCounts.getOrDefault(e.getKey(), 0)));
+        }
+
+        // Pass 2: stream retained events to a temp file (no full in-memory rewrite), preserving order.
+        // Prune every COMMIT, and the first min(d,c) DEPARTUREs per entity (the completed-cycle ones),
+        // retaining trailing in-flight departures and all non-migration events.
+        var tempFile = logDirectory.resolve("node-" + nodeId + ".compact.tmp");
+        var departuresPrunedSoFar = new HashMap<String, Integer>();
+        long pruned = 0;
+        long retained = 0;
+        long watermark = 0;
+        try (var fos = new FileOutputStream(tempFile.toFile(), false);
+             var ch = fos.getChannel();
+             var out = new BufferedWriter(new OutputStreamWriter(fos, java.nio.charset.StandardCharsets.UTF_8))) {
+            for (int i = 0; i < sealed.size(); i++) {
+                List<Map<String, Object>> events;
+                try {
+                    events = parseSegmentForCompaction(sealed.get(i), i == sealed.size() - 1);
+                } catch (CompactionAbortException e) {
+                    log.warn("Compaction aborted (pass 2) for node {}: {} — leaving log intact", nodeId, e.getMessage());
+                    Files.deleteIfExists(tempFile);
+                    return new CompactionStats(sealed.size(), 0, 0, 0, true);
+                }
+                for (var event : events) {
+                    var type = (String) event.get("type");
+                    var entityId = event.get("entityId");
+                    boolean prune = false;
+                    if (entityId != null) {
+                        var id = entityId.toString();
+                        if ("MIGRATION_COMMIT".equals(type)) {
+                            prune = true;
+                        } else if ("ENTITY_DEPARTURE".equals(type)) {
+                            int budget = prunableDepartures.getOrDefault(id, 0);
+                            int done = departuresPrunedSoFar.getOrDefault(id, 0);
+                            if (done < budget) {
+                                prune = true;
+                                departuresPrunedSoFar.put(id, done + 1);
+                            }
+                        }
+                    }
+                    if (prune) {
+                        pruned++;
+                        var seqRaw = event.get("sequence");
+                        if (seqRaw instanceof Number n) {
+                            watermark = Math.max(watermark, n.longValue());
+                        }
+                        continue;
+                    }
+                    out.write(MAPPER.writeValueAsString(event));
+                    out.write(System.lineSeparator());
+                    retained++;
+                }
+            }
+            out.flush();
+            ch.force(true);
+        }
+
+        // Atomic publish: rename temp over the base segment, then delete the other (now superseded)
+        // sealed segments. Order matters for crash-safety: the rename happens BEFORE deletion so a crash
+        // between the two leaves duplicate (but never missing) events, which recovery dedupes.
+        var baseSegment = logDirectory.resolve("node-" + nodeId + ".log");
+        try {
+            Files.move(tempFile, baseSegment, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tempFile, baseSegment, StandardCopyOption.REPLACE_EXISTING);
+        }
+        for (var seg : sealed) {
+            if (!seg.equals(baseSegment)) {
+                Files.deleteIfExists(seg);
+            }
+        }
+
+        writeCompactionWatermark(watermark);
+        log.info("WriteAheadLog compacted for node {}: {} sealed segment(s), {} pruned, {} retained, watermark={}",
+                 nodeId, sealed.size(), pruned, retained, watermark);
+        return new CompactionStats(sealed.size(), pruned, retained, watermark, false);
+    }
+
+    /** Count events across sealed segments (used only when nothing is pruned, for stats). */
+    private long countSealed(List<Path> sealed) throws IOException {
+        long n = 0;
+        for (int i = 0; i < sealed.size(); i++) {
+            try {
+                n += parseSegmentForCompaction(sealed.get(i), i == sealed.size() - 1).size();
+            } catch (CompactionAbortException e) {
+                return n;
+            }
+        }
+        return n;
+    }
+
+    /** Signals that compaction must abort and leave the log intact (mid-file corruption). */
+    private static final class CompactionAbortException extends Exception {
+        CompactionAbortException(String message) { super(message); }
+    }
+
+    /**
+     * Parse a sealed segment for compaction. A torn final line of the LAST sealed segment (crash-flush)
+     * is tolerated and skipped; any other parse failure is mid-file corruption and aborts compaction
+     * (so it survives for the recovery fail-loud gate rather than being silently rewritten away).
+     */
+    private List<Map<String, Object>> parseSegmentForCompaction(Path segment, boolean isLastSealed)
+            throws IOException, CompactionAbortException {
+        var rawLines = new ArrayList<String>();
+        try (var reader = Files.newBufferedReader(segment)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (!line.isEmpty()) {
+                    rawLines.add(line);
+                }
+            }
+        }
+        var events = new ArrayList<Map<String, Object>>();
+        for (int i = 0; i < rawLines.size(); i++) {
+            boolean isFinalLine = (i == rawLines.size() - 1);
+            try {
+                Map<String, Object> event = MAPPER.readValue(rawLines.get(i), new TypeReference<Map<String, Object>>() {});
+                if (event != null) {
+                    events.add(event);
+                }
+            } catch (Exception e) {
+                if (isLastSealed && isFinalLine) {
+                    log.debug("Compaction tolerating torn tail at {}:{} - {}", segment, i + 1, e.getMessage());
+                } else {
+                    throw new CompactionAbortException(
+                        "mid-file corrupt line at " + segment + ":" + (i + 1) + " - " + e.getMessage());
+                }
+            }
+        }
+        return events;
+    }
+
+    /** Stamp the compaction watermark + format version into metadata (diagnostics/versioning only). */
+    private void writeCompactionWatermark(long watermark) {
+        try {
+            var meta = new HashMap<String, Object>();
+            meta.put("watermark", watermark);
+            meta.put("formatVersion", 1);
+            meta.put("nodeId", nodeId.toString());
+            meta.put("timestamp", Instant.ofEpochMilli(clock.currentTimeMillis()).toString());
+            var file = logDirectory.resolve("node-" + nodeId + ".compaction.meta");
+            Files.writeString(file, MAPPER.writeValueAsString(meta),
+                              StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            // Watermark metadata is diagnostic only; failure to write it must not fail compaction.
+            log.warn("Failed to write compaction watermark metadata for node {}", nodeId, e);
+        }
     }
 
     private List<Path> findLogFiles() throws IOException {

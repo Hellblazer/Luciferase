@@ -153,12 +153,22 @@ Two layers:
 
 ### Technical Design
 
-- `EventRecovery.recover`: a checkpoint bounds replay only if backed by truncation (clean shutdown) or
-  compaction metadata; otherwise full replay. Interface unchanged externally
-  (`recover() → RecoveredState`).
-- Compaction (primary): rewrite the retained log dropping completed migration pairs (the whole
-  `DEPARTURE`+`COMMIT` pair, never a partial pair — Q2 order constraint), advancing a compaction watermark.
-  Runs on a bounded trigger (size/age) and on `closeClean`. Crash-safe via write-new-then-rename.
+- `EventRecovery.recover`: **always full replay** of the retained log; the interface is unchanged
+  (`recover() → RecoveredState`). **As-built note (P2.3):** Phase 2 chose **physical compaction + full
+  replay** over watermark-filtered (logical-bounded) replay. Pruned events are physically removed from
+  disk, so full replay is *already* bounded — without re-introducing any logical replay filter, which is
+  the exact RDR-019 data-loss class. The compaction watermark is recorded in `*.compaction.meta` for
+  **diagnostics/versioning only** and must never gate replay without a full RDR-019-class audit. (This
+  supersedes the earlier "checkpoint bounds replay if backed by compaction metadata" sketch.)
+- Compaction (primary): rewrite the retained log dropping completed migration cycles **per entity** (the
+  whole `DEPARTURE`+`COMMIT` pair, never a partial pair, and **never a trailing in-flight departure of a
+  re-migrating entity** — cycle-aware: prune the first `min(departures, commits)` departures per entity and
+  every commit, retain trailing in-flight departures — Q2 order constraint), advancing a compaction
+  watermark. Runs on a bounded size trigger (`maybeCompact`, default 16 MB, with a churn guard so a
+  non-prunable log does not re-seal every tick); `closeClean`'s checkpoint+truncate remains the
+  clean-shutdown compaction. Crash-safe via write-new-then-rename. **Gate S1 (`gg28h`):** completed pairs
+  are pruned regardless of recency (accepted gap, decision B — benign: entity owned at target, ghost
+  adjacency re-derivable); the seal boundary buffers the most-recent events.
   **Concurrent-write safety (gate S2):** the batch-flush scheduler keeps writing the *active* segment during
   compaction, so compaction MUST NOT cover the active segment — otherwise a concurrently-written in-flight
   `ENTITY_DEPARTURE` would be lost under the rename (the exact RDR-004 class this RDR closes). Design:
@@ -365,3 +375,17 @@ Right-sized: a CRITICAL data-loss correctness fix (Phase 1) plus a bounded-WAL d
   - **O1** — Phase 1 "checkpoint only via truncation" is structural (no metadata flag); documented.
   - **O2** — MVV split into distinct Phase 1 and Phase 2 proofs.
   - **O3** — `DEFERRED_UPDATE` entity-position recovery explicitly out of scope.
+- 2026-06-07: **Phase 1 implemented and merged** (PR #214). `qfqlx` (RED regression), `punhr` (remove
+  periodic checkpoint as replay bound, `checkpoint()` sources `WriteAheadLog.getSequence()`, full-replay
+  recovery — gate O1), `z6dzr` (stacked review, 0 Critical; also fixed a pre-existing re-migration dedup
+  bug). Closes the `MIGRATING_OUT`/`DEPARTED` reconstruction loss (`n6jrh.3`).
+- 2026-06-07: **Gate S1 resolved (Phase 2 P2.1 / `ybipo`) — decision B (accepted gap + tracked bead).**
+  No `null→GHOST` FSM transition is added: `transition()` short-circuits to `notFound` for an untracked
+  (null) entity by the single-owner invariant, so adding `null→GHOST` to `isValidTransition` would be inert
+  unless that invariant were weakened — which would let any `GHOST` notification for an unknown entity
+  silently create a ghost. The gap is benign: after compaction prunes a committed pair, the entity is owned
+  at the **target** (no ownership violation); only source-side ghost *adjacency* tracking is lost, and that
+  is re-derivable by the neighbor layer, not load-bearing on FSM `DEPARTED` bookkeeping. Documented at
+  `EntityMigrationStateMachine.isValidTransition` (DEPARTED case); tracked as **`Luciferase-gg28h`**.
+  **Constraint imposed on P2.3 (`0ejd2`) compaction:** the prune watermark must be conservative enough that
+  recently-departed, still-adjacent entities are not pruned.

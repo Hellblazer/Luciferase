@@ -55,6 +55,8 @@ public class PersistenceManager implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(PersistenceManager.class);
     private static final long BATCH_FLUSH_INTERVAL_MS = 100;
+    /** Default retained-log size that triggers automatic compaction (RDR-019 Phase 2). 16 MB. */
+    private static final long DEFAULT_COMPACTION_THRESHOLD_BYTES = 16L * 1024 * 1024;
 
     private final UUID nodeId;
     private final WriteAheadLog writeAheadLog;
@@ -64,6 +66,10 @@ public class PersistenceManager implements AutoCloseable {
     private final AtomicBoolean schedulersStarted = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private volatile Clock clock = Clock.system();
+    private volatile long compactionThresholdBytes = DEFAULT_COMPACTION_THRESHOLD_BYTES;
+    // Churn guard for the size trigger: once a compaction prunes nothing, suppress further auto-compaction
+    // until retainedLogBytes() exceeds this mark (set to the log size at the no-op). 0 = not suppressed.
+    private volatile long suppressCompactionUntilBytes = 0;
 
     /**
      * Set the clock source for deterministic testing.
@@ -311,6 +317,37 @@ public class PersistenceManager implements AutoCloseable {
         }
     }
 
+    /**
+     * Compact the write-ahead log: bound replay cost by pruning whole, completed migration cycles
+     * (a {@code ENTITY_DEPARTURE}+{@code MIGRATION_COMMIT} pair) from the retained log, while
+     * guaranteeing no in-flight (uncommitted) migration is ever dropped.
+     * <p>
+     * <b>RDR-019 Phase 2 (gate S2) crash-safety contract</b> — the implementation (Luciferase-0ejd2) MUST:
+     * <ul>
+     *   <li><b>Seal the active segment first</b> (roll to a fresh segment) and then compact ONLY sealed
+     *       segments — never rewrite the live segment the batch-flush scheduler is appending to
+     *       (concurrent-write data loss).</li>
+     *   <li>Prune only WHOLE completed migration cycles per entity ({@code DEPARTURE}+{@code COMMIT}) —
+     *       never a partial pair, and never a trailing in-flight {@code DEPARTURE} with no matching
+     *       {@code COMMIT} (cycle-aware: an entity that re-migrates keeps its in-flight cycle).</li>
+     *   <li>Retain non-migration event types ({@code DEFERRED_UPDATE}, {@code VIEW_SYNC_ACK}, consensus)
+     *       conservatively (gate O3).</li>
+     *   <li><b>Gate S1 (Luciferase-gg28h) — ACCEPTED GAP, no recency watermark.</b> Completed pairs are
+     *       pruned regardless of recency. Per RDR-019 gate S1 decision B this is benign: a pruned entity
+     *       is owned at the target (no ownership violation); only source-side ghost adjacency tracking is
+     *       lost, and that is re-derivable by the neighbor layer. The seal boundary provides a natural
+     *       buffer (the active segment, holding the most recent events, is never compacted). If a workload
+     *       ever needs recently-departed pairs retained, add an age/sequence watermark here (gg28h).</li>
+     *   <li>Be crash-safe via write-new-then-rename.</li>
+     * </ul>
+     *
+     * @return statistics describing the compaction
+     * @throws IOException if compaction I/O fails
+     */
+    public WriteAheadLog.CompactionStats compact() throws IOException {
+        return writeAheadLog.compactCompletedMigrations();
+    }
+
     // ========== Consensus Event Logging (Phase 7G Day 3.2) ==========
 
     /**
@@ -467,10 +504,60 @@ public class PersistenceManager implements AutoCloseable {
         executor.scheduleAtFixedRate(() -> {
             try {
                 writeAheadLog.flush();
+                maybeCompact();
             } catch (IOException e) {
                 log.error("Batch flush failed", e);
             }
         }, BATCH_FLUSH_INTERVAL_MS, BATCH_FLUSH_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Size-based compaction trigger (RDR-019 Phase 2, item 4). When the retained log grows beyond
+     * {@link #compactionThresholdBytes}, run {@link #compact()} to prune completed migration cycles and
+     * bound replay. Disabled when the threshold is {@code <= 0}. Invoked from the batch-flush scheduler,
+     * so it runs on the same single scheduler thread (never concurrently with itself); {@code compact()}
+     * seals the active segment and is synchronized on the WAL, so it is safe against in-flight appends
+     * (gate S2). A clean shutdown compacts maximally via {@code closeClean()}'s checkpoint+truncate.
+     */
+    private void maybeCompact() {
+        var threshold = compactionThresholdBytes;
+        if (threshold <= 0) {
+            return;
+        }
+        var retained = writeAheadLog.retainedLogBytes();
+        if (retained < threshold) {
+            return;
+        }
+        // Churn guard: if the previous attempt found nothing prunable (e.g. the log is all in-flight
+        // migrations) and the log has not grown since, do NOT compact again — each compact() seals
+        // (rotates) the active segment, so a repeating no-op trigger would create an empty segment every
+        // batch-flush tick, exhausting inodes. Re-arm only once new events grow the log past that mark.
+        if (suppressCompactionUntilBytes > 0 && retained <= suppressCompactionUntilBytes) {
+            return;
+        }
+        try {
+            var stats = writeAheadLog.compactCompletedMigrations();
+            if (stats.prunedEvents() > 0) {
+                suppressCompactionUntilBytes = 0;
+                log.info("Auto-compaction (size trigger) for node {}: pruned {} events, retained {}",
+                         nodeId, stats.prunedEvents(), stats.retainedEvents());
+            } else {
+                // Nothing prunable now; suppress until the log grows beyond its current size.
+                suppressCompactionUntilBytes = writeAheadLog.retainedLogBytes();
+            }
+        } catch (IOException e) {
+            log.error("Auto-compaction failed for node {}", nodeId, e);
+        }
+    }
+
+    /**
+     * Set the retained-log byte threshold that triggers automatic compaction from the batch-flush
+     * scheduler. {@code <= 0} disables the size trigger (explicit {@link #compact()} still works).
+     *
+     * @param bytes threshold in bytes (default {@value #DEFAULT_COMPACTION_THRESHOLD_BYTES})
+     */
+    public void setCompactionThresholdBytes(long bytes) {
+        this.compactionThresholdBytes = bytes;
     }
 
 }
