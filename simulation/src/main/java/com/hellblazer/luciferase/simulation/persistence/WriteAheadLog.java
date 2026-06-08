@@ -176,6 +176,22 @@ public class WriteAheadLog implements AutoCloseable {
     }
 
     /**
+     * The current global event sequence (high-water mark).
+     * <p>
+     * This is the authoritative sequence counter, restored from the persisted log (and checkpoint
+     * metadata) on construction via {@link #restoreSequenceCounter()} so it remains monotonic across
+     * process restarts. RDR-019 Gap 4: {@link PersistenceManager#checkpoint()} must source the
+     * checkpoint sequence from this value, NOT from a session-local counter that resets to 0 on each
+     * restart (a reset counter checkpoints below the true high-water, silently bounding recovery
+     * replay and dropping durably-logged events).
+     *
+     * @return the highest sequence number assigned so far (0 if no events have ever been appended)
+     */
+    public long getSequence() {
+        return sequenceCounter.get();
+    }
+
+    /**
      * Mark recovery checkpoint in metadata file.
      *
      * @param sequenceNumber Sequence number for checkpoint

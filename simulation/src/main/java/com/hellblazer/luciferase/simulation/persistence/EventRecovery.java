@@ -102,25 +102,33 @@ public class EventRecovery {
     public RecoveredState recover(UUID nodeId) throws IOException {
         Objects.requireNonNull(nodeId, "nodeId must not be null");
 
-        // Load last checkpoint
+        // Load last checkpoint (retained for reporting in RecoveredState only — NOT used to bound replay).
         var checkpoint = getLastCheckpoint(nodeId);
 
-        // Luciferase-0frcy.37: replay only events AFTER the last checkpoint. Previously this read
-        // ALL events unconditionally, making the checkpoint mechanism a no-op for recovery (a crash
-        // at seq=15000 after a checkpoint at seq=10000 would re-replay all 15000 events). When no
-        // checkpoint exists, fall back to the full log.
+        // RDR-019 (Luciferase-punhr, gate O1): FULL replay of the retained log. The checkpoint NO LONGER
+        // bounds replay.
+        //
+        // History: Luciferase-0frcy.37 made recovery replay only events AFTER the last checkpoint, to
+        // avoid re-replaying a long history. But with no durable snapshot behind the checkpoint, that
+        // bound silently DROPPED durably-logged in-flight migrations: a periodic checkpoint at the live
+        // sequence meant recover() skipped events at/below it, reconstructing null instead of
+        // MIGRATING_OUT (the RDR-019 data-loss regression, driving bug Luciferase-n6jrh.3).
+        //
+        // RDR-019 removes the periodic checkpoint (PersistenceManager): the ONLY checkpoint is
+        // closeClean()'s, which is structurally always followed by WriteAheadLog.truncate(). So after a
+        // clean shutdown the log segments are gone and a full replay reads nothing; after a crash the
+        // full log is retained and a full replay reconstructs every in-flight migration. Either way,
+        // full replay is correct — the checkpoint is "truncation-backed" by construction, so there is
+        // never a need to bound. Bounded-WAL size is handled by Phase-2 compaction, not by skipping
+        // durably-logged events on replay.
+        //
         // Luciferase-sc6pl: use a READ-ONLY reader, never a full WriteAheadLog. Constructing a
         // WriteAheadLog here opens the same JSONL log file with a second writable append-mode
         // FileOutputStream while the owning WAL is still being written by the batch-flush scheduler,
         // interleaving partial JSON lines and corrupting the log. WalLogReader opens files for
         // reading only.
         var reader = new WalLogReader(nodeId, logDirectory);
-        WalReadResult readResult;
-        if (checkpoint != null) {
-            readResult = reader.readEventsSinceResult(checkpoint.sequenceNumber());
-        } else {
-            readResult = reader.readAllEventsResult();
-        }
+        WalReadResult readResult = reader.readAllEventsResult();
         List<Map<String, Object>> allEvents = readResult.events();
         int skippedCorrupt = readResult.skippedCorrupt();
         if (skippedCorrupt > 0) {
@@ -163,27 +171,29 @@ public class EventRecovery {
         // Replay valid events — capture per-event exception-skip count (M3)
         skippedCount += replayEvents(validEvents);
 
-        // Luciferase-0frcy.37 fix: a checkpoint at seq=N means the first N events are already
-        // durably captured BY the checkpoint; recovery only re-reads the post-checkpoint tail
-        // (readEventsSince, exclusive). The total number of events represented in the recovered
-        // state is therefore the checkpointed prefix PLUS the freshly-replayed tail. Counting only
-        // validEvents.size() (the tail) dropped the checkpointed prefix and reported 0 whenever the
-        // checkpoint sat at the final sequence (the common "checkpoint everything then recover" case).
-        var checkpointedPrefix = checkpoint != null ? checkpoint.sequenceNumber() : 0L;
-        // Keep the running total as a long end-to-end: checkpointedPrefix is a long sequence number
-        // and on a long-lived log the prefix + tail can exceed Integer.MAX_VALUE. Narrowing to int
-        // here (the prior behavior) would silently overflow to a negative/wrong count.
-        var totalReplayed = checkpointedPrefix + validEvents.size();
+        // RDR-019 (Luciferase-punhr): replay is now FULL (no checkpoint bound), so every replayed
+        // event is counted directly. The previous "checkpointedPrefix + tail" arithmetic existed only
+        // because recovery skipped the checkpointed prefix; with full replay there is no skipped prefix
+        // to add back. Kept as a long for headroom on long-lived logs.
+        long totalReplayed = (long) validEvents.size();
 
         var recovered = new RecoveredState(checkpoint, validEvents, totalReplayed, skippedCount, skippedCorrupt);
 
-        // M1 — wire the integrity gate: non-monotonic sequences or a replay that overlaps the
-        // checkpoint indicate a corrupt or double-opened WAL.  Fail loud; same rationale as C1.
-        // (Luciferase-7wzml.209)
-        if (!validateRecoveryIntegrity(recovered)) {
+        // M1 — wire the integrity gate: a non-monotonic replayed sequence indicates a corrupt or
+        // double-opened WAL. Fail loud; same rationale as C1 (Luciferase-7wzml.209).
+        //
+        // RDR-019: replay is full, so the "first replayed seq must be > checkpoint seq" overlap check
+        // (meaningful only for bounded/post-checkpoint replay) no longer applies — replaying from seq 1
+        // past a checkpoint is now CORRECT, not corruption. Validate with a zero checkpoint so only the
+        // monotonicity invariant is enforced here; the returned RecoveredState still carries the real
+        // checkpoint metadata for reporting. The checkpoint-overlap branch of
+        // validateRecoveryIntegrity(RecoveredState) remains exercised by its direct unit tests.
+        var monotonicityState = new RecoveredState(
+            CheckpointMetadata.now(0, clock), validEvents, totalReplayed, skippedCount, skippedCorrupt);
+        if (!validateRecoveryIntegrity(monotonicityState)) {
             throw new IOException(
                 "WAL recovery integrity failure for node " + nodeId
-                + ": non-monotonic sequence or checkpoint overlap detected — "
+                + ": non-monotonic sequence detected — "
                 + "manual inspection required before recovery can proceed");
         }
 

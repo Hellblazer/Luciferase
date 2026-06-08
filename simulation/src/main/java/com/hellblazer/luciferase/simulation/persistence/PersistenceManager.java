@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * to provide durable state management with crash recovery.
  *
  * FEATURES:
- * - Automatic checkpoint creation (periodic)
+ * - Clean-shutdown checkpoint + truncate compaction (closeClean; no periodic checkpoint — RDR-019 gate O1)
  * - Batch fsync for non-critical events (every 100ms)
  * - Immediate fsync for critical events (migration commit)
  * - Recovery from crash with integrity validation
@@ -56,7 +56,6 @@ public class PersistenceManager implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(PersistenceManager.class);
     private static final long BATCH_FLUSH_INTERVAL_MS = 100;
-    private static final long CHECKPOINT_INTERVAL_MS = 5000; // 5 seconds
 
     private final UUID nodeId;
     private final WriteAheadLog writeAheadLog;
@@ -66,7 +65,6 @@ public class PersistenceManager implements AutoCloseable {
     private final AtomicBoolean schedulersStarted = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicLong lastCheckpointSeq;
-    private final AtomicLong eventCounter;
 
     private volatile Instant lastCheckpoint;
     private volatile Clock clock = Clock.system();
@@ -117,29 +115,35 @@ public class PersistenceManager implements AutoCloseable {
         });
         this.recoveryInProgress = new AtomicBoolean(false);
         this.lastCheckpointSeq = new AtomicLong(0);
-        this.eventCounter = new AtomicLong(0);
         this.lastCheckpoint = Instant.ofEpochMilli(clock.currentTimeMillis());
 
-        // RDR-017 P1 (Luciferase-pf1iu): the batch-flush and checkpoint schedulers are NO LONGER
-        // started here. Starting them in the constructor let a checkpoint (every 5s) or batch flush
-        // (every 100ms) fire before recover() ran — overwriting/truncating an unrecovered WAL. They
-        // are now started by PersistenceManagerAdapter.doStart() via startSchedulers(), strictly AFTER
-        // recover() completes.
+        // RDR-017 P1 (Luciferase-pf1iu): the batch-flush scheduler is NO LONGER started here.
+        // Starting it in the constructor let a batch flush (every 100ms) fire before recover() ran —
+        // overwriting an unrecovered WAL. It is now started by PersistenceManagerAdapter.doStart() via
+        // startSchedulers(), strictly AFTER recover() completes.
+        // RDR-019 (Luciferase-punhr, gate O1): there is NO periodic checkpoint scheduler. A periodic
+        // checkpoint at the live sequence with no durable snapshot behind it silently bounded recovery
+        // replay (recover() skipped events at/below the checkpoint), dropping in-flight migrations on
+        // restart. The ONLY checkpoint is closeClean()'s, which is structurally always followed by
+        // truncate() — so every checkpoint is truncation-backed and recovery can safely full-replay
+        // the retained log. Do NOT re-introduce a periodic/mid-run checkpoint without first
+        // re-establishing a durable snapshot to back it (otherwise the data-loss regression returns).
         log.info("PersistenceManager constructed for node {} at {} (schedulers idle until startSchedulers())",
                  nodeId, logDirectory);
     }
 
     /**
-     * Start the batch-flush and checkpoint background schedulers.
+     * Start the batch-flush background scheduler.
      * <p>
      * RDR-017 P1: called by {@link com.hellblazer.luciferase.simulation.lifecycle.PersistenceManagerAdapter}
-     * ({@code doStart()}) <b>after</b> {@link #recover()} completes, so neither scheduler can run against an
-     * unrecovered WAL. Idempotent: repeated calls are a no-op.
+     * ({@code doStart()}) <b>after</b> {@link #recover()} completes, so the scheduler cannot run against an
+     * unrecovered WAL. RDR-019 (gate O1): there is no periodic checkpoint scheduler. Idempotent: repeated
+     * calls are a no-op.
      */
     public void startSchedulers() {
         if (schedulersStarted.compareAndSet(false, true)) {
             startBatchFlushScheduler();
-            startCheckpointScheduler();
+            // RDR-019 (gate O1): no periodic checkpoint scheduler — see constructor note.
             log.info("PersistenceManager schedulers started for node {}", nodeId);
         }
     }
@@ -153,9 +157,10 @@ public class PersistenceManager implements AutoCloseable {
 
     /**
      * @return the number of tasks currently queued on the scheduler executor. Zero before
-     *         {@link #startSchedulers()} runs; two once both schedulers are scheduled. Package-private
+     *         {@link #startSchedulers()} runs; one once the batch-flush scheduler is scheduled
+     *         (RDR-019 removed the periodic checkpoint scheduler — gate O1). Package-private
      *         test-support: the scheduler-relocation regression (RDR-017 P1) uses it to prove no
-     *         scheduler is queued in the constructor — catching a re-introduction of either scheduler.
+     *         scheduler is queued in the constructor — catching a re-introduction of any scheduler.
      */
     int scheduledTaskCount() {
         if (executor instanceof java.util.concurrent.ScheduledThreadPoolExecutor stpe) {
@@ -184,7 +189,6 @@ public class PersistenceManager implements AutoCloseable {
         event.put("state", "MIGRATING_OUT");
 
         writeAheadLog.append(event);
-        eventCounter.incrementAndGet();
 
         log.debug("Logged ENTITY_DEPARTURE: entity={}, source={}, target={}",
                  entityId, sourceBubble, targetBubble);
@@ -208,7 +212,6 @@ public class PersistenceManager implements AutoCloseable {
         event.put("success", success);
 
         writeAheadLog.append(event);
-        eventCounter.incrementAndGet();
 
         log.debug("Logged VIEW_SYNC_ACK: entity={}, success={}", entityId, success);
     }
@@ -239,7 +242,6 @@ public class PersistenceManager implements AutoCloseable {
         event.put("velocity", new float[]{velocity[0], velocity[1], velocity[2]});
 
         writeAheadLog.append(event);
-        eventCounter.incrementAndGet();
 
         log.debug("Logged DEFERRED_UPDATE: entity={}, pos=[{}, {}, {}]",
                  entityId, position[0], position[1], position[2]);
@@ -258,7 +260,6 @@ public class PersistenceManager implements AutoCloseable {
         event.put("entityId", entityId.toString());
 
         writeAheadLog.append(event);
-        eventCounter.incrementAndGet();
 
         // Critical event - fsync immediately
         writeAheadLog.flush();
@@ -272,7 +273,11 @@ public class PersistenceManager implements AutoCloseable {
      * @throws IOException if checkpoint creation fails
      */
     public void checkpoint() throws IOException {
-        var seq = eventCounter.get();
+        // RDR-019 Gap 4 (Luciferase-punhr): source the checkpoint sequence from the WAL's restored
+        // global high-water mark, NOT a session-local counter that resets to 0 on each restart. A
+        // reset counter checkpoints below the true high-water, silently bounding recovery replay and
+        // dropping durably-logged events.
+        var seq = writeAheadLog.getSequence();
         var timestamp = Instant.ofEpochMilli(clock.currentTimeMillis());
 
         writeAheadLog.checkpoint(seq, timestamp);
@@ -323,7 +328,6 @@ public class PersistenceManager implements AutoCloseable {
         event.put("term", term);
 
         writeAheadLog.append(event);
-        eventCounter.incrementAndGet();
 
         log.debug("Election start logged: candidate={}, term={}", candidateId, term);
     }
@@ -348,7 +352,6 @@ public class PersistenceManager implements AutoCloseable {
         event.put("vote", vote);
 
         writeAheadLog.append(event);
-        eventCounter.incrementAndGet();
 
         log.debug("Vote cast logged: voter={}, candidate={}, term={}, vote={}", voterId, candidateId, term, vote);
     }
@@ -368,7 +371,6 @@ public class PersistenceManager implements AutoCloseable {
         event.put("term", term);
 
         writeAheadLog.append(event);
-        eventCounter.incrementAndGet();
 
         log.info("Leader elected logged: leader={}, term={}", leaderId, term);
     }
@@ -384,7 +386,6 @@ public class PersistenceManager implements AutoCloseable {
         event.put("term", term);
 
         writeAheadLog.append(event);
-        eventCounter.incrementAndGet();
 
         log.debug("Term increment logged: term={}", term);
     }
@@ -466,13 +467,4 @@ public class PersistenceManager implements AutoCloseable {
         }, BATCH_FLUSH_INTERVAL_MS, BATCH_FLUSH_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
-    private void startCheckpointScheduler() {
-        executor.scheduleAtFixedRate(() -> {
-            try {
-                checkpoint();
-            } catch (IOException e) {
-                log.error("Periodic checkpoint failed", e);
-            }
-        }, CHECKPOINT_INTERVAL_MS, CHECKPOINT_INTERVAL_MS, TimeUnit.MILLISECONDS);
-    }
 }
