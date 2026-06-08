@@ -311,6 +311,35 @@ public class PersistenceManager implements AutoCloseable {
         }
     }
 
+    /**
+     * Compact the write-ahead log: bound replay cost by pruning whole, completed migration cycles
+     * (a {@code ENTITY_DEPARTURE}+{@code MIGRATION_COMMIT} pair) from the retained log, while
+     * guaranteeing no in-flight (uncommitted) migration is ever dropped.
+     * <p>
+     * <b>RDR-019 Phase 2 (gate S2) crash-safety contract</b> — the implementation (Luciferase-0ejd2) MUST:
+     * <ul>
+     *   <li><b>Seal the active segment first</b> (roll to a fresh segment) and then compact ONLY sealed
+     *       segments — never rewrite the live segment the batch-flush scheduler is appending to
+     *       (concurrent-write data loss).</li>
+     *   <li>Prune only WHOLE committed {@code DEPARTURE}+{@code COMMIT} pairs — never a partial pair, and
+     *       never an in-flight {@code DEPARTURE} with no matching {@code COMMIT}.</li>
+     *   <li>Apply a conservative watermark so recently-departed, still-adjacent entities are not pruned
+     *       (RDR-019 gate S1 / {@code Luciferase-gg28h}).</li>
+     *   <li>Retain non-migration event types ({@code DEFERRED_UPDATE}, {@code VIEW_SYNC_ACK}, consensus)
+     *       conservatively (gate O3).</li>
+     *   <li>Be crash-safe via write-new-then-rename.</li>
+     * </ul>
+     *
+     * @throws IOException if compaction I/O fails
+     * @throws UnsupportedOperationException until RDR-019 Phase 2 P2.3 (Luciferase-0ejd2) implements it.
+     *         This stub exists so the Phase 2 failing-first tests (Luciferase-rx1qo) compile and fail for
+     *         the documented reason (compaction not yet implemented / WAL unbounded).
+     */
+    public void compact() throws IOException {
+        throw new UnsupportedOperationException(
+            "RDR-019 Phase 2 P2.3 (Luciferase-0ejd2): WAL compaction not yet implemented");
+    }
+
     // ========== Consensus Event Logging (Phase 7G Day 3.2) ==========
 
     /**
