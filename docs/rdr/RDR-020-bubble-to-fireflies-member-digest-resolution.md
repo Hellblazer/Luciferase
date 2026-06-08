@@ -116,21 +116,46 @@ wrong link.
 
 ### Critical Assumptions
 
-- [ ] **A1**: A bubble's owning node can be resolved to a current-view member `Digest` — either
-  deterministically from the spatial partition (a bubble's SFC range maps to a member) or via a maintained
-  ownership registry. — **Status**: Unverified — **Method**: Source Search (TetreeBubbleGrid ↔ membership
-  partition; does any existing code assign bubbles/SFC ranges to members?)
-- [ ] **A2**: This process can obtain its own Fireflies member `Digest` for the source node of locally-owned
-  migrations (the common case), avoiding a lookup for the source. — **Status**: Unverified — **Method**:
-  Source Search (`FirefliesMembershipView`/local member accessor).
-- [ ] **A3**: The `MigrationProposal` node-id semantics are "owning node of source/target bubble," not
-  "bubble id" — i.e. fixing the resolution requires no change to the proposal record or vote logic. —
-  **Status**: Unverified — **Method**: Source Search (`ViewCommitteeConsensus` vote tally usage of
-  `sourceNodeId`/`targetNodeId`).
+- [x] **A1**: A bubble's owning node can be resolved to a current-view member `Digest` deterministically from
+  the spatial partition or an existing registry. — **Status**: **REFUTED** (2026-06-08, Source Search) —
+  **Finding**: NO bubble→node ownership mapping exists. `TetreeBubbleGrid` indexes bubbles by `TetreeKey`
+  (spatial), not by node (`TetreeBubbleGrid.java:54`); there is no range→member table, ownership registry,
+  or consistent-hash assignment anywhere. `TopologyConsensusCoordinator:258-265` even documents that
+  bubble-UUID digests are rejected as "not in view." **Implication**: the target-ownership backing of the
+  resolver must be *built or supplied by the caller* — it is not a free lookup. This is a scope fork (see
+  Revision History 2026-06-08 and the revised Approach).
+- [x] **A2**: This process can obtain its own Fireflies member `Digest` for the source node. — **Status**:
+  **VERIFIED** (Source Search) — `Delos fireflies/View.getNodeId() → Digest` (`View.java:187-189`);
+  `FirefliesMembershipView` holds the `View` (`:65-72`) and can expose it. Source node is free.
+- [x] **A3**: `MigrationProposal` node-id semantics are "owning node," and redefining them requires no
+  change to the proposal record or vote/quorum logic. — **Status**: **VERIFIED** (Source Search) —
+  `sourceNodeId`/`targetNodeId` are read only for null checks, the self-migration check
+  (`ViewCommitteeConsensus.java:365`), and `isNodeInView` (`:372-376`). Vote tally
+  (`CommitteeBallotBox.java:90-248`) is keyed on `proposalId`; quorum derives from committee size/tolerance,
+  not node identity. Changing the digests to real owning-node identities is safe.
 
 ## Proposed Solution
 
 ### Approach
+
+> **Revised 2026-06-08 after A1 was REFUTED.** No bubble→node ownership map exists, and the spatial
+> partition does not assign bubbles to members — so the resolver's *target* backing is not a free lookup;
+> it requires an ownership source that must be built. This forks the scope (see below). The boundary
+> design and the source-node/fail-loud parts are unchanged; only the **target-resolution backing** is
+> affected.
+>
+> **Scope decision (open — see Decision Rationale / Revision History):**
+> - **Option α (correctness floor, recommended):** RDR-020 ships the resolver interface, `source = local
+>   member` (A2), the **fail-loud** contract, and a resolver that maps a target bubble to an owning member
+>   *only when that owner is independently known* (single-node/degenerate: the local member owns its
+>   bubbles; or the caller supplies the target node). Where ownership is unknown it **throws** — turning
+>   today's *silent* broken consensus into a *loud, correct* unavailability. The distributed bubble→node
+>   ownership registry is split to a **follow-up RDR** (spatial-partition ↔ membership binding; tied to
+>   `s23eu` partition-fault-tolerance and RDR-003/015). This closes the silent-defect class in
+>   `vhbw3`/`l5c8q` without building a distributed subsystem inside a bug-fix RDR.
+> - **Option β (absorb):** RDR-020 also designs and builds the distributed ownership registry
+>   (range→member assignment kept consistent across view changes). Larger; overlaps unsolved
+>   partition-fault-tolerance work.
 
 Introduce a thin **node-identity resolution boundary** and keep the consensus layer `Digest`-native:
 
@@ -315,3 +340,15 @@ Right-sized as a boundary bug-fix RDR; the one genuinely-open question (A1 owner
 - 2026-06-08: created (draft) — scoped from `vhbw3`+`l5c8q` after seam research; recommends a node-identity
   boundary resolver with fail-loud contract; A1 (ownership sourcing) flagged as the load-bearing
   unverified assumption for `/conexus:rdr-research`.
+- 2026-06-08: **research complete** (Source Search; T2 `Luciferase_rdr/rdr-020/...`, `Luciferase/uuid-digest-mapping-research`).
+  - **A2 VERIFIED** — `View.getNodeId() → Digest` (`View.java:187-189`); source node is free.
+  - **A3 VERIFIED** — proposal node digests used only for null/self-migration/`isNodeInView` checks; vote
+    tally keyed on `proposalId` (`CommitteeBallotBox.java:90-248`); redefining them to owning-node identities
+    is safe with no consensus-logic change.
+  - **A1 REFUTED** — no bubble→node ownership map exists; `TetreeBubbleGrid` keys by `TetreeKey` not member;
+    no range→member assignment anywhere. The resolver's target backing must be built or caller-supplied.
+    **Consequence**: scope fork (Option α correctness-floor + split the distributed ownership registry to a
+    follow-up RDR, vs Option β absorb it). **Recommended: Option α** — closes the silent-broken-consensus
+    defect (`vhbw3`/`l5c8q`) via fail-loud + resolver seam, defers the distributed ownership subsystem
+    (which belongs with `s23eu` / spatial-partition work) to its own RDR. Pending owner decision before
+    `/conexus:rdr-gate`.
