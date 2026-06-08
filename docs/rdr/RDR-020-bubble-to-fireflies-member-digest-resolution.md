@@ -134,6 +134,19 @@ wrong link.
   (`CommitteeBallotBox.java:90-248`) is keyed on `proposalId`; quorum derives from committee size/tolerance,
   not node identity. Changing the digests to real owning-node identities is safe.
 
+**Option β — new assumptions introduced by the deterministic ownership function (verify before accept):**
+
+- [ ] **B1**: A deterministic `owner(spatialKey, activeMembers)` assignment (rendezvous/HRW hashing) is
+  compatible with how bubbles are placed and migrated — nothing else already binds a bubble to a node by a
+  rule this would contradict. — **Status**: Unverified — **Method**: Source Search (`TetreeBubbleGrid`
+  placement; `DistributedBubbleNode` target selection).
+- [ ] **B2**: View-change ownership rebalancing is acceptable for migration semantics — a region's owner
+  changing on membership change does not corrupt an in-flight migration beyond what the `isNodeInView`
+  fail-loud reject already handles. — **Status**: Unverified — **Method**: Source Search / reasoning against
+  the `ViewCommitteeConsensus` proposal lifecycle + view-change handling.
+- [ ] **B3**: A bubble `UUID` resolves to its `TetreeKey` at proposal time. — **Status**: Unverified —
+  **Method**: Source Search (`TetreeBubbleGrid`/`Bubble` → key accessor).
+
 ## Proposed Solution
 
 ### Approach
@@ -144,29 +157,29 @@ wrong link.
 > design and the source-node/fail-loud parts are unchanged; only the **target-resolution backing** is
 > affected.
 >
-> **Scope decision (open — see Decision Rationale / Revision History):**
-> - **Option α (correctness floor, recommended):** RDR-020 ships the resolver interface, `source = local
->   member` (A2), the **fail-loud** contract, and a resolver that maps a target bubble to an owning member
->   *only when that owner is independently known* (single-node/degenerate: the local member owns its
->   bubbles; or the caller supplies the target node). Where ownership is unknown it **throws** — turning
->   today's *silent* broken consensus into a *loud, correct* unavailability. The distributed bubble→node
->   ownership registry is split to a **follow-up RDR** (spatial-partition ↔ membership binding; tied to
->   `s23eu` partition-fault-tolerance and RDR-003/015). This closes the silent-defect class in
->   `vhbw3`/`l5c8q` without building a distributed subsystem inside a bug-fix RDR.
-> - **Option β (absorb):** RDR-020 also designs and builds the distributed ownership registry
->   (range→member assignment kept consistent across view changes). Larger; overlaps unsolved
->   partition-fault-tolerance work.
+> **Scope decision (2026-06-08): Option β chosen — RDR-020 absorbs the ownership mechanism.**
+> The key design move that keeps β tractable is to make ownership a **deterministic function of (bubble
+> spatial key, current Fireflies view)** rather than a separately-replicated, gossiped registry. Any node
+> derives the owner of any region from the view it already holds — no extra replicated state, no bespoke
+> consistency protocol, and ownership **auto-rebalances** when the view changes. (The gossiped-registry
+> form is retained as Alternative 2.)
+>
+> Considered and not chosen: **Option α** (correctness floor only — resolver + fail-loud, splitting the
+> ownership mechanism to a follow-up RDR). Rejected by owner decision in favor of solving ownership here.
 
 Introduce a thin **node-identity resolution boundary** and keep the consensus layer `Digest`-native:
 
 1. **Source node = local member.** For both entry points, the source node digest is this process's own
    Fireflies member `Digest` (the bubble being migrated currently lives here). Obtain it from the membership
    view; no per-bubble lookup.
-2. **Target node via a `BubbleOwnershipResolver`.** A small injected interface
-   `Digest resolveOwningMember(UUID bubbleId)` returns the current-view member that owns the target bubble.
-   Its backing is decided in research (A1): preferred is **deterministic from the spatial partition** (the
-   target bubble's SFC range → owning member) if the partition is membership-aware; fallback is a maintained
-   ownership registry synced over the topology/membership layer.
+2. **Target node via a `BubbleOwnershipResolver` backed by a deterministic, view-derived owner function.**
+   The injected interface `Digest resolveOwningMember(UUID bubbleId)` resolves the bubble's spatial key
+   (`bubbleId → TetreeKey`, B3) and computes `owner = assign(spatialKey, view.activeMembers())` where
+   `assign` is a **deterministic partition of spatial keys over the current active members** (recommended:
+   **rendezvous / highest-random-weight hashing** of `(spatialKey, memberDigest)` — minimal reshuffle on
+   membership change, no coordinator, computable identically on every node). Because the view is the single
+   source of truth and every node holds it, no separate replicated registry or gossip is needed, and
+   ownership rebalances deterministically across view changes.
 3. **Fail loud, never silent.** If the resolver cannot map a bubble to a current-view member, both
    `toMigrationProposal` and `requestMigrationApproval` **throw** (not produce a silently-rejected proposal
    and not silently approve) — satisfying the `vhbw3` wave-20 requirement and preserving `l5c8q`'s existing
@@ -186,7 +199,20 @@ interface BubbleOwnershipResolver {
     Digest resolveOwningMember(UUID bubbleId);   // throws IllegalStateException if no current-view owner
     Digest localMember();                         // this process's own member Digest (source node)
 }
+
+// Deterministic, view-derived ownership — pure function, identical on every node.
+// owner(key) = argmax over m in activeMembers of weight(key, m.getId())   // rendezvous / HRW hashing
+interface SpatialOwnershipFunction {
+    Digest owner(TetreeKey key, List<Digest> activeMembers);  // empty members -> throws (fail-loud)
+}
 ```
+
+- `BubbleOwnershipResolver` resolves `bubbleId → TetreeKey` (B3), reads `view.activeMembers()` (RDR-005),
+  and returns `SpatialOwnershipFunction.owner(key, members)`; throws if the result is not a current-view
+  member (e.g. empty view) — fail-loud, never a silently-rejectable digest.
+- `localMember()` returns `View.getNodeId()` (A2).
+- **Ownership is not stored.** It is recomputed from the view at proposal time; a view change recomputes it.
+  In-flight proposals carrying a now-stale owner are rejected by `isNodeInView` (visible), not mis-routed.
 
 - `TopologyConsensusCoordinator.toMigrationProposal(...)`: `sourceNodeId = resolver.localMember()` (or the
   owner of the source bubble when not local), `targetNodeId = resolver.resolveOwningMember(targetBubble)`;
@@ -201,15 +227,21 @@ interface BubbleOwnershipResolver {
 | Proposed Component | Existing Module | Decision |
 | --- | --- | --- |
 | `BubbleOwnershipResolver` | `von/FirefliesMemberLookup` | Extend or wrap: reuse its member-index access; add the forward bubble→member direction (the existing `digestToUuid` is reverse-only and assumes Digest-derived UUIDs). |
-| Source-node = local member | `FirefliesMembershipView` | Reuse: add/confirm a local-member accessor. |
+| Source-node = local member | `FirefliesMembershipView` / `View.getNodeId()` | Reuse: expose the local-member accessor (A2). |
+| `SpatialOwnershipFunction` (rendezvous/HRW) | — (none exists; A1 refuted) | New: deterministic view-derived owner; no replicated state. |
+| bubble `UUID` → `TetreeKey` | `TetreeBubbleGrid` | Reuse/extend per B3. |
 | `digestOf(UUID)` node-id | `TopologyConsensusCoordinator` | Replace: delete as a node-id source. |
 
 ### Decision Rationale
 
-The consensus layer is already correct; the only bug is the bubble→node translation. A boundary resolver
-plus "source = local member" fixes both beads with no change to consensus semantics, keeps the fail-loud
-contract, and localizes the one genuinely-open question (how target ownership is sourced) behind one
-injectable interface that research A1 resolves.
+The consensus layer is already correct (A3); the only bug is the bubble→node translation. A boundary
+resolver plus "source = local member" (A2) fixes both beads with no change to consensus semantics and keeps
+the fail-loud contract. A1 refuted the existence of any ownership map, so β builds one — but as a
+**deterministic, view-derived function** rather than a replicated registry: ownership becomes a pure
+function of `(spatial key, current view)`, which every node computes identically from state it already
+holds, eliminating the consistency/convergence burden a gossiped registry would add and rebalancing
+automatically on membership change. This is the smallest mechanism that actually makes multi-node consensus
+functional.
 
 ## Alternatives Considered
 
@@ -224,6 +256,22 @@ target node.
 the target node — it would still need a resolver. Only covers `l5c8q`, not `vhbw3`.
 
 **Reason for rejection**: Does not close Gap 2; a resolver is needed regardless, so this is a strict subset.
+
+### Alternative 2: Gossiped / replicated ownership registry
+
+**Description**: Maintain an explicit `bubble/region → member` table, replicated across the cluster and
+updated on placement, migration, and view change.
+
+**Pros**: Ownership can be arbitrary (not tied to a hash of the spatial key); supports explicit hand-off.
+
+**Cons**: Needs its own consistency protocol (who is authoritative, conflict resolution, convergence under
+partition) — a distributed subsystem, larger than the defect it serves; must itself stay consistent with the
+Fireflies view it duplicates.
+
+**Reason for rejection**: The deterministic view-derived function obtains the same result as a *pure function
+of state every node already holds*, with no extra replicated state or convergence concern. Reconsider only
+if B1 shows ownership cannot be a function of the spatial key (e.g. ownership must be explicitly assignable
+independent of position).
 
 ### Briefly Rejected
 
@@ -352,3 +400,10 @@ Right-sized as a boundary bug-fix RDR; the one genuinely-open question (A1 owner
     defect (`vhbw3`/`l5c8q`) via fail-loud + resolver seam, defers the distributed ownership subsystem
     (which belongs with `s23eu` / spatial-partition work) to its own RDR. Pending owner decision before
     `/conexus:rdr-gate`.
+- 2026-06-08: **Owner chose Option β** (absorb the ownership mechanism). Design updated: ownership is a
+  **deterministic, view-derived function** `owner(spatialKey, activeMembers)` (rendezvous/HRW hashing), not
+  a gossiped registry — a pure function of state every node already holds, so no extra replicated state and
+  auto-rebalancing on view change. Adds assumptions **B1** (deterministic assignment compatible with the
+  bubble placement/migration model), **B2** (view-change rebalancing acceptable), **B3** (bubble→`TetreeKey`
+  resolvable) — all Unverified, to be checked in a second `/conexus:rdr-research` pass before the gate.
+  Gossiped registry retained as Alternative 2.
