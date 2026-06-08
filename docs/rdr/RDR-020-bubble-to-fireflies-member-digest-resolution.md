@@ -136,16 +136,23 @@ wrong link.
 
 **Option β — new assumptions introduced by the deterministic ownership function (verify before accept):**
 
-- [ ] **B1**: A deterministic `owner(spatialKey, activeMembers)` assignment (rendezvous/HRW hashing) is
-  compatible with how bubbles are placed and migrated — nothing else already binds a bubble to a node by a
-  rule this would contradict. — **Status**: Unverified — **Method**: Source Search (`TetreeBubbleGrid`
-  placement; `DistributedBubbleNode` target selection).
-- [ ] **B2**: View-change ownership rebalancing is acceptable for migration semantics — a region's owner
-  changing on membership change does not corrupt an in-flight migration beyond what the `isNodeInView`
-  fail-loud reject already handles. — **Status**: Unverified — **Method**: Source Search / reasoning against
-  the `ViewCommitteeConsensus` proposal lifecycle + view-change handling.
-- [ ] **B3**: A bubble `UUID` resolves to its `TetreeKey` at proposal time. — **Status**: Unverified —
-  **Method**: Source Search (`TetreeBubbleGrid`/`Bubble` → key accessor).
+- [x] **B1**: A deterministic `owner(spatialKey, activeMembers)` is compatible with bubble placement/
+  migration. — **Status**: **PARTIAL → resolved by decision** (2026-06-08, Source Search) — Nothing binds a
+  bubble to a node today (HRW is free to define ownership; bubbles are position-driven,
+  `TetreeBubbleGrid.java:54,241`). BUT `DistributedBubbleNode.initiateRemoteMigration(entityId, targetNodeId)`
+  (`:108-126`) takes an **explicit** target node, which a position-derived owner can contradict.
+  **Decision**: the HRW `owner(targetBubbleKey, view)` is **authoritative**; an explicitly-supplied
+  `targetNodeId` is **validated against** it and **fails loud on mismatch** (no silent re-route). This keeps
+  the position-driven model (RDR-015) authoritative and the API as a checked hint. The gate should scrutinize
+  this decision.
+- [x] **B2**: View-change ownership rebalancing is acceptable. — **Status**: **VERIFIED** (Source Search) —
+  `ViewCommitteeConsensus` checks `proposal.viewId() == currentViewId` at submission (`:182`) and before
+  execution (`:223`); `onViewChange()` rolls back all pending proposals (`:252-269`). An in-flight proposal
+  whose owner changed is invalidated by its own view-binding — recomputed ownership on the new view is
+  consistent; worst case is a visible fail-loud reject, never a mis-route.
+- [x] **B3**: A bubble `UUID` resolves to its `TetreeKey` at proposal time. — **Status**: **VERIFIED**
+  (Source Search) — `TetreeBubbleGrid.getKeyForBubble(UUID)` (`:641-650`) already exists and is used by
+  `BubbleSplitter`/`BubbleMerger`/`TopologyExecutor`. The resolver calls it; no gap.
 
 ## Proposed Solution
 
@@ -180,11 +187,15 @@ Introduce a thin **node-identity resolution boundary** and keep the consensus la
    membership change, no coordinator, computable identically on every node). Because the view is the single
    source of truth and every node holds it, no separate replicated registry or gossip is needed, and
    ownership rebalances deterministically across view changes.
-3. **Fail loud, never silent.** If the resolver cannot map a bubble to a current-view member, both
+3. **HRW owner is authoritative; explicit target is a checked hint (B1).** Where a caller supplies an
+   explicit `targetNodeId` (`DistributedBubbleNode.initiateRemoteMigration`), it is **validated against**
+   `owner(targetBubbleKey, view)` and **throws on mismatch** — never silently re-routed. The position-driven
+   owner (RDR-015) is the source of truth; the explicit parameter is a hint the consensus path verifies.
+4. **Fail loud, never silent.** If the resolver cannot map a bubble to a current-view member, both
    `toMigrationProposal` and `requestMigrationApproval` **throw** (not produce a silently-rejected proposal
    and not silently approve) — satisfying the `vhbw3` wave-20 requirement and preserving `l5c8q`'s existing
    fail-loud stance.
-4. **Delete `digestOf(UUID)`** as a node-id source; it remains valid only where a content-addressed hash of
+5. **Delete `digestOf(UUID)`** as a node-id source; it remains valid only where a content-addressed hash of
    a UUID is genuinely wanted (none in the consensus path).
 
 The consensus records, vote tally, and `isNodeInView` gate are unchanged (A3) — this is a boundary fix.
@@ -407,3 +418,10 @@ Right-sized as a boundary bug-fix RDR; the one genuinely-open question (A1 owner
   bubble placement/migration model), **B2** (view-change rebalancing acceptable), **B3** (bubble→`TetreeKey`
   resolvable) — all Unverified, to be checked in a second `/conexus:rdr-research` pass before the gate.
   Gossiped registry retained as Alternative 2.
+- 2026-06-08: **research pass 2** (Source Search; T2 `Luciferase_rdr/020-research-2`). **B2 VERIFIED**
+  (`viewId` check at submission `:182` + pre-execution `:223`; `onViewChange` rolls back pending `:252-269`).
+  **B3 VERIFIED** (`TetreeBubbleGrid.getKeyForBubble(UUID)` `:641-650`, already used by topology ops).
+  **B1 PARTIAL → resolved**: `initiateRemoteMigration(entityId, targetNodeId)` (`:108-126`) takes an explicit
+  target, which a position-derived owner can contradict. **Decision**: HRW `owner(targetBubbleKey, view)` is
+  authoritative; an explicit `targetNodeId` is validated against it and **fails loud on mismatch**. All
+  assumptions now resolved; ready for `/conexus:rdr-gate` (which should scrutinize the B1 decision).
