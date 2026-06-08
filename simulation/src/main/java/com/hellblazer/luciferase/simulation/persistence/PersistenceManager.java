@@ -55,6 +55,8 @@ public class PersistenceManager implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(PersistenceManager.class);
     private static final long BATCH_FLUSH_INTERVAL_MS = 100;
+    /** Default retained-log size that triggers automatic compaction (RDR-019 Phase 2). 16 MB. */
+    private static final long DEFAULT_COMPACTION_THRESHOLD_BYTES = 16L * 1024 * 1024;
 
     private final UUID nodeId;
     private final WriteAheadLog writeAheadLog;
@@ -64,6 +66,7 @@ public class PersistenceManager implements AutoCloseable {
     private final AtomicBoolean schedulersStarted = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private volatile Clock clock = Clock.system();
+    private volatile long compactionThresholdBytes = DEFAULT_COMPACTION_THRESHOLD_BYTES;
 
     /**
      * Set the clock source for deterministic testing.
@@ -330,14 +333,11 @@ public class PersistenceManager implements AutoCloseable {
      *   <li>Be crash-safe via write-new-then-rename.</li>
      * </ul>
      *
+     * @return statistics describing the compaction
      * @throws IOException if compaction I/O fails
-     * @throws UnsupportedOperationException until RDR-019 Phase 2 P2.3 (Luciferase-0ejd2) implements it.
-     *         This stub exists so the Phase 2 failing-first tests (Luciferase-rx1qo) compile and fail for
-     *         the documented reason (compaction not yet implemented / WAL unbounded).
      */
-    public void compact() throws IOException {
-        throw new UnsupportedOperationException(
-            "RDR-019 Phase 2 P2.3 (Luciferase-0ejd2): WAL compaction not yet implemented");
+    public WriteAheadLog.CompactionStats compact() throws IOException {
+        return writeAheadLog.compactCompletedMigrations();
     }
 
     // ========== Consensus Event Logging (Phase 7G Day 3.2) ==========
@@ -496,10 +496,48 @@ public class PersistenceManager implements AutoCloseable {
         executor.scheduleAtFixedRate(() -> {
             try {
                 writeAheadLog.flush();
+                maybeCompact();
             } catch (IOException e) {
                 log.error("Batch flush failed", e);
             }
         }, BATCH_FLUSH_INTERVAL_MS, BATCH_FLUSH_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Size-based compaction trigger (RDR-019 Phase 2, item 4). When the retained log grows beyond
+     * {@link #compactionThresholdBytes}, run {@link #compact()} to prune completed migration cycles and
+     * bound replay. Disabled when the threshold is {@code <= 0}. Invoked from the batch-flush scheduler,
+     * so it runs on the same single scheduler thread (never concurrently with itself); {@code compact()}
+     * seals the active segment and is synchronized on the WAL, so it is safe against in-flight appends
+     * (gate S2). A clean shutdown compacts maximally via {@code closeClean()}'s checkpoint+truncate.
+     */
+    private void maybeCompact() {
+        var threshold = compactionThresholdBytes;
+        if (threshold <= 0) {
+            return;
+        }
+        if (writeAheadLog.retainedLogBytes() < threshold) {
+            return;
+        }
+        try {
+            var stats = writeAheadLog.compactCompletedMigrations();
+            if (stats.prunedEvents() > 0) {
+                log.info("Auto-compaction (size trigger) for node {}: pruned {} events, retained {}",
+                         nodeId, stats.prunedEvents(), stats.retainedEvents());
+            }
+        } catch (IOException e) {
+            log.error("Auto-compaction failed for node {}", nodeId, e);
+        }
+    }
+
+    /**
+     * Set the retained-log byte threshold that triggers automatic compaction from the batch-flush
+     * scheduler. {@code <= 0} disables the size trigger (explicit {@link #compact()} still works).
+     *
+     * @param bytes threshold in bytes (default {@value #DEFAULT_COMPACTION_THRESHOLD_BYTES})
+     */
+    public void setCompactionThresholdBytes(long bytes) {
+        this.compactionThresholdBytes = bytes;
     }
 
 }
