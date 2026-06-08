@@ -126,4 +126,38 @@ class EventRecoveryDataLossRegressionTest {
                 "A committed migration (DEPARTURE+COMMIT) durably logged before a checkpoint must "
                 + "reconstruct as DEPARTED on recovery — pre-fix the checkpoint-bounded replay drops both events");
     }
+
+    /**
+     * Re-migration in the same retained log: DEPARTURE → COMMIT (cycle 1 completes) → DEPARTURE again
+     * (cycle 2 in flight) → crash → recover. The entity must reconstruct as MIGRATING_OUT (cycle 2's
+     * state), not DEPARTED (cycle 1). Pre-fix the migration-key dedup skipped the second ENTITY_DEPARTURE
+     * (same {@code ENTITY_DEPARTURE:id} key as the first), silently reconstructing the wrong state.
+     * (RDR-019 P1.3 substantive-critic finding.)
+     */
+    @Test
+    void reMigrationAfterCommitReconstructsLatestCycle(@TempDir Path logDir) throws IOException {
+        var nodeId = UUID.randomUUID();
+        var entityA = UUID.randomUUID();
+        var src = UUID.randomUUID();
+        var tgt = UUID.randomUUID();
+        var clock = new TestClock(1_000L);
+
+        try (var mgr = new PersistenceManager(nodeId, logDir, RecoveryStateSink.NOOP)) {
+            mgr.setClock(clock);
+            mgr.logEntityDeparture(entityA, src, tgt);   // cycle 1 begins
+            mgr.logMigrationCommit(entityA);             // cycle 1 completes (entity later returns)
+            mgr.logEntityDeparture(entityA, src, tgt);   // cycle 2 begins, in flight
+            // crash before cycle 2 commits
+        }
+
+        var fsm = freshFsm();
+        try (var mgr = new PersistenceManager(nodeId, logDir, new MigrationRecoveryStateSink(fsm))) {
+            mgr.setClock(clock);
+            mgr.recover();
+        }
+
+        assertEquals(EntityMigrationState.MIGRATING_OUT, fsm.getState(entityA.toString()),
+                "Re-migration: the second (in-flight) ENTITY_DEPARTURE must reconstruct as MIGRATING_OUT, "
+                + "not be dropped by cycle-blind dedup leaving the stale DEPARTED from cycle 1");
+    }
 }

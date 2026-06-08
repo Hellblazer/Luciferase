@@ -32,7 +32,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * PersistenceManager - Checkpoint and recovery orchestration (Phase 7G Day 2)
@@ -64,9 +63,6 @@ public class PersistenceManager implements AutoCloseable {
     private final AtomicBoolean recoveryInProgress;
     private final AtomicBoolean schedulersStarted = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
-    private final AtomicLong lastCheckpointSeq;
-
-    private volatile Instant lastCheckpoint;
     private volatile Clock clock = Clock.system();
 
     /**
@@ -114,8 +110,6 @@ public class PersistenceManager implements AutoCloseable {
             return thread;
         });
         this.recoveryInProgress = new AtomicBoolean(false);
-        this.lastCheckpointSeq = new AtomicLong(0);
-        this.lastCheckpoint = Instant.ofEpochMilli(clock.currentTimeMillis());
 
         // RDR-017 P1 (Luciferase-pf1iu): the batch-flush scheduler is NO LONGER started here.
         // Starting it in the constructor let a batch flush (every 100ms) fire before recover() ran —
@@ -126,8 +120,16 @@ public class PersistenceManager implements AutoCloseable {
         // replay (recover() skipped events at/below the checkpoint), dropping in-flight migrations on
         // restart. The ONLY checkpoint is closeClean()'s, which is structurally always followed by
         // truncate() — so every checkpoint is truncation-backed and recovery can safely full-replay
-        // the retained log. Do NOT re-introduce a periodic/mid-run checkpoint without first
-        // re-establishing a durable snapshot to back it (otherwise the data-loss regression returns).
+        // the retained log.
+        //
+        // Precise hazard (Phase 1 vs Phase 2): under Phase 1 full-replay, a mid-run checkpoint() call is
+        // harmless on its own — it only updates the metadata sequence and does NOT bound replay
+        // (EventRecovery.recover always reads the full log). The data-loss regression returns only if a
+        // mid-run/periodic checkpoint AND a checkpoint-bounded replay are present together. Phase 2
+        // (compaction) re-introduces a bounded replay for compaction-backed logs; at that point any
+        // checkpoint() that is NOT backed by truncate() (clean shutdown) or a compaction watermark will
+        // again silently drop events. Do NOT re-introduce a periodic/mid-run checkpoint, and when Phase 2
+        // lands, audit every checkpoint() call to ensure it is compaction- or truncation-backed.
         log.info("PersistenceManager constructed for node {} at {} (schedulers idle until startSchedulers())",
                  nodeId, logDirectory);
     }
@@ -281,8 +283,6 @@ public class PersistenceManager implements AutoCloseable {
         var timestamp = Instant.ofEpochMilli(clock.currentTimeMillis());
 
         writeAheadLog.checkpoint(seq, timestamp);
-        lastCheckpointSeq.set(seq);
-        lastCheckpoint = timestamp;
 
         log.info("Checkpoint created: seq={}, timestamp={}", seq, timestamp);
     }
@@ -392,8 +392,14 @@ public class PersistenceManager implements AutoCloseable {
 
     /**
      * Clean-shutdown close (RDR-017 P3, gate O1): checkpoint at the current sequence, truncate the WAL
-     * segments (compaction — recovery replays only post-checkpoint events, of which a head checkpoint
-     * leaves none), then close.
+     * segments, then close.
+     * <p>
+     * <b>Why this is safe under RDR-019 full-replay.</b> Recovery always FULL-replays the retained log
+     * (it does NOT skip pre-checkpoint events). Truncation after the checkpoint is safe not because
+     * recovery skips events, but because the truncated log is <em>empty</em> — so a full replay reads
+     * zero events. The checkpoint metadata survives truncate() to carry the high-water sequence forward
+     * (see {@link WriteAheadLog#truncate()} / {@code restoreSequenceCounter}). This is the only
+     * truncation-backed checkpoint in the system (gate O1).
      * <p>
      * <b>Retention semantics.</b> A clean shutdown leaves a pristine WAL: the next start recovers nothing
      * (a cleanly-stopped node has no in-flight migrations — the caller is expected to have drained the

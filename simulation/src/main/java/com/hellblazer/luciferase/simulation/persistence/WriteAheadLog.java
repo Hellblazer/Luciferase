@@ -390,11 +390,13 @@ public class WriteAheadLog implements AutoCloseable {
 
     /**
      * Truncate the write-ahead log: delete all log segment files and start an empty base log, retaining
-     * the checkpoint metadata. RDR-017 P3 (gate O1) clean-shutdown compaction — after a checkpoint at
-     * the head sequence, the entire log is superseded (recovery replays only post-checkpoint events, of
-     * which there are none), so the segments are safe to discard to reclaim space. The high-water
-     * sequence survives in the checkpoint metadata (see {@link #readCheckpointSequence()}), so a later
-     * restart continues the monotonic sequence rather than colliding below the checkpoint.
+     * the checkpoint metadata. RDR-017 P3 (gate O1) clean-shutdown compaction — called by
+     * {@code PersistenceManager.closeClean()} after a head-sequence checkpoint. Under RDR-019 full-replay
+     * semantics, recovery replays the ENTIRE retained log (it does not skip pre-checkpoint events);
+     * discarding the segments here is safe because it leaves the log <em>empty</em>, so the next start's
+     * full replay reads zero events — not because recovery would skip them. The high-water sequence
+     * survives in the checkpoint metadata (see {@link #readCheckpointSequence()}), so a later restart
+     * continues the monotonic sequence rather than restarting at 1 and colliding below the checkpoint.
      *
      * @throws IOException if segment deletion or base-log recreation fails
      */

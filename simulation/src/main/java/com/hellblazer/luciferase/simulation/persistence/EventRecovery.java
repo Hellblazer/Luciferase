@@ -150,7 +150,13 @@ public class EventRecovery {
 
         for (var event : allEvents) {
             if (isValidEvent(event)) {
-                // Check for duplicate migrations
+                // Check for duplicate migrations — guards against literally repeated lines (e.g. a
+                // malformed/duplicated log entry). Dedup is keyed per migration CYCLE, not for all time:
+                // a MIGRATION_COMMIT closes the entity's cycle, so a subsequent legitimate re-migration
+                // (the entity departs again later in the same retained log) is replayed, not dropped.
+                // RDR-019 (substantive-critic): without the cycle reset, the second ENTITY_DEPARTURE
+                // collided with the first and was skipped, leaving the entity reconstructed as DEPARTED
+                // when it was actually MIGRATING_OUT again — a silent wrong-state recovery.
                 var migrationKey = extractMigrationKey(event);
                 if (migrationKey != null && seenMigrations.contains(migrationKey)) {
                     log.debug("Skipping duplicate migration: {}", migrationKey);
@@ -161,6 +167,18 @@ public class EventRecovery {
                 validEvents.add(event);
                 if (migrationKey != null) {
                     seenMigrations.add(migrationKey);
+                }
+
+                // Cycle reset: a commit completes the migration cycle. Clear both this entity's
+                // departure and commit keys so a later re-migration (DEPARTURE→COMMIT for the same
+                // entity) is treated as a fresh cycle and fully replayed. The append-only write path
+                // guarantees DEPARTURE precedes COMMIT within a cycle (RDR-019 §Research Findings).
+                if ("MIGRATION_COMMIT".equals(event.get("type"))) {
+                    var entityId = event.get("entityId");
+                    if (entityId != null) {
+                        seenMigrations.remove("ENTITY_DEPARTURE:" + entityId);
+                        seenMigrations.remove("MIGRATION_COMMIT:" + entityId);
+                    }
                 }
             } else {
                 log.warn("Skipping invalid event: {}", event);
@@ -268,7 +286,13 @@ public class EventRecovery {
      *       increasing across the replayed tail (a regression / reordering indicates
      *       a corrupt or double-opened WAL);</li>
      *   <li>the first replayed sequence number, when present, is strictly greater than
-     *       the checkpoint sequence (recovery must not re-replay checkpointed events).</li>
+     *       the checkpoint sequence. <b>RDR-019 note:</b> this overlap check is meaningful
+     *       only for <em>bounded</em> (post-checkpoint) replay. The Phase 1 full-replay path
+     *       deliberately replays from seq 1 past any checkpoint (correct, since the checkpoint
+     *       has no durable snapshot behind it), so {@code recover()} validates with a synthetic
+     *       zero checkpoint to enforce monotonicity ONLY. A future Phase 2 compaction-backed
+     *       bounded replay would re-enable this check against the compaction watermark (not the
+     *       bare checkpoint sequence). This branch remains exercised by direct unit tests.</li>
      * </ul>
      *
      * @param state the recovered state to validate (must not be null)

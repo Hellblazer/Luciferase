@@ -28,8 +28,9 @@ import java.util.Objects;
  * {@link com.hellblazer.luciferase.simulation.von.NodeBootstrap} registers it alongside
  * {@code SocketConnectionManagerAdapter}. P1 (Luciferase-pf1iu) makes {@link #doStart()} call
  * {@link PersistenceManager#recover()} fail-loud (a corrupt WAL aborts startup) and then
- * {@link PersistenceManager#startSchedulers()} — the batch-flush and checkpoint schedulers are no longer
- * started in the {@link PersistenceManager} constructor, so neither can run before recovery completes.
+ * {@link PersistenceManager#startSchedulers()} — the batch-flush scheduler is no longer started in the
+ * {@link PersistenceManager} constructor, so it cannot run before recovery completes. (RDR-019 removed
+ * the periodic checkpoint scheduler entirely — gate O1.)
  *
  * @author hal.hildebrand
  */
