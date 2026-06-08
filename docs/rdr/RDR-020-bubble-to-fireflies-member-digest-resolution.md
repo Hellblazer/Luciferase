@@ -2,12 +2,12 @@
 title: "Bubble→Fireflies Member Digest Resolution for Migration Consensus"
 id: RDR-020
 type: Bug Fix
-status: draft
+status: accepted
 priority: high
 author: self
 reviewed-by: self
 created: 2026-06-08
-accepted_date:
+accepted_date: 2026-06-08
 related_issues: [Luciferase-vhbw3, Luciferase-l5c8q, Luciferase-0frcy, Luciferase-s23eu]
 ---
 
@@ -125,8 +125,12 @@ wrong link.
   resolver must be *built or supplied by the caller* — it is not a free lookup. This is a scope fork (see
   Revision History 2026-06-08 and the revised Approach).
 - [x] **A2**: This process can obtain its own Fireflies member `Digest` for the source node. — **Status**:
-  **VERIFIED** (Source Search) — `Delos fireflies/View.getNodeId() → Digest` (`View.java:187-189`);
-  `FirefliesMembershipView` holds the `View` (`:65-72`) and can expose it. Source node is free.
+  **VERIFIED** (Source Search; re-confirmed at gate 2026-06-08) — an **exposed accessor already exists**:
+  `FirefliesMemberLookup.getLocalMember() → Member` (`von/FirefliesMemberLookup.java:131-133`, returns
+  `view.getNode()`); `view.getNode().getId()` is the local member `Digest`. No new method on the
+  `MembershipView` interface is required — the resolver is backed by `FirefliesMemberLookup`, not by
+  `MembershipView` (gate C1 corrected: the original RDR named `View.getNodeId()` on `FirefliesMembershipView`,
+  which does **not** expose it; the working seam is `FirefliesMemberLookup.getLocalMember()`). Source node is free.
 - [x] **A3**: `MigrationProposal` node-id semantics are "owning node," and redefining them requires no
   change to the proposal record or vote/quorum logic. — **Status**: **VERIFIED** (Source Search) —
   `sourceNodeId`/`targetNodeId` are read only for null checks, the self-migration check
@@ -140,11 +144,27 @@ wrong link.
   migration. — **Status**: **PARTIAL → resolved by decision** (2026-06-08, Source Search) — Nothing binds a
   bubble to a node today (HRW is free to define ownership; bubbles are position-driven,
   `TetreeBubbleGrid.java:54,241`). BUT `DistributedBubbleNode.initiateRemoteMigration(entityId, targetNodeId)`
-  (`:108-126`) takes an **explicit** target node, which a position-derived owner can contradict.
+  (`:108-126`) takes an **explicit** target **node** UUID, which a position-derived owner can contradict.
   **Decision**: the HRW `owner(targetBubbleKey, view)` is **authoritative**; an explicitly-supplied
   `targetNodeId` is **validated against** it and **fails loud on mismatch** (no silent re-route). This keeps
-  the position-driven model (RDR-015) authoritative and the API as a checked hint. The gate should scrutinize
-  this decision.
+  the position-driven model (RDR-015) authoritative and the API as a checked hint. **Implementability of the
+  comparison is established by B4** (the node-UUID↔member-`Digest` mapping the validation needs already
+  exists). Note this hint path is *secondary*: `initiateRemoteMigration` does not itself reach committee
+  consensus (it calls `initiateOptimisticMigration`, not `requestMigrationApproval`); the two live consensus
+  entry points are **bubble-keyed**, so HRW `owner(bubbleKey)` applies to them directly without any
+  node-UUID comparison.
+- [x] **B4** (gate C2): A network node `UUID` can be mapped back to its Fireflies member `Digest`, so the
+  B1 hint comparison is implementable. — **Status**: **VERIFIED** (gate Source Search, 2026-06-08) — node
+  UUIDs are **canonically** `FirefliesMemberLookup.digestToUuid(member.getId())`: `NodeBootstrap.resolveNodeId`
+  (`von/NodeBootstrap.java:62-74`) is documented as "the canonical member→UUID derivation across the codebase…
+  deterministic across restarts" (WAL directory identity depends on it). The reverse —
+  `FirefliesMemberLookup.getMemberByUuid(UUID)` (`:85-90`) — recovers the `Member` (hence `Digest`) by matching
+  `digestToUuid(m.getId()).equals(uuid)`. So `targetNodeId (UUID) → Digest` is a real, existing lookup; the
+  critic's premise that "no UUID→Digest mapping exists" held only for *bubble* UUIDs, not *node* UUIDs.
+  **Caveat folded in**: `getMemberByUuid` is built on `getActiveMembers()`, which in `FirefliesMemberLookup`
+  is **misnamed** — it delegates to `context.allMembers()`, not `active()`. The resolver MUST perform the
+  in-view determination against the active-only set (RDR-005), so it consults `MembershipView.activeMembers()`
+  / `context.active()` for ownership and never trusts the misnamed accessor's all-members backing.
 - [x] **B2**: View-change ownership rebalancing is acceptable. — **Status**: **VERIFIED** (Source Search) —
   `ViewCommitteeConsensus` checks `proposal.viewId() == currentViewId` at submission (`:182`) and before
   execution (`:223`); `onViewChange()` rolls back all pending proposals (`:252-269`). An in-flight proposal
@@ -174,31 +194,80 @@ wrong link.
 > Considered and not chosen: **Option α** (correctness floor only — resolver + fail-loud, splitting the
 > ownership mechanism to a follow-up RDR). Rejected by owner decision in favor of solving ownership here.
 
+**Two distinct node roles (gate C3 — the load-bearing clarification).** A migration proposal carries two
+node digests that mean *different things*, and conflating them is the original bug:
+
+- **`sourceNodeId` = current holder = local member.** The process that initiates a migration **physically
+  holds** the entity/bubble, so the source is authoritative *by possession*, not by HRW. It is always a
+  current-view member (this process is in its own view), so it always passes `isNodeInView`. This is
+  deliberately **not** `owner(sourceKey)` — "who holds it now" is a different question from "who should own
+  the region," and possession is the correct answer for the source.
+- **`targetNodeId` = intended owner of the destination region = `owner(destinationKey, activeMembers)`** (HRW).
+  HRW **defines** which node should host a region; a migration's purpose is to move the entity to that node.
+
+These two roles also explain the **single-process / single-member case**: with one member, source = local =
+HRW owner of every key = target, so `source == target` and `validateProposal` **rejects it as a
+self-migration** (`ViewCommitteeConsensus.java:365-369`). That is correct, not a gap: a single-node "migration"
+is a *local* move with nothing to vote on, and committee consensus is a **cross-node** mechanism by
+construction. The HRW-owner-vs-physical-host invariant is therefore **maintained, not assumed**: migrations
+route entities *to* their HRW owner, and the partition layer must seed initial placement by the same function
+(see the explicit contract below). The production-live path today is single-process (`s23eu`: not yet
+partition-fault-tolerant, VoN↔membership unwired), where every proposal is a self-migration / local move —
+multi-node correctness is gated on placement honoring HRW, stated as a named dependency rather than silently
+assumed.
+
+> **Placement-honors-HRW contract (C3).** This RDR makes HRW `owner(key, view)` *authoritative for target
+> ownership*. For physical hosting to track ownership at steady state, the partition/placement layer must
+> (a) seed each bubble onto `owner(bubbleKey, view)` at construction and (b) re-home on view change. That
+> placement work is **out of scope here** and belongs with the spatial-partition↔membership binding
+> (`s23eu`, RDR-003/RDR-015 follow-on); this RDR depends on it for multi-node steady-state correctness and
+> records the dependency explicitly. Until it lands, the only live path is the single-member/local case
+> above, which is correct under the self-migration semantics.
+
 Introduce a thin **node-identity resolution boundary** and keep the consensus layer `Digest`-native:
 
-1. **Source node = local member.** For both entry points, the source node digest is this process's own
-   Fireflies member `Digest` (the bubble being migrated currently lives here). Obtain it from the membership
-   view; no per-bubble lookup.
+1. **Source node = local member, always (possession).** For both consensus entry points the source digest is
+   this process's own Fireflies member `Digest` via `FirefliesMemberLookup.getLocalMember().getId()` (A2). The
+   source bubble is locally hosted by construction at both call sites (you only propose topology/migration for
+   bubbles you hold), so there is no "non-local source" path — that ambiguity is removed (gate S4).
 2. **Target node via a `BubbleOwnershipResolver` backed by a deterministic, view-derived owner function.**
    The injected interface `Digest resolveOwningMember(UUID bubbleId)` resolves the bubble's spatial key
    (`bubbleId → TetreeKey`, B3) and computes `owner = assign(spatialKey, view.activeMembers())` where
    `assign` is a **deterministic partition of spatial keys over the current active members** (recommended:
    **rendezvous / highest-random-weight hashing** of `(spatialKey, memberDigest)` — minimal reshuffle on
-   membership change, no coordinator, computable identically on every node). Because the view is the single
-   source of truth and every node holds it, no separate replicated registry or gossip is needed, and
-   ownership rebalances deterministically across view changes.
-3. **HRW owner is authoritative; explicit target is a checked hint (B1).** Where a caller supplies an
-   explicit `targetNodeId` (`DistributedBubbleNode.initiateRemoteMigration`), it is **validated against**
-   `owner(targetBubbleKey, view)` and **throws on mismatch** — never silently re-routed. The position-driven
-   owner (RDR-015) is the source of truth; the explicit parameter is a hint the consensus path verifies.
-4. **Fail loud, never silent.** If the resolver cannot map a bubble to a current-view member, both
-   `toMigrationProposal` and `requestMigrationApproval` **throw** (not produce a silently-rejected proposal
-   and not silently approve) — satisfying the `vhbw3` wave-20 requirement and preserving `l5c8q`'s existing
-   fail-loud stance.
-5. **Delete `digestOf(UUID)`** as a node-id source; it remains valid only where a content-addressed hash of
-   a UUID is genuinely wanted (none in the consensus path).
+   membership change, no coordinator, computable identically on every node). The in-view set is the
+   **active-only** members (`MembershipView.activeMembers()` / `context.active()`), per RDR-005 and the B4
+   caveat — never the misnamed all-members accessor. Because the view is the single source of truth and every
+   node holds it, no separate replicated registry or gossip is needed, and ownership rebalances
+   deterministically across view changes.
+3. **HRW owner is authoritative; an explicit node hint is checked, not trusted (B1/B4).** The two live
+   consensus entry points are **bubble-keyed**, so HRW `owner(bubbleKey)` applies directly with no node-UUID
+   comparison. Separately, where a caller supplies an explicit `targetNodeId` *node UUID*
+   (`DistributedBubbleNode.initiateRemoteMigration`), it is mapped to its member `Digest` via the canonical
+   `FirefliesMemberLookup.getMemberByUuid(targetNodeId)` (B4) and **validated against** the HRW owner of the
+   destination region, **throwing on mismatch** — never silently re-routed. (This path does not itself invoke
+   committee consensus; the validation is a consistency guard wherever the node hint meets the ownership
+   function.)
+4. **Fail loud, never silent.** If the resolver cannot map a bubble to a current-view member (empty active
+   set, or a hint that resolves to no member), both `toMigrationProposal` and `requestMigrationApproval`
+   **throw** (not produce a silently-rejected proposal and not silently approve) — satisfying the `vhbw3`
+   wave-20 requirement and preserving `l5c8q`'s existing fail-loud stance.
+5. **Delete `digestOf(UUID)`** as a node-id source. Confirmed scope (gate S3): `digestOf` is a `private
+   static` method (`:286-288`) with **3 invocations, all inside the single method
+   `TopologyConsensusCoordinator.toMigrationProposal`** (`:274-275`) — a project-wide grep finds no other
+   caller. Deleting it as a node-id source is fully contained to that one class.
+6. **Tighten `isNodeInView` to active-only (re-gate finding).** `ViewCommitteeSelector.isNodeInView`
+   (`consensus/committee/ViewCommitteeSelector.java:82-86`) currently matches against `context.allMembers()`,
+   not `context.active()`. The resolver enforces the active-only set (RDR-005 / B4) for *ownership*, but the
+   *validator* that gates the resolved digest still admits evicted-but-not-GC'd members — the invariant would
+   be enforced at the wrong layer. Change `isNodeInView` to `context.active().anyMatch(...)` in tandem with
+   resolver wiring so target/source in-view checks are active-only end-to-end. Implementation note:
+   `FirefliesMemberLookup.getMemberByUuid` is built on the misnamed all-members `getActiveMembers()`, so it is
+   used **only** for the node-UUID→`Digest` hint mapping (B4) — never for the active-membership ownership set,
+   which comes from `MembershipView.activeMembers()` / `context.active()`.
 
-The consensus records, vote tally, and `isNodeInView` gate are unchanged (A3) — this is a boundary fix.
+The consensus records, vote tally, and `isNodeInView` gate are unchanged (A3) — this is a boundary fix at the
+two entry points plus the new ownership function.
 
 ### Technical Design
 
@@ -209,6 +278,7 @@ Interface (signatures, not implementation):
 interface BubbleOwnershipResolver {
     Digest resolveOwningMember(UUID bubbleId);   // throws IllegalStateException if no current-view owner
     Digest localMember();                         // this process's own member Digest (source node)
+    Digest memberDigestForNode(UUID nodeId);      // canonical node-UUID -> member Digest (B4); throws if unknown
 }
 
 // Deterministic, view-derived ownership — pure function, identical on every node.
@@ -218,30 +288,44 @@ interface SpatialOwnershipFunction {
 }
 ```
 
-- `BubbleOwnershipResolver` resolves `bubbleId → TetreeKey` (B3), reads `view.activeMembers()` (RDR-005),
-  and returns `SpatialOwnershipFunction.owner(key, members)`; throws if the result is not a current-view
-  member (e.g. empty view) — fail-loud, never a silently-rejectable digest.
-- `localMember()` returns `View.getNodeId()` (A2).
+- The resolver depends on its **own small port** (the three methods above), not on the `MembershipView`
+  interface — so no contract surgery to `MembershipView`/`MockFirefliesView` is needed (gate C1). It has two
+  implementations: a production one over `FirefliesMemberLookup` (which already exposes `getLocalMember()`,
+  the active-member set, and `getMemberByUuid`), and a test double seeded with known member digests + a
+  fixed key→member map for deterministic HRW-convergence tests.
+- `resolveOwningMember` resolves `bubbleId → TetreeKey` (B3), reads the **active** members (RDR-005 / B4 —
+  the active-only set, not the misnamed `getActiveMembers()` all-members backing), and returns
+  `SpatialOwnershipFunction.owner(key, members)`; throws if the result is not a current-view member (e.g.
+  empty view) — fail-loud, never a silently-rejectable digest.
+- `localMember()` returns `FirefliesMemberLookup.getLocalMember().getId()` (A2) — an existing accessor.
+- `memberDigestForNode(nodeId)` is `getMemberByUuid(nodeId).map(Member::getId)`, throwing if absent (B4);
+  used only to validate an explicit node-UUID hint.
 - **Ownership is not stored.** It is recomputed from the view at proposal time; a view change recomputes it.
   In-flight proposals carrying a now-stale owner are rejected by `isNodeInView` (visible), not mis-routed.
 
-- `TopologyConsensusCoordinator.toMigrationProposal(...)`: `sourceNodeId = resolver.localMember()` (or the
-  owner of the source bubble when not local), `targetNodeId = resolver.resolveOwningMember(targetBubble)`;
-  throw on unresolved.
-- `OptimisticMigratorImpl.requestMigrationApproval(entityId, targetBubble)`: resolve `sourceId`/`targetNodeId`
-  via the resolver, then delegate to `OptimisticMigratorIntegration.requestMigrationApproval(entityId,
-  sourceId, targetNodeId)`. Remove the `UnsupportedOperationException` once the resolver is injected.
-- The resolver must use `activeMembers()` (not `allMembers()`) for the in-view determination (RDR-005).
+- `TopologyConsensusCoordinator.toMigrationProposal(...)`: `sourceNodeId = resolver.localMember()` (the
+  source bubble is locally hosted by construction — no non-local-source path, gate S4),
+  `targetNodeId = resolver.resolveOwningMember(targetBubble)`; throw on unresolved. Delete `digestOf` (S3).
+- `OptimisticMigratorImpl.requestMigrationApproval(entityId, targetBubble)`: note `targetBubble` is a
+  **bubble** UUID, so `targetNodeId = resolver.resolveOwningMember(targetBubble)` (HRW direct — no node-UUID
+  lookup here); `sourceId = resolver.localMember()`. Then delegate to
+  `OptimisticMigratorIntegration.requestMigrationApproval(entityId, sourceId, targetNodeId)` and remove the
+  `UnsupportedOperationException` (`OptimisticMigratorImpl.java:135-141`) once the resolver is injected.
+- **Hot-path index (gate S1).** `resolveOwningMember` calls `TetreeBubbleGrid.getKeyForBubble(UUID)`, which is
+  an **O(N) linear scan** of `bubblesByKey` (`TetreeBubbleGrid.java:641-650`) — run on every proposal.
+  Add an inverse `ConcurrentHashMap<UUID, TetreeKey>` maintained in the grid's add/remove paths so the lookup
+  is O(1); the scan is acceptable only for the single-bubble fixtures, not at cluster scale.
 
 ### Existing Infrastructure Audit
 
 | Proposed Component | Existing Module | Decision |
 | --- | --- | --- |
-| `BubbleOwnershipResolver` | `von/FirefliesMemberLookup` | Extend or wrap: reuse its member-index access; add the forward bubble→member direction (the existing `digestToUuid` is reverse-only and assumes Digest-derived UUIDs). |
-| Source-node = local member | `FirefliesMembershipView` / `View.getNodeId()` | Reuse: expose the local-member accessor (A2). |
+| `BubbleOwnershipResolver` (resolver port) | `von/FirefliesMemberLookup` | Wrap: it already exposes `getLocalMember()`, the member set, and `getMemberByUuid` — the resolver owns a 3-method port over it; no `MembershipView` change (gate C1). |
+| Source-node = local member | `FirefliesMemberLookup.getLocalMember()` (`:131-133`, → `view.getNode()`) | Reuse the **existing** accessor (A2). The original `FirefliesMembershipView`/`View.getNodeId()` path was wrong — corrected. |
+| Node `UUID` → member `Digest` (hint check) | `FirefliesMemberLookup.getMemberByUuid` + `NodeBootstrap.resolveNodeId` | Reuse: node UUIDs are canonically `digestToUuid(memberId)`, so the reverse lookup exists (B4, gate C2). |
 | `SpatialOwnershipFunction` (rendezvous/HRW) | — (none exists; A1 refuted) | New: deterministic view-derived owner; no replicated state. |
-| bubble `UUID` → `TetreeKey` | `TetreeBubbleGrid` | Reuse/extend per B3. |
-| `digestOf(UUID)` node-id | `TopologyConsensusCoordinator` | Replace: delete as a node-id source. |
+| bubble `UUID` → `TetreeKey` | `TetreeBubbleGrid.getKeyForBubble` (`:641-650`) | Reuse per B3; add an O(1) inverse index (gate S1, currently an O(N) scan). |
+| `digestOf(UUID)` node-id | `TopologyConsensusCoordinator` | Replace: delete (2 call sites, `private static`, no other caller — gate S3). |
 
 ### Decision Rationale
 
@@ -301,8 +385,9 @@ independent of position).
 - (+) Fail-loud everywhere — no silent approve (`l5c8q`) and no silently-rejected proposal (`vhbw3`).
 - (−) Introduces a node-identity dependency the single-process fixtures did not need; multi-node tests
   require real/mock membership wiring.
-- (−) Couples migration consensus to the spatial-partition↔membership mapping (A1), which may need its own
-  follow-up if ownership is dynamic.
+- (−) Multi-node *steady-state* correctness depends on the partition layer seeding/re-homing physical
+  placement by the same HRW function (the placement-honors-HRW contract, `s23eu`/RDR-015 follow-on). Named as
+  a dependency; the consensus-record correctness (source = possession, target = HRW owner) does not wait on it.
 
 ### Risks and Mitigations
 
@@ -310,8 +395,13 @@ independent of position).
   **Mitigation**: Resolve against the current view at proposal time; the node-in-view gate rejects
   stale digests; fail-loud surfaces it rather than mis-routing.
 - **Risk**: A1 has no deterministic partition→member map, forcing a gossiped registry (larger scope).
-  **Mitigation**: Verify A1 in research before locking; if a registry is required, scope it explicitly or
-  split it to a follow-up RDR.
+  **Mitigation**: **Resolved** — Option β supplies a deterministic view-derived HRW function, no registry.
+- **Risk** (gate C3): HRW ownership and physical bubble placement diverge, so a resolved digest names a node
+  that does not host the bubble. **Mitigation**: the two node roles are defined to make this benign for the
+  consensus *records* (source = possession, always in-view; target = HRW owner, the migration destination by
+  definition); steady-state physical alignment is a named **placement-honors-HRW contract** owned by the
+  partition layer (`s23eu`/RDR-015 follow-on), not assumed here. The only live path until then is the
+  single-member/local case, which is correct under self-migration semantics.
 
 ### Failure Modes
 
@@ -327,18 +417,28 @@ independent of position).
 
 ### Minimum Viable Validation
 
-An integration test with a real (or mock) multi-member `ViewCommitteeConsensus`: a migration whose target
-bubble is owned by a current-view member produces a proposal that **passes** `validateProposal` and reaches
-quorum; a migration whose target cannot be resolved **throws** (fail-loud) — proving the gap is closed in
-both directions, not mocked away.
+An integration test with a real (or mock) **≥2-member** `ViewCommitteeConsensus`: a migration whose target
+bubble is owned by a *different* current-view member produces a proposal that **passes** `validateProposal`
+and reaches quorum; a migration whose target cannot be resolved **throws** (fail-loud) — proving the gap is
+closed in both directions, not mocked away. The MVV must also assert **HRW convergence** (two resolver
+instances on the same view agree on `owner(K)`); single-member self-migration rejection is a unit-level
+companion check.
 
 ### Phase 1: Code Implementation
 
-#### Step 1: Resolver interface + membership-backed implementation (A1/A2)
+#### Step 1: `SpatialOwnershipFunction` (rendezvous/HRW) + `BubbleOwnershipResolver` port over `FirefliesMemberLookup` (A2/B3/B4), plus the test double
 
-#### Step 2: Wire `toMigrationProposal` and `requestMigrationApproval` to the resolver; delete `digestOf` as a node-id source; fail-loud on unresolved
+#### Step 2: Add the O(1) inverse `UUID → TetreeKey` index to `TetreeBubbleGrid` add/remove paths (gate S1)
 
-#### Step 3: Remove the `UnsupportedOperationException` gate in `OptimisticMigratorImpl` once the resolver is injected
+#### Step 3: Wire `toMigrationProposal` (source = `localMember()`, target = `resolveOwningMember`) and delete `digestOf` (gate S3); fail-loud on unresolved
+
+#### Step 4: Wire `OptimisticMigratorImpl.requestMigrationApproval` to the resolver (target bubble → HRW; source = local) and remove the `UnsupportedOperationException` gate
+
+#### Step 5: Add the explicit node-UUID hint validation in `DistributedBubbleNode.initiateRemoteMigration` via `memberDigestForNode` (B1/B4), throw on mismatch
+
+#### Step 6: Change `ViewCommitteeSelector.isNodeInView` to match `context.active()` (not `allMembers()`) so the active-only invariant is enforced at the validator too (re-gate finding)
+
+#### Step 7: Update the test callers that pass random node UUIDs (see Test Plan / observation) so they use canonical (`digestToUuid`-derived) node identities or assert the fail-loud path
 
 ### New Dependencies
 
@@ -346,14 +446,23 @@ None anticipated (reuses Delos membership already on the classpath).
 
 ## Test Plan
 
-- **Scenario**: Target bubble owned by a current-view member — **Verify**: proposal passes
-  `validateProposal`, reaches quorum (not mocked).
+- **Scenario**: Target bubble owned by a *different* current-view member (≥2-member view) — **Verify**:
+  proposal passes `validateProposal`, reaches quorum (not mocked).
+- **Scenario** (gate S2 — HRW convergence): two `SpatialOwnershipFunction`/resolver instances seeded from the
+  **same** active-member set independently compute `owner(K, members)` for the same key — **Verify**: they
+  return the **identical** member `Digest`. This is the property that makes the view-derived function a valid
+  substitute for a replicated registry; without it Option β is unfounded.
+- **Scenario** (single-member / local move): a one-member view yields `source == target` — **Verify**:
+  `validateProposal` rejects it as a self-migration (`:365`), confirming committee consensus is cross-node
+  only and the single-process live path is correct, not silently broken.
 - **Scenario**: Target bubble unresolvable to any current-view member — **Verify**: `toMigrationProposal` and
   `requestMigrationApproval` throw (fail-loud), no silent approve, no silently-rejected proposal.
-- **Scenario**: Resolver uses `activeMembers()` not `allMembers()` — **Verify**: an evicted member is not a
-  valid owner (RDR-005).
+- **Scenario** (gate C2/B1): explicit `targetNodeId` node hint that disagrees with `owner(destKey)` —
+  **Verify**: `initiateRemoteMigration` throws on mismatch; a hint that *agrees* passes.
+- **Scenario**: Resolver uses the **active-only** set (not the misnamed all-members backing) — **Verify**: an
+  evicted-but-not-GC'd member is not a valid owner (RDR-005 / B4).
 - **Scenario**: Source node defaults to local member for a locally-owned bubble — **Verify**: source digest
-  equals this process's member id.
+  equals this process's member id (`getLocalMember().getId()`).
 
 ## Validation
 
@@ -366,26 +475,47 @@ mock membership view containing known member digests; assert validity, quorum, a
 
 ### Contradiction Check
 
-[To complete at gate.]
+No internal contradiction after the C3 clarification: `sourceNodeId` (possession/local) and `targetNodeId`
+(HRW owner) are defined as distinct notions, so "source = local" and "target = HRW owner" do not compete.
+The B1 explicit-hint path is consistent with HRW authority (hint is *validated against* HRW, never overrides
+it). No contradiction with RDR-015's position-driven model: HRW is the *target-ownership* authority and the
+partition layer is required to seed placement by it (stated as a dependency, not assumed satisfied).
 
 ### Assumption Verification
 
-A1/A2/A3 to be verified by source search during `/conexus:rdr-research` before acceptance.
+A1 (refuted — drives Option β), A2/A3 (verified), B1 (resolved by decision), B2/B3 (verified), B4 (verified at
+gate — the node-UUID↔Digest mapping the B1 hint needs already exists). Each carries an explicit status and
+risk note in §Research Findings.
 
 ### Scope Verification
 
-[To complete at gate — confirm MVV (live-committee pass + fail-loud throw) is in scope, not deferred.]
+In scope and not deferred: resolver + HRW function + both consensus entry points + fail-loud throws + the MVV
+(≥2-member live-committee pass, fail-loud throw, **HRW convergence**, single-member self-migration). Honestly
+**out of scope and named**: the placement-honors-HRW physical re-homing (partition layer, `s23eu`/RDR-015
+follow-on) on which multi-node *steady-state* correctness depends — this is a declared dependency, not a
+silent reduction.
 
 ### Cross-Cutting Concerns
 
 - **Versioning**: N/A (no wire-format change; `MigrationProposal` unchanged).
 - **Secret/credential lifecycle**: N/A (uses existing Fireflies identities).
 - **Incremental adoption**: resolver is injected; fail-loud preserves current behavior until wired.
+- **Test-caller impact (gate observation)**: `PerformanceResilienceValidationTest` (9 `initiateRemoteMigration`
+  call sites passing random `UUID` targets) and similar will hit the new throw-on-mismatch once the hint
+  validation lands, because random UUIDs are not `digestToUuid`-derived and resolve to no member. Step 6
+  updates these callers to canonical node identities or re-points them at the fail-loud assertion — planned,
+  not incidental breakage.
 - Others: N/A.
 
 ### Proportionality
 
-Right-sized as a boundary bug-fix RDR; the one genuinely-open question (A1 ownership sourcing) is isolated.
+Honestly framed as a **boundary fix + a small ownership primitive** (not a pure one-line bug fix): the
+`digestOf` deletion and the two-entry-point rewiring are the boundary fix; the deterministic HRW
+`SpatialOwnershipFunction` is a genuinely new (but self-contained, stateless, ~one-function) mechanism the
+A1 refutation forced. It is *not* a distributed subsystem — no replicated state, no consistency protocol,
+no convergence concern — because ownership is a pure function of state every node already holds. The one
+larger thing it touches (physical placement honoring HRW) is explicitly pushed to the partition layer rather
+than absorbed here.
 
 ## References
 
@@ -418,6 +548,21 @@ Right-sized as a boundary bug-fix RDR; the one genuinely-open question (A1 owner
   bubble placement/migration model), **B2** (view-change rebalancing acceptable), **B3** (bubble→`TetreeKey`
   resolvable) — all Unverified, to be checked in a second `/conexus:rdr-research` pass before the gate.
   Gossiped registry retained as Alternative 2.
+- 2026-06-08: **gate BLOCKED then remediated** (substantive-critic, 3 Critical / 4 Significant). All addressed
+  with code-grounded evidence: **C1** — A2's exposure path corrected (`FirefliesMemberLookup.getLocalMember()`
+  already exists; resolver owns a 3-method port, no `MembershipView` surgery). **C2** — added **B4**: node
+  UUIDs are canonically `digestToUuid(memberId)` (`NodeBootstrap.resolveNodeId`), so `getMemberByUuid` is the
+  UUID→`Digest` mapping the B1 hint needs; critic's "no mapping" held only for *bubble* UUIDs. **C3** — defined
+  the two node roles (source = possession/local, target = HRW owner); self-migration reject (`:365`) makes the
+  single-member live path correct, and physical placement honoring HRW is a *named* partition-layer contract
+  (`s23eu`), not a silent assumption. **S1** O(1) inverse `UUID→TetreeKey` index added to the plan; **S2** HRW
+  convergence test added to MVV; **S3** `digestOf` deletion scope enumerated (2 sites, one class); **S4**
+  non-local-source path removed (source = local, always). Test-caller impact (random-UUID migrations) folded
+  into the plan as Step 7.
+- 2026-06-08: **re-gate PASSED** (substantive-critic; 0 Critical, 2 implementation-scoped Significant). Folded
+  in: `ViewCommitteeSelector.isNodeInView` uses `allMembers()` not `active()` — the active-only RDR-005
+  invariant must also be enforced at the validator (new Step 6 / Approach item 6); and the `digestOf` scope
+  count corrected to "3 invocations in one method." No design changes required.
 - 2026-06-08: **research pass 2** (Source Search; T2 `Luciferase_rdr/020-research-2`). **B2 VERIFIED**
   (`viewId` check at submission `:182` + pre-execution `:223`; `onViewChange` rolls back pending `:252-269`).
   **B3 VERIFIED** (`TetreeBubbleGrid.getKeyForBubble(UUID)` `:641-650`, already used by topology ops).
