@@ -1,9 +1,10 @@
 ---
 id: RDR-017
 title: Production Node Bootstrap — Compose the Distributed Simulation Node (Lifecycle, WAL, Recovery, Migration)
-status: accepted
+status: implemented
 date: 2026-06-06
 accepted_date: 2026-06-07
+closed_date: 2026-06-07
 reviewed-by: self
 supersedes: []
 related: [RDR-016, RDR-004]
@@ -14,11 +15,24 @@ beads: [Luciferase-hwqjk, Luciferase-n6jrh, Luciferase-s23eu]
 
 ## Status
 
-Draft (2026-06-06; decisions locked 2026-06-07). Spun out of RDR-016 after research found that the simulation
-module has **no production node assembly at all** — multiple complete subsystems (lifecycle, WAL persistence,
-crash recovery, cross-process migration) exist as library components but nothing composes them into a running
-node. **Q0, durability authority, and the scheduler hazard are now decided** (see `## Decision`); research
-recorded + verified (`017-research-1`). Ready for `/conexus:rdr-gate`.
+**Implemented (closed 2026-06-07).** All four phases shipped through stacked review (epic
+`Luciferase-n6jrh`): P0 bootstrap skeleton + lifecycle ordering fix (`vhhu0`, PR #209), P1 persistence
+wiring + `recover()` fail-loud + scheduler relocation (`pf1iu`, PR #210), P2 migration WAL bracket live +
+durability round-trip (`1693b`, PR #211), P3 consensus no-op recovery + WAL lifecycle policy + B/C
+disposition (`skaui`, PR #212). Post-mortem: `docs/rdr/post-mortem/017-production-node-bootstrap.md`.
+
+**Scope delivered:** the bootstrap assembly seam (`NodeBootstrap.resolveNodeId`/`walDir`/`persistenceAdapter`/
+`assemble`), the Layer-0/Layer-1 lifecycle graph, durable crash recovery wired through the assembled node,
+and clean-shutdown WAL compaction. **Deliberately NOT in scope (deferred):** wiring a live, self-starting
+`NodeBootstrap.main()` — it throws `UnsupportedOperationException` pending Fireflies-view construction. Three
+`main()`-preconditions remain tracked: `Luciferase-n6jrh.1` (assemble-before-createBubble guard),
+`Luciferase-n6jrh.2` (BubbleMigratorAdapter lifecycle integration), `Luciferase-n6jrh.3` (a **pre-existing**
+WAL checkpoint/recovery silent-data-loss surfaced during P3 review — not introduced by this RDR, not reachable
+until `main()` is live). Subsystem C partition-fault tolerance stays out of scope (`Luciferase-s23eu`).
+
+Spun out of RDR-016 after research found that the simulation module had **no production node assembly at
+all** — multiple complete subsystems (lifecycle, WAL persistence, crash recovery, cross-process migration)
+existed as library components but nothing composed them into a running node.
 
 ## Context / Problem Statement
 
