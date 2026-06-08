@@ -67,6 +67,9 @@ public class PersistenceManager implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private volatile Clock clock = Clock.system();
     private volatile long compactionThresholdBytes = DEFAULT_COMPACTION_THRESHOLD_BYTES;
+    // Churn guard for the size trigger: once a compaction prunes nothing, suppress further auto-compaction
+    // until retainedLogBytes() exceeds this mark (set to the log size at the no-op). 0 = not suppressed.
+    private volatile long suppressCompactionUntilBytes = 0;
 
     /**
      * Set the clock source for deterministic testing.
@@ -324,12 +327,17 @@ public class PersistenceManager implements AutoCloseable {
      *   <li><b>Seal the active segment first</b> (roll to a fresh segment) and then compact ONLY sealed
      *       segments — never rewrite the live segment the batch-flush scheduler is appending to
      *       (concurrent-write data loss).</li>
-     *   <li>Prune only WHOLE committed {@code DEPARTURE}+{@code COMMIT} pairs — never a partial pair, and
-     *       never an in-flight {@code DEPARTURE} with no matching {@code COMMIT}.</li>
-     *   <li>Apply a conservative watermark so recently-departed, still-adjacent entities are not pruned
-     *       (RDR-019 gate S1 / {@code Luciferase-gg28h}).</li>
+     *   <li>Prune only WHOLE completed migration cycles per entity ({@code DEPARTURE}+{@code COMMIT}) —
+     *       never a partial pair, and never a trailing in-flight {@code DEPARTURE} with no matching
+     *       {@code COMMIT} (cycle-aware: an entity that re-migrates keeps its in-flight cycle).</li>
      *   <li>Retain non-migration event types ({@code DEFERRED_UPDATE}, {@code VIEW_SYNC_ACK}, consensus)
      *       conservatively (gate O3).</li>
+     *   <li><b>Gate S1 (Luciferase-gg28h) — ACCEPTED GAP, no recency watermark.</b> Completed pairs are
+     *       pruned regardless of recency. Per RDR-019 gate S1 decision B this is benign: a pruned entity
+     *       is owned at the target (no ownership violation); only source-side ghost adjacency tracking is
+     *       lost, and that is re-derivable by the neighbor layer. The seal boundary provides a natural
+     *       buffer (the active segment, holding the most recent events, is never compacted). If a workload
+     *       ever needs recently-departed pairs retained, add an age/sequence watermark here (gg28h).</li>
      *   <li>Be crash-safe via write-new-then-rename.</li>
      * </ul>
      *
@@ -516,14 +524,26 @@ public class PersistenceManager implements AutoCloseable {
         if (threshold <= 0) {
             return;
         }
-        if (writeAheadLog.retainedLogBytes() < threshold) {
+        var retained = writeAheadLog.retainedLogBytes();
+        if (retained < threshold) {
+            return;
+        }
+        // Churn guard: if the previous attempt found nothing prunable (e.g. the log is all in-flight
+        // migrations) and the log has not grown since, do NOT compact again — each compact() seals
+        // (rotates) the active segment, so a repeating no-op trigger would create an empty segment every
+        // batch-flush tick, exhausting inodes. Re-arm only once new events grow the log past that mark.
+        if (suppressCompactionUntilBytes > 0 && retained <= suppressCompactionUntilBytes) {
             return;
         }
         try {
             var stats = writeAheadLog.compactCompletedMigrations();
             if (stats.prunedEvents() > 0) {
+                suppressCompactionUntilBytes = 0;
                 log.info("Auto-compaction (size trigger) for node {}: pruned {} events, retained {}",
                          nodeId, stats.prunedEvents(), stats.retainedEvents());
+            } else {
+                // Nothing prunable now; suppress until the log grows beyond its current size.
+                suppressCompactionUntilBytes = writeAheadLog.retainedLogBytes();
             }
         } catch (IOException e) {
             log.error("Auto-compaction failed for node {}", nodeId, e);

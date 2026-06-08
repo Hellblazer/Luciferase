@@ -514,10 +514,22 @@ public class WriteAheadLog implements AutoCloseable {
             return new CompactionStats(0, 0, 0, 0, false);
         }
 
-        // Pass 1: determine which entities have a COMPLETED migration (both DEPARTURE and COMMIT present
-        // across the sealed segments). Only those entities' DEPARTURE/COMMIT events are prunable.
-        var departed = new HashSet<String>();
-        var committed = new HashSet<String>();
+        // Pass 1: per-entity CYCLE accounting. An entity may migrate more than once within the retained
+        // log (DEPARTURE→COMMIT, then DEPARTURE again, ...). We must prune only events of COMPLETED
+        // cycles and NEVER an in-flight (uncommitted) departure — otherwise a re-migration's trailing
+        // DEPARTURE is dropped and recovery reconstructs null instead of MIGRATING_OUT (the RDR-004-class
+        // data loss this RDR closes; substantive-critic RDR-019 P2.4).
+        //
+        // By the Q2 append-order guarantee, an entity's events are DEPARTURE,COMMIT,DEPARTURE,COMMIT,...
+        // optionally ending in a trailing in-flight DEPARTURE. With d departures and c commits in sealed,
+        // the number of completed cycles is min(d, c); the trailing max(0, d - c) departures are in-flight.
+        // So: prune every COMMIT (each closes a cycle whose DEPARTURE is also pruned, or is an orphan whose
+        // DEPARTURE was pruned by an earlier compaction), and prune the FIRST min(d, c) departures (by
+        // order), retaining the trailing in-flight ones. (A COMMIT can never appear in sealed with its
+        // DEPARTURE in the still-active segment: DEPARTURE precedes COMMIT in time, and the seal is a
+        // single point in time.)
+        var departureCounts = new HashMap<String, Integer>();
+        var commitCounts = new HashMap<String, Integer>();
         for (int i = 0; i < sealed.size(); i++) {
             List<Map<String, Object>> events;
             try {
@@ -534,22 +546,32 @@ public class WriteAheadLog implements AutoCloseable {
                     continue;
                 }
                 if ("ENTITY_DEPARTURE".equals(type)) {
-                    departed.add(entityId.toString());
+                    departureCounts.merge(entityId.toString(), 1, Integer::sum);
                 } else if ("MIGRATION_COMMIT".equals(type)) {
-                    committed.add(entityId.toString());
+                    commitCounts.merge(entityId.toString(), 1, Integer::sum);
                 }
             }
         }
-        var completed = new HashSet<String>(departed);
-        completed.retainAll(committed);
 
-        if (completed.isEmpty()) {
-            // Nothing to prune; the seal already happened (harmless empty active segment).
+        long totalCommits = commitCounts.values().stream().mapToLong(Integer::longValue).sum();
+        if (totalCommits == 0) {
+            // No completed cycle anywhere in sealed → nothing prunable (every departure is in-flight).
+            // The seal already happened (harmless empty active segment).
             return new CompactionStats(sealed.size(), 0, countSealed(sealed), 0, false);
         }
 
+        // Per entity, the number of departures (oldest-first) that belong to completed cycles and are
+        // therefore prunable; the remaining trailing departures are in-flight and retained.
+        var prunableDepartures = new HashMap<String, Integer>();
+        for (var e : departureCounts.entrySet()) {
+            prunableDepartures.put(e.getKey(), Math.min(e.getValue(), commitCounts.getOrDefault(e.getKey(), 0)));
+        }
+
         // Pass 2: stream retained events to a temp file (no full in-memory rewrite), preserving order.
+        // Prune every COMMIT, and the first min(d,c) DEPARTUREs per entity (the completed-cycle ones),
+        // retaining trailing in-flight departures and all non-migration events.
         var tempFile = logDirectory.resolve("node-" + nodeId + ".compact.tmp");
+        var departuresPrunedSoFar = new HashMap<String, Integer>();
         long pruned = 0;
         long retained = 0;
         long watermark = 0;
@@ -568,10 +590,21 @@ public class WriteAheadLog implements AutoCloseable {
                 for (var event : events) {
                     var type = (String) event.get("type");
                     var entityId = event.get("entityId");
-                    boolean prunable = entityId != null
-                        && completed.contains(entityId.toString())
-                        && ("ENTITY_DEPARTURE".equals(type) || "MIGRATION_COMMIT".equals(type));
-                    if (prunable) {
+                    boolean prune = false;
+                    if (entityId != null) {
+                        var id = entityId.toString();
+                        if ("MIGRATION_COMMIT".equals(type)) {
+                            prune = true;
+                        } else if ("ENTITY_DEPARTURE".equals(type)) {
+                            int budget = prunableDepartures.getOrDefault(id, 0);
+                            int done = departuresPrunedSoFar.getOrDefault(id, 0);
+                            if (done < budget) {
+                                prune = true;
+                                departuresPrunedSoFar.put(id, done + 1);
+                            }
+                        }
+                    }
+                    if (prune) {
                         pruned++;
                         var seqRaw = event.get("sequence");
                         if (seqRaw instanceof Number n) {

@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * RDR-019 Phase 2 P2.2 — failing-first concurrency regression for compaction (gate S2).
@@ -84,5 +85,9 @@ class WalCompactionConcurrencyTest {
         assertEquals(EntityMigrationState.MIGRATING_OUT, fsm.getState(inFlight.toString()),
                 "an in-flight ENTITY_DEPARTURE in the active segment must survive compaction — compaction "
                 + "must seal-then-compact only sealed segments older than the watermark, never the live tail");
+        // Non-vacuous: prove compaction actually pruned the completed pair (otherwise a no-op compact()
+        // would also pass the assertion above via full replay).
+        assertNull(fsm.getState(older.toString()),
+                "the completed DEPARTURE+COMMIT pair must be pruned — older entity must reconstruct as null");
     }
 }

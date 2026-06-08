@@ -153,12 +153,22 @@ Two layers:
 
 ### Technical Design
 
-- `EventRecovery.recover`: a checkpoint bounds replay only if backed by truncation (clean shutdown) or
-  compaction metadata; otherwise full replay. Interface unchanged externally
-  (`recover() → RecoveredState`).
-- Compaction (primary): rewrite the retained log dropping completed migration pairs (the whole
-  `DEPARTURE`+`COMMIT` pair, never a partial pair — Q2 order constraint), advancing a compaction watermark.
-  Runs on a bounded trigger (size/age) and on `closeClean`. Crash-safe via write-new-then-rename.
+- `EventRecovery.recover`: **always full replay** of the retained log; the interface is unchanged
+  (`recover() → RecoveredState`). **As-built note (P2.3):** Phase 2 chose **physical compaction + full
+  replay** over watermark-filtered (logical-bounded) replay. Pruned events are physically removed from
+  disk, so full replay is *already* bounded — without re-introducing any logical replay filter, which is
+  the exact RDR-019 data-loss class. The compaction watermark is recorded in `*.compaction.meta` for
+  **diagnostics/versioning only** and must never gate replay without a full RDR-019-class audit. (This
+  supersedes the earlier "checkpoint bounds replay if backed by compaction metadata" sketch.)
+- Compaction (primary): rewrite the retained log dropping completed migration cycles **per entity** (the
+  whole `DEPARTURE`+`COMMIT` pair, never a partial pair, and **never a trailing in-flight departure of a
+  re-migrating entity** — cycle-aware: prune the first `min(departures, commits)` departures per entity and
+  every commit, retain trailing in-flight departures — Q2 order constraint), advancing a compaction
+  watermark. Runs on a bounded size trigger (`maybeCompact`, default 16 MB, with a churn guard so a
+  non-prunable log does not re-seal every tick); `closeClean`'s checkpoint+truncate remains the
+  clean-shutdown compaction. Crash-safe via write-new-then-rename. **Gate S1 (`gg28h`):** completed pairs
+  are pruned regardless of recency (accepted gap, decision B — benign: entity owned at target, ghost
+  adjacency re-derivable); the seal boundary buffers the most-recent events.
   **Concurrent-write safety (gate S2):** the batch-flush scheduler keeps writing the *active* segment during
   compaction, so compaction MUST NOT cover the active segment — otherwise a concurrently-written in-flight
   `ENTITY_DEPARTURE` would be lost under the rename (the exact RDR-004 class this RDR closes). Design:

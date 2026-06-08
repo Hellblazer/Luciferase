@@ -113,4 +113,40 @@ class WalCompactionRecoveryTest {
                 + ") must shrink below pre-compaction (" + bytesBeforeCompaction
                 + ") by pruning the committed DEPARTURE+COMMIT pair");
     }
+
+    /**
+     * Re-migration across compaction (RDR-019 P2.4 substantive-critic CRITICAL): an entity with a
+     * completed cycle 1 (DEPARTURE+COMMIT) AND an in-flight cycle 2 (DEPARTURE only), all in sealed
+     * segments at compaction time, must reconstruct as MIGRATING_OUT — compaction must prune ONLY
+     * cycle 1 and retain the cycle-2 in-flight departure. A cycle-blind prune (drop all DEPARTURE/COMMIT
+     * for any entity with a completed pair) would drop cycle 2 and reconstruct null — the RDR-004-class
+     * silent data loss this RDR closes.
+     */
+    @Test
+    void reMigrationAcrossCompactionRetainsInFlightCycle2(@TempDir Path logDir) throws IOException {
+        var nodeId = UUID.randomUUID();
+        var entity = UUID.randomUUID();
+        var src = UUID.randomUUID();
+        var tgt = UUID.randomUUID();
+        var clock = new TestClock(1_000L);
+
+        try (var mgr = new PersistenceManager(nodeId, logDir, RecoveryStateSink.NOOP)) {
+            mgr.setClock(clock);
+            mgr.logEntityDeparture(entity, src, tgt);   // cycle 1 begins
+            mgr.logMigrationCommit(entity);             // cycle 1 completes
+            mgr.logEntityDeparture(entity, src, tgt);   // cycle 2 begins, in-flight
+            mgr.compact();                              // must prune cycle 1 only, retain cycle 2
+            // crash
+        }
+
+        var fsm = freshFsm();
+        try (var mgr = new PersistenceManager(nodeId, logDir, new MigrationRecoveryStateSink(fsm))) {
+            mgr.setClock(clock);
+            mgr.recover();
+        }
+
+        assertEquals(EntityMigrationState.MIGRATING_OUT, fsm.getState(entity.toString()),
+                "the in-flight cycle-2 departure must survive compaction — cycle-blind pruning would "
+                + "drop it and reconstruct null (RDR-004-class data loss)");
+    }
 }

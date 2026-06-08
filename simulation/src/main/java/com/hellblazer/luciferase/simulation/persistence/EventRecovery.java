@@ -290,9 +290,11 @@ public class EventRecovery {
      *       only for <em>bounded</em> (post-checkpoint) replay. The Phase 1 full-replay path
      *       deliberately replays from seq 1 past any checkpoint (correct, since the checkpoint
      *       has no durable snapshot behind it), so {@code recover()} validates with a synthetic
-     *       zero checkpoint to enforce monotonicity ONLY. A future Phase 2 compaction-backed
-     *       bounded replay would re-enable this check against the compaction watermark (not the
-     *       bare checkpoint sequence). This branch remains exercised by direct unit tests.</li>
+     *       zero checkpoint to enforce monotonicity ONLY. <b>RDR-019 Phase 2 chose physical
+     *       compaction + full replay</b> (pruned events are removed from disk, bounding replay) rather
+     *       than watermark-filtered replay, so this overlap branch is NOT used by {@code recover()}; the
+     *       compaction watermark metadata is diagnostics/versioning only and must never gate replay
+     *       without a full RDR-019-class audit. This branch remains exercised by direct unit tests.</li>
      * </ul>
      *
      * @param state the recovered state to validate (must not be null)
