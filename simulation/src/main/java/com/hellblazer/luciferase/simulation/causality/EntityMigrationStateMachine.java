@@ -690,6 +690,17 @@ public class EntityMigrationStateMachine {
                                                                  // the entity that never committed at
                                                                  // the target (MigrationCoordinator
                                                                  // compensation path).
+            // RDR-019 gate S1 (Luciferase-ybipo) — ACCEPTED GAP, decision B: there is deliberately NO
+            // null->GHOST transition. The DEPARTED->GHOST forward path requires the entity to be tracked
+            // as DEPARTED; transition() short-circuits to notFound for an untracked (null) entity, by the
+            // single-owner invariant (this node must not transition an entity it does not track). After
+            // Phase 2 compaction prunes a committed DEPARTURE+COMMIT pair, getState(id)==null on restart,
+            // so a post-restart DEPARTED->GHOST for that entity is not reconstructible via the FSM. This is
+            // benign: the entity is owned at the TARGET (no ownership violation) — only source-side ghost
+            // adjacency tracking is lost, and that is re-derivable by the neighbor layer, not load-bearing
+            // on FSM bookkeeping. CONSTRAINT for P2.3 compaction: the prune watermark MUST be conservative
+            // enough that recently-departed, still-adjacent entities (which may still ghost) are not pruned.
+            // Tracked follow-up: Luciferase-gg28h.
 
             case GHOST ->
                 newState == EntityMigrationState.MIGRATING_IN;   // Start incoming migration

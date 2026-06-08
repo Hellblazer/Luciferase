@@ -365,3 +365,17 @@ Right-sized: a CRITICAL data-loss correctness fix (Phase 1) plus a bounded-WAL d
   - **O1** — Phase 1 "checkpoint only via truncation" is structural (no metadata flag); documented.
   - **O2** — MVV split into distinct Phase 1 and Phase 2 proofs.
   - **O3** — `DEFERRED_UPDATE` entity-position recovery explicitly out of scope.
+- 2026-06-07: **Phase 1 implemented and merged** (PR #214). `qfqlx` (RED regression), `punhr` (remove
+  periodic checkpoint as replay bound, `checkpoint()` sources `WriteAheadLog.getSequence()`, full-replay
+  recovery — gate O1), `z6dzr` (stacked review, 0 Critical; also fixed a pre-existing re-migration dedup
+  bug). Closes the `MIGRATING_OUT`/`DEPARTED` reconstruction loss (`n6jrh.3`).
+- 2026-06-07: **Gate S1 resolved (Phase 2 P2.1 / `ybipo`) — decision B (accepted gap + tracked bead).**
+  No `null→GHOST` FSM transition is added: `transition()` short-circuits to `notFound` for an untracked
+  (null) entity by the single-owner invariant, so adding `null→GHOST` to `isValidTransition` would be inert
+  unless that invariant were weakened — which would let any `GHOST` notification for an unknown entity
+  silently create a ghost. The gap is benign: after compaction prunes a committed pair, the entity is owned
+  at the **target** (no ownership violation); only source-side ghost *adjacency* tracking is lost, and that
+  is re-derivable by the neighbor layer, not load-bearing on FSM `DEPARTED` bookkeeping. Documented at
+  `EntityMigrationStateMachine.isValidTransition` (DEPARTED case); tracked as **`Luciferase-gg28h`**.
+  **Constraint imposed on P2.3 (`0ejd2`) compaction:** the prune watermark must be conservative enough that
+  recently-departed, still-adjacent entities are not pruned.
