@@ -91,10 +91,16 @@ class NodeBootstrapDurabilityRoundTripTest {
             // written (the half the RDR-016 R2 bracket protects). Recovery must reconstruct MIGRATING_OUT.
             pmAdapter1.getPersistenceManager()
                       .logEntityDeparture(inFlightEntity, UUID.randomUUID(), UUID.randomUUID());
+
+            // Simulate a CRASH, not a clean shutdown: crash-safe close() flushes and retains the full WAL
+            // for recovery. A clean lifecycle stop (doStop → closeClean) would checkpoint + truncate the
+            // WAL (RDR-017 P3 gate O1 compaction) — correct production behavior, but then there would be
+            // nothing to recover. The WAL exists for crash recovery, which is what this round-trip exercises.
+            pmAdapter1.getPersistenceManager().close();
         } finally {
             target.close();        // releases the target Bubble's retry-scheduler daemon thread
             migrator.shutdown();    // releases the migration executor pool
-            mgr1.close();           // stops the PM adapter → flushes + closes the WAL durably
+            mgr1.close();           // doStop → closeClean is a no-op (PM already closed); stops the SCM
         }
 
         // ───────── WAL-identity pinning (gate C1): the reopened node derives the SAME dir ─────────

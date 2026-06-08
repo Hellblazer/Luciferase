@@ -211,6 +211,15 @@ public class EventRecovery {
                     case "VIEW_SYNC_ACK" -> replayViewSynchronyAck(event);
                     case "DEFERRED_UPDATE" -> replayDeferredUpdate(event);
                     case "MIGRATION_COMMIT" -> replayMigrationCommit(event);
+                    // RDR-017 P3 (§Approach.5a): the four consensus event types are WRITTEN by
+                    // PersistenceManager but no FSM consumes them on recovery — consensus-event RECOVERY
+                    // is explicitly out of scope (not a data-loss risk; no state depends on it). These
+                    // are recognized as deliberate no-ops so a WAL containing them does not emit a
+                    // spurious "Unknown event type" WARN on every restart. Productionizing a consensus
+                    // recovery sink would replace these no-ops.
+                    case "ELECTION_START", "VOTE_CAST", "LEADER_ELECTED", "TERM_INCREMENT" -> {
+                        // no-op: consensus event recovery deliberately not implemented (RDR-017 §5a)
+                    }
                     default -> log.warn("Unknown event type: {}", type);
                 }
             } catch (Exception e) {

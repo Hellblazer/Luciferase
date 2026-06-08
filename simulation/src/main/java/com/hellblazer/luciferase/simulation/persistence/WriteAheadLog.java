@@ -342,10 +342,71 @@ public class WriteAheadLog implements AutoCloseable {
             log.warn("Failed to scan existing log for sequence restoration on node {}; starting at 0", nodeId, e);
             return;
         }
+        // RDR-017 P3 (gate O1): a clean shutdown checkpoints then truncates the log files, so after a
+        // clean restart the logs are empty but the checkpoint .meta still records the high-water
+        // sequence. Seed from max(log max, checkpoint seq) so newly-appended events continue PAST the
+        // checkpoint rather than restarting at 1 and colliding below it (which readEventsSince would
+        // then silently filter out on the next recovery).
+        maxSequence = Math.max(maxSequence, readCheckpointSequence());
         sequenceCounter.set(maxSequence);
         if (maxSequence > 0) {
             log.debug("Restored WAL sequence counter to {} for node {}", maxSequence, nodeId);
         }
+    }
+
+    /**
+     * Read the checkpoint sequence number from the metadata file, or 0 if none exists / unreadable.
+     */
+    private long readCheckpointSequence() {
+        if (!Files.exists(metadataFile)) {
+            return 0L;
+        }
+        try {
+            var json = Files.readString(metadataFile);
+            var meta = MAPPER.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            var seq = meta.get("sequenceNumber");
+            return seq instanceof Number n ? n.longValue() : 0L;
+        } catch (IOException e) {
+            log.warn("Failed to read checkpoint metadata for node {}; sequence seed from log only", nodeId, e);
+            return 0L;
+        }
+    }
+
+    /**
+     * Truncate the write-ahead log: delete all log segment files and start an empty base log, retaining
+     * the checkpoint metadata. RDR-017 P3 (gate O1) clean-shutdown compaction — after a checkpoint at
+     * the head sequence, the entire log is superseded (recovery replays only post-checkpoint events, of
+     * which there are none), so the segments are safe to discard to reclaim space. The high-water
+     * sequence survives in the checkpoint metadata (see {@link #readCheckpointSequence()}), so a later
+     * restart continues the monotonic sequence rather than colliding below the checkpoint.
+     *
+     * @throws IOException if segment deletion or base-log recreation fails
+     */
+    public synchronized void truncate() throws IOException {
+        checkNotClosed();
+
+        if (writer != null) {
+            writer.flush();
+            writer.close();
+            writer = null;
+        }
+        if (fileChannel != null) {
+            fileChannel.close();
+            fileChannel = null;
+        }
+
+        for (var logFile : findLogFiles()) {
+            Files.deleteIfExists(logFile);
+        }
+
+        rotationCount = 0;
+        currentLogFile = logDirectory.resolve("node-" + nodeId + ".log");
+        var fos = new FileOutputStream(currentLogFile.toFile(), true);
+        this.fileChannel = fos.getChannel();
+        this.writer = new BufferedWriter(new OutputStreamWriter(fos, java.nio.charset.StandardCharsets.UTF_8));
+        currentSize.set(0);
+
+        log.info("WriteAheadLog truncated for node {} (clean-shutdown compaction)", nodeId);
     }
 
     private List<Path> findLogFiles() throws IOException {

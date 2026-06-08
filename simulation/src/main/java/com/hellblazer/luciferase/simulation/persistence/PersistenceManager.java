@@ -390,7 +390,32 @@ public class PersistenceManager implements AutoCloseable {
     }
 
     /**
-     * Close persistence manager and release resources.
+     * Clean-shutdown close (RDR-017 P3, gate O1): checkpoint at the current sequence, truncate the WAL
+     * segments (compaction — recovery replays only post-checkpoint events, of which a head checkpoint
+     * leaves none), then close.
+     * <p>
+     * <b>Retention semantics.</b> A clean shutdown leaves a pristine WAL: the next start recovers nothing
+     * (a cleanly-stopped node has no in-flight migrations — the caller is expected to have drained the
+     * migrator first, RDR-017 P2). This is distinct from {@link #close()} (the crash-safe path), which
+     * flushes and closes WITHOUT checkpoint/truncate so a crash retains the full WAL tail for recovery.
+     * Use this from the lifecycle stop path; use {@link #close()} on abort/error paths.
+     * <p>
+     * Idempotent: a no-op if the manager is already closed.
+     *
+     * @throws IOException if checkpoint, truncate, or close fails
+     */
+    public void closeClean() throws IOException {
+        if (closed.get()) {
+            return;
+        }
+        checkpoint();
+        writeAheadLog.truncate();
+        close();
+    }
+
+    /**
+     * Crash-safe close: flush and close WITHOUT checkpoint/truncate, so a crash retains the full WAL for
+     * recovery. For clean lifecycle shutdown use {@link #closeClean()} (checkpoint + truncate compaction).
      *
      * @throws IOException if close fails
      */
