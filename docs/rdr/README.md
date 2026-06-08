@@ -27,7 +27,7 @@ See the [RDR process documentation](https://github.com/cwensel/rdr) for the full
 | [RDR-014](RDR-014-cross-level-tet-edge-vertex-neighbors.md) | Cross-Level Tetrahedral Edge/Vertex Neighbor Traversal for TetreeNeighborFinder | accepted | Correctness | medium |
 | [RDR-015](RDR-015-simulation-bubble-grid-coordinate-space.md) | Reconcile Simulation Bubble-Grid Coordinate Space — Revive the Dead Migration Path | accepted | Architecture | medium |
 | [RDR-016](RDR-016-persistence-productionization.md) | Productionize WAL Persistence and Recovery in the Simulation Node Lifecycle | closed | Architecture | medium |
-| [RDR-017](RDR-017-production-node-bootstrap.md) | Production Node Bootstrap — Compose the Distributed Simulation Node (Lifecycle, WAL, Recovery, Migration) | accepted | Architecture | medium |
+| [RDR-017](RDR-017-production-node-bootstrap.md) | Production Node Bootstrap — Compose the Distributed Simulation Node (Lifecycle, WAL, Recovery, Migration) | implemented | Architecture | medium |
 | [RDR-018](RDR-018-dynamic-topology-vs-single-level-partition.md) | Dynamic Topology (Split/Merge) vs the RDR-015 Single-Level Migration Partition | implemented | Architecture | medium |
 
 ## Post-Mortems
@@ -43,4 +43,5 @@ Closed/implemented RDRs carry a post-mortem under [`post-mortem/`](post-mortem/)
 | RDR-007 | [post-mortem/007-extract-lucien-distributed-module.md](post-mortem/007-extract-lucien-distributed-module.md) |
 | RDR-008 | [post-mortem/008-decompose-abstractspatialindex.md](post-mortem/008-decompose-abstractspatialindex.md) |
 | RDR-009 | [post-mortem/009-prism-full-cube-coverage.md](post-mortem/009-prism-full-cube-coverage.md) |
+| RDR-017 | [post-mortem/017-production-node-bootstrap.md](post-mortem/017-production-node-bootstrap.md) |
 | RDR-018 | [post-mortem/018-dynamic-topology-vs-single-level-partition.md](post-mortem/018-dynamic-topology-vs-single-level-partition.md) |
