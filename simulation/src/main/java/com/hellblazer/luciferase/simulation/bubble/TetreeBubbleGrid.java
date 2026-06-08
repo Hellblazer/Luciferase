@@ -52,6 +52,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TetreeBubbleGrid {
 
     private final Map<TetreeKey<?>, EnhancedBubble> bubblesByKey;
+    /** O(1) inverse index: bubble UUID → the TetreeKey it is registered under. Maintained in lock-step with bubblesByKey. */
+    private final Map<UUID, TetreeKey<?>> keyByBubbleId = new ConcurrentHashMap<>();
     private final Tetree<StringEntityID, BubbleLocation> spatialIndex;
     private final TetreeNeighborFinder neighborFinder;
     private final byte maxLevel;
@@ -132,6 +134,7 @@ public class TetreeBubbleGrid {
 
         // Clear existing bubbles. Legacy mixed-level distribution is NOT a single-level partition.
         bubblesByKey.clear();
+        keyByBubbleId.clear();
         partitionLevel = -1;
         maxLeafLevel.set(-1);
 
@@ -190,6 +193,7 @@ public class TetreeBubbleGrid {
 
                 // Register in maps
                 bubblesByKey.put(key, bubble);
+                keyByBubbleId.put(bubble.id(), key);
 
                 // Add to spatial index
                 var coords = tet.coordinates();
@@ -304,6 +308,7 @@ public class TetreeBubbleGrid {
 
         // Materialize the partition.
         bubblesByKey.clear();
+        keyByBubbleId.clear();
         neighborFinder.clearCache();
         for (var entry : partition.entrySet()) {
             var bubble = new EnhancedBubble(UUID.randomUUID(), level, targetFrameMs);
@@ -605,9 +610,9 @@ public class TetreeBubbleGrid {
     /**
      * Get a bubble by its UUID identifier.
      * <p>
-     * Searches through all bubbles to find one with matching UUID.
-     * This is less efficient than getBubble(TetreeKey) but useful
-     * for scenarios where only the UUID is known.
+     * O(1) lookup via the inverse UUID→TetreeKey index. Equivalent to
+     * {@code getBubble(getKeyForBubble(bubbleId))} but returns {@code null} when the id is absent
+     * rather than throwing, for callers that treat absence as a normal case.
      *
      * @param bubbleId UUID to search for
      * @return EnhancedBubble with matching ID, or null if not found
@@ -616,12 +621,8 @@ public class TetreeBubbleGrid {
     public EnhancedBubble getBubbleById(UUID bubbleId) {
         Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
 
-        for (var bubble : bubblesByKey.values()) {
-            if (bubble.id().equals(bubbleId)) {
-                return bubble;
-            }
-        }
-        return null;
+        var key = keyByBubbleId.get(bubbleId);
+        return key != null ? bubblesByKey.get(key) : null;
     }
 
     /**
@@ -640,20 +641,15 @@ public class TetreeBubbleGrid {
      */
     public TetreeKey<?> getKeyForBubble(UUID bubbleId) {
         Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
-
-        for (var entry : bubblesByKey.entrySet()) {
-            if (entry.getValue().id().equals(bubbleId)) {
-                return entry.getKey();
-            }
-        }
-        return null;
+        return keyByBubbleId.get(bubbleId);
     }
 
     /**
      * Get topological neighbors of a bubble by its UUID.
      * <p>
-     * Convenience method that first looks up the bubble by UUID,
-     * then returns its neighbors. Returns bubble UUIDs for consistency.
+     * O(1) UUID→key resolution via the inverse index, then delegates to
+     * {@link #getNeighbors(TetreeKey)}. Returns the neighbor UUIDs for consistency with callers
+     * that only hold a UUID (e.g. MergeProposal.validate).
      *
      * @param bubbleId UUID of bubble to find neighbors for
      * @return Set of neighboring bubble UUIDs
@@ -663,15 +659,7 @@ public class TetreeBubbleGrid {
     public Set<UUID> getNeighbors(UUID bubbleId) {
         Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
 
-        // Find the bubble and its key
-        TetreeKey<?> key = null;
-        for (var entry : bubblesByKey.entrySet()) {
-            if (entry.getValue().id().equals(bubbleId)) {
-                key = entry.getKey();
-                break;
-            }
-        }
-
+        var key = keyByBubbleId.get(bubbleId);
         if (key == null) {
             throw new NoSuchElementException("No bubble found with ID: " + bubbleId);
         }
@@ -821,6 +809,17 @@ public class TetreeBubbleGrid {
             throw new IllegalArgumentException("Bubble already exists at key: " + key);
         }
 
+        // Guard against re-keying an existing bubble id without a prior removeBubble(): if the same
+        // bubble id is already registered under a DIFFERENT key, the two maps would diverge — the old
+        // bubblesByKey entry would become an orphan (forward key → old bubble still present, inverse
+        // id → new key). Callers that need to move a bubble must removeBubble(id) first, then addBubble.
+        var existingKey = keyByBubbleId.get(bubble.id());
+        if (existingKey != null && !existingKey.equals(key)) {
+            throw new IllegalArgumentException(
+                "Bubble id " + bubble.id() + " is already registered under key " + existingKey
+                + ". Call removeBubble(id) before re-adding under a different key.");
+        }
+
         // Record the fixed registration cell on the bubble so migration containment can test against it.
         bubble.setSpatialKey(key);
 
@@ -830,8 +829,9 @@ public class TetreeBubbleGrid {
         int keyLevel = key.getLevel();
         maxLeafLevel.getAndUpdate(cur -> Math.max(cur, keyLevel));
 
-        // Add to key map
+        // Add to key map (forward and inverse)
         bubblesByKey.put(key, bubble);
+        keyByBubbleId.put(bubble.id(), key);
 
         // Add to spatial index
         var tet = key.toTet();
@@ -867,20 +867,14 @@ public class TetreeBubbleGrid {
     public boolean removeBubble(UUID bubbleId) {
         Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
 
-        // Find the bubble by ID
-        TetreeKey<?> keyToRemove = null;
-        for (var entry : bubblesByKey.entrySet()) {
-            if (entry.getValue().id().equals(bubbleId)) {
-                keyToRemove = entry.getKey();
-                break;
-            }
-        }
+        // O(1) lookup via inverse index — avoids the previous O(N) entrySet scan.
+        var keyToRemove = keyByBubbleId.remove(bubbleId);
 
         if (keyToRemove == null) {
             return false;
         }
 
-        // Remove from key map
+        // Remove from forward key map
         bubblesByKey.remove(keyToRemove);
 
         // Note: Tetree spatial index does not support remove() operation.
@@ -898,8 +892,22 @@ public class TetreeBubbleGrid {
      */
     public void clear() {
         bubblesByKey.clear();
+        keyByBubbleId.clear();
         neighborFinder.clearCache();
         partitionLevel = -1;
         maxLeafLevel.set(-1);
+    }
+
+    /**
+     * Package-private test accessor: the current size of the inverse UUID→TetreeKey index.
+     * <p>
+     * Must equal {@link #getBubbleCount()} at all times. Exposed only for the
+     * {@code TetreeBubbleGridInverseIndexTest} size-parity assertion (OBS-2 hardening).
+     * Production code must not call this method.
+     *
+     * @return the number of entries in the inverse index
+     */
+    int inverseIndexSize() {
+        return keyByBubbleId.size();
     }
 }
