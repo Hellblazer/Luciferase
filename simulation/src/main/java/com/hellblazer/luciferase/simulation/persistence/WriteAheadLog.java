@@ -176,6 +176,22 @@ public class WriteAheadLog implements AutoCloseable {
     }
 
     /**
+     * The current global event sequence (high-water mark).
+     * <p>
+     * This is the authoritative sequence counter, restored from the persisted log (and checkpoint
+     * metadata) on construction via {@link #restoreSequenceCounter()} so it remains monotonic across
+     * process restarts. RDR-019 Gap 4: {@link PersistenceManager#checkpoint()} must source the
+     * checkpoint sequence from this value, NOT from a session-local counter that resets to 0 on each
+     * restart (a reset counter checkpoints below the true high-water, silently bounding recovery
+     * replay and dropping durably-logged events).
+     *
+     * @return the highest sequence number assigned so far (0 if no events have ever been appended)
+     */
+    public long getSequence() {
+        return sequenceCounter.get();
+    }
+
+    /**
      * Mark recovery checkpoint in metadata file.
      *
      * @param sequenceNumber Sequence number for checkpoint
@@ -374,11 +390,13 @@ public class WriteAheadLog implements AutoCloseable {
 
     /**
      * Truncate the write-ahead log: delete all log segment files and start an empty base log, retaining
-     * the checkpoint metadata. RDR-017 P3 (gate O1) clean-shutdown compaction — after a checkpoint at
-     * the head sequence, the entire log is superseded (recovery replays only post-checkpoint events, of
-     * which there are none), so the segments are safe to discard to reclaim space. The high-water
-     * sequence survives in the checkpoint metadata (see {@link #readCheckpointSequence()}), so a later
-     * restart continues the monotonic sequence rather than colliding below the checkpoint.
+     * the checkpoint metadata. RDR-017 P3 (gate O1) clean-shutdown compaction — called by
+     * {@code PersistenceManager.closeClean()} after a head-sequence checkpoint. Under RDR-019 full-replay
+     * semantics, recovery replays the ENTIRE retained log (it does not skip pre-checkpoint events);
+     * discarding the segments here is safe because it leaves the log <em>empty</em>, so the next start's
+     * full replay reads zero events — not because recovery would skip them. The high-water sequence
+     * survives in the checkpoint metadata (see {@link #readCheckpointSequence()}), so a later restart
+     * continues the monotonic sequence rather than restarting at 1 and colliding below the checkpoint.
      *
      * @throws IOException if segment deletion or base-log recreation fails
      */

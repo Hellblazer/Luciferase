@@ -33,12 +33,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * Checkpoint-filtering regression for {@link EventRecovery} (Luciferase-0frcy.37).
+ * Recovery-replay contract for {@link EventRecovery}.
  *
- * <p>Pre-fix, recover() loaded the checkpoint (and its sequenceNumber) but then called
- * {@code wal.readAllEvents()} unconditionally — replaying the full event history regardless of the
- * checkpoint, making the checkpoint a no-op for recovery. This test writes events, checkpoints, then
- * writes more, and asserts recovery replays only the post-checkpoint events.
+ * <p><b>RDR-019 (Luciferase-punhr) reverses the Luciferase-0frcy.37 checkpoint-bounded replay.</b>
+ * 0frcy.37 made recovery replay only events AFTER the last checkpoint, to avoid re-replaying long
+ * history. But with no durable snapshot behind the checkpoint, that bound silently dropped
+ * durably-logged in-flight migrations (driving bug Luciferase-n6jrh.3). RDR-019 removes the periodic
+ * checkpoint (the only checkpoint is {@code closeClean()}'s, always truncation-backed) and makes
+ * recovery FULL-replay the retained log. So a checkpoint that is NOT truncation-backed (an event
+ * still present in the log) no longer bounds replay — those events are replayed.
  *
  * @author hal.hildebrand
  */
@@ -54,7 +57,10 @@ class EventRecoveryCheckpointTest {
     }
 
     @Test
-    void recoveryReplaysOnlyEventsAfterTheCheckpoint(@TempDir Path logDir) throws IOException {
+    void recoveryFullReplaysWhenCheckpointIsNotTruncationBacked(@TempDir Path logDir) throws IOException {
+        // RDR-019: a checkpoint that is NOT followed by truncate() leaves all events in the log.
+        // Recovery now FULL-replays them (the checkpoint does not bound replay) — pre-RDR-019 this
+        // dropped the 10 pre-checkpoint events, which is the silent data loss RDR-019 fixes.
         var nodeId = UUID.randomUUID();
 
         try (var wal = new WriteAheadLog(nodeId, logDir)) {
@@ -62,7 +68,7 @@ class EventRecoveryCheckpointTest {
             for (int i = 0; i < 10; i++) {
                 wal.append(departureEvent("pre-" + i));
             }
-            // Checkpoint at sequence 10.
+            // Checkpoint at sequence 10, but DO NOT truncate — events remain durably on disk.
             wal.checkpoint(10, Instant.now());
             // 5 post-checkpoint events (sequences 11..15).
             for (int i = 0; i < 5; i++) {
@@ -74,11 +80,14 @@ class EventRecoveryCheckpointTest {
         var state = recovery.recover(nodeId);
 
         assertThat(state.events())
-            .as("Recovery must replay only the 5 events AFTER the checkpoint at seq=10, "
-                + "not all 15 — pre-fix readAllEvents() replayed the full history")
-            .hasSize(5);
+            .as("RDR-019: recovery FULL-replays all 15 durably-logged events — a non-truncation-backed "
+                + "checkpoint no longer bounds replay (pre-RDR-019 only the 5 post-checkpoint events "
+                + "replayed, silently dropping the 10 pre-checkpoint in-flight migrations)")
+            .hasSize(15);
         assertThat(state.events())
-            .allSatisfy(e -> assertThat((String) e.get("entityId")).startsWith("post-"));
+            .as("Both pre- and post-checkpoint events must be present")
+            .anySatisfy(e -> assertThat((String) e.get("entityId")).startsWith("pre-"))
+            .anySatisfy(e -> assertThat((String) e.get("entityId")).startsWith("post-"));
     }
 
     @Test
