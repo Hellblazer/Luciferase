@@ -2,13 +2,16 @@
 title: "WAL Checkpoint/Recovery Durability — Bound Replay Safely (Snapshot or Compaction)"
 id: RDR-019
 type: Bug Fix
-status: accepted
+status: closed
 priority: high
 author: self
 reviewed-by: self
 created: 2026-06-07
 accepted_date: 2026-06-07
+closed_date: 2026-06-08
+close_reason: implemented
 related_issues: [Luciferase-n6jrh.3, Luciferase-n6jrh]
+post_mortem: docs/rdr/post-mortem/019-wal-checkpoint-recovery-durability.md
 ---
 
 # RDR-019: WAL Checkpoint/Recovery Durability — Bound Replay Safely (Snapshot or Compaction)
