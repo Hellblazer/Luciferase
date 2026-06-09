@@ -170,8 +170,15 @@ public class CommitteeVotingProtocol {
         // proposal times out (then retries in the next view). This is the conservative choice: it
         // preserves a genuine majority-of-the-original-committee requirement (safety) at the cost of
         // liveness under heavy churn, rather than shrinking the committee toward the unsafe
-        // committeeQuorum(2)==1 floor. Resizing the committee to the active set under churn is tracked
-        // as a follow-up (Luciferase-0frcy.134).
+        // committeeQuorum(2)==1 floor.
+        //
+        // 0frcy.134 (decided): active-only committee SELECTION (bftSubset(viewDiadem, isActive)) was
+        // investigated as the alternative and REJECTED — context.isActive is failure-detector state
+        // set by per-node round timers (View.gc → context.offline), not synchronized at the view
+        // boundary, so two nodes could select different committees (split-brain quorum) and the
+        // committee could shrink below the BFT-safe size. Deterministic full-ring selection + this
+        // vote-receipt drop is the correct design; the liveness-under-churn stall is the safe failure
+        // mode (stall-and-retry, never decide under-quorum).
         if (!context.isActive(vote.voterId())) {
             // Vote from an inactive (evicted-but-not-GC'd) committee member (ignore)
             return;
