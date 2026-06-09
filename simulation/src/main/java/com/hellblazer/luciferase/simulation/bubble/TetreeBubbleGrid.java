@@ -26,6 +26,7 @@ import com.hellblazer.luciferase.simulation.entity.StringEntityIDGenerator;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Organizes bubbles in a Tetree structure (replaces BubbleGrid).
@@ -54,6 +55,20 @@ public class TetreeBubbleGrid {
     private final Map<TetreeKey<?>, EnhancedBubble> bubblesByKey;
     /** O(1) inverse index: bubble UUID → the TetreeKey it is registered under. Maintained in lock-step with bubblesByKey. */
     private final Map<UUID, TetreeKey<?>> keyByBubbleId = new ConcurrentHashMap<>();
+
+    /**
+     * Guards the paired {@code bubblesByKey} / {@code keyByBubbleId} mutations so the two maps are
+     * updated atomically with respect to the UUID-keyed cross-map readers (Luciferase-0frcy.133).
+     * <p>
+     * Both maps are individually concurrent, but a reader resolving {@code bubbleId → key → bubble}
+     * could observe a half-applied add/remove (key present, bubble absent, or vice versa) in the
+     * window between the two map writes — surfacing as a spurious {@code null}/fail-loud on the
+     * ownership path. Writers take the write lock around <em>only</em> the paired map mutation (never
+     * across the spatial-index I/O); the UUID-keyed readers take the read lock so they always observe
+     * a committed both-maps state. Key-keyed readers ({@code getBubble(TetreeKey)}, neighbor scans)
+     * are unaffected and remain lock-free.
+     */
+    private final ReentrantReadWriteLock indexLock = new ReentrantReadWriteLock();
     private final Tetree<StringEntityID, BubbleLocation> spatialIndex;
     private final TetreeNeighborFinder neighborFinder;
     private final byte maxLevel;
@@ -133,8 +148,13 @@ public class TetreeBubbleGrid {
         }
 
         // Clear existing bubbles. Legacy mixed-level distribution is NOT a single-level partition.
-        bubblesByKey.clear();
-        keyByBubbleId.clear();
+        indexLock.writeLock().lock();
+        try {
+            bubblesByKey.clear();
+            keyByBubbleId.clear();
+        } finally {
+            indexLock.writeLock().unlock();
+        }
         partitionLevel = -1;
         maxLeafLevel.set(-1);
 
@@ -191,9 +211,14 @@ public class TetreeBubbleGrid {
                 // Record the fixed registration cell on the bubble.
                 bubble.setSpatialKey(key);
 
-                // Register in maps
-                bubblesByKey.put(key, bubble);
-                keyByBubbleId.put(bubble.id(), key);
+                // Register in maps — atomic to UUID-keyed readers (Luciferase-0frcy.133).
+                indexLock.writeLock().lock();
+                try {
+                    bubblesByKey.put(key, bubble);
+                    keyByBubbleId.put(bubble.id(), key);
+                } finally {
+                    indexLock.writeLock().unlock();
+                }
 
                 // Add to spatial index
                 var coords = tet.coordinates();
@@ -307,8 +332,13 @@ public class TetreeBubbleGrid {
         }
 
         // Materialize the partition.
-        bubblesByKey.clear();
-        keyByBubbleId.clear();
+        indexLock.writeLock().lock();
+        try {
+            bubblesByKey.clear();
+            keyByBubbleId.clear();
+        } finally {
+            indexLock.writeLock().unlock();
+        }
         neighborFinder.clearCache();
         for (var entry : partition.entrySet()) {
             var bubble = new EnhancedBubble(UUID.randomUUID(), level, targetFrameMs);
@@ -621,8 +651,15 @@ public class TetreeBubbleGrid {
     public EnhancedBubble getBubbleById(UUID bubbleId) {
         Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
 
-        var key = keyByBubbleId.get(bubbleId);
-        return key != null ? bubblesByKey.get(key) : null;
+        // Read lock (Luciferase-0frcy.133): resolve id→key→bubble as an atomic snapshot so a concurrent
+        // add/remove cannot expose a half-applied state (key present but bubble not yet, or vice versa).
+        indexLock.readLock().lock();
+        try {
+            var key = keyByBubbleId.get(bubbleId);
+            return key != null ? bubblesByKey.get(key) : null;
+        } finally {
+            indexLock.readLock().unlock();
+        }
     }
 
     /**
@@ -641,7 +678,14 @@ public class TetreeBubbleGrid {
      */
     public TetreeKey<?> getKeyForBubble(UUID bubbleId) {
         Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
-        return keyByBubbleId.get(bubbleId);
+        // Read lock (Luciferase-0frcy.133): observe a committed both-maps state, so this never returns
+        // a transient null mid-add (the spurious fail-loud the ownership path would otherwise hit).
+        indexLock.readLock().lock();
+        try {
+            return keyByBubbleId.get(bubbleId);
+        } finally {
+            indexLock.readLock().unlock();
+        }
     }
 
     /**
@@ -659,21 +703,27 @@ public class TetreeBubbleGrid {
     public Set<UUID> getNeighbors(UUID bubbleId) {
         Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
 
-        var key = keyByBubbleId.get(bubbleId);
-        if (key == null) {
-            throw new NoSuchElementException("No bubble found with ID: " + bubbleId);
+        // Read lock (Luciferase-0frcy.133) held across the WHOLE id→key→neighbors resolution so a
+        // half-applied add cannot trigger a spurious NoSuchElementException, and the key→neighbor read
+        // sees the same committed snapshot the key was resolved from. The lock is shared (concurrent
+        // getNeighbors(UUID) readers proceed in parallel) and only blocks a writer's brief paired
+        // mutation; getNeighbors(TetreeKey) takes no lock, so there is no nesting/upgrade.
+        indexLock.readLock().lock();
+        try {
+            var key = keyByBubbleId.get(bubbleId);
+            if (key == null) {
+                throw new NoSuchElementException("No bubble found with ID: " + bubbleId);
+            }
+
+            // Convert neighbor bubbles to UUIDs.
+            var neighborIds = new HashSet<UUID>();
+            for (var neighbor : getNeighbors(key)) {
+                neighborIds.add(neighbor.id());
+            }
+            return neighborIds;
+        } finally {
+            indexLock.readLock().unlock();
         }
-
-        // Get neighbors using the key
-        var neighborBubbles = getNeighbors(key);
-
-        // Convert to UUIDs
-        var neighborIds = new HashSet<UUID>();
-        for (var neighbor : neighborBubbles) {
-            neighborIds.add(neighbor.id());
-        }
-
-        return neighborIds;
     }
 
     /**
@@ -805,33 +855,41 @@ public class TetreeBubbleGrid {
         Objects.requireNonNull(bubble, "Bubble cannot be null");
         Objects.requireNonNull(key, "TetreeKey cannot be null");
 
-        if (bubblesByKey.containsKey(key)) {
-            throw new IllegalArgumentException("Bubble already exists at key: " + key);
+        // Atomic check-then-act over BOTH maps (Luciferase-0frcy.133): the duplicate-key guard, the
+        // re-key guard, and the paired put must be a single critical section so concurrent adds cannot
+        // both pass the guard and so no UUID-keyed reader observes a half-applied add.
+        indexLock.writeLock().lock();
+        try {
+            if (bubblesByKey.containsKey(key)) {
+                throw new IllegalArgumentException("Bubble already exists at key: " + key);
+            }
+
+            // Guard against re-keying an existing bubble id without a prior removeBubble(): if the same
+            // bubble id is already registered under a DIFFERENT key, the two maps would diverge — the old
+            // bubblesByKey entry would become an orphan (forward key → old bubble still present, inverse
+            // id → new key). Callers that need to move a bubble must removeBubble(id) first, then addBubble.
+            var existingKey = keyByBubbleId.get(bubble.id());
+            if (existingKey != null && !existingKey.equals(key)) {
+                throw new IllegalArgumentException(
+                    "Bubble id " + bubble.id() + " is already registered under key " + existingKey
+                    + ". Call removeBubble(id) before re-adding under a different key.");
+            }
+
+            // Record the fixed registration cell on the bubble so migration containment can test against it.
+            bubble.setSpatialKey(key);
+
+            // RDR-018 AC-2: raise the deepest-leaf watermark so the up-walk router locates at a level fine
+            // enough to reach this leaf (monotonic-up; a Bey split inserting L+1 children raises it to L+1).
+            // Atomic max so concurrent inserts at different levels cannot clobber a deeper watermark.
+            int keyLevel = key.getLevel();
+            maxLeafLevel.getAndUpdate(cur -> Math.max(cur, keyLevel));
+
+            // Add to key map (forward and inverse) — atomic to readers via the write lock.
+            bubblesByKey.put(key, bubble);
+            keyByBubbleId.put(bubble.id(), key);
+        } finally {
+            indexLock.writeLock().unlock();
         }
-
-        // Guard against re-keying an existing bubble id without a prior removeBubble(): if the same
-        // bubble id is already registered under a DIFFERENT key, the two maps would diverge — the old
-        // bubblesByKey entry would become an orphan (forward key → old bubble still present, inverse
-        // id → new key). Callers that need to move a bubble must removeBubble(id) first, then addBubble.
-        var existingKey = keyByBubbleId.get(bubble.id());
-        if (existingKey != null && !existingKey.equals(key)) {
-            throw new IllegalArgumentException(
-                "Bubble id " + bubble.id() + " is already registered under key " + existingKey
-                + ". Call removeBubble(id) before re-adding under a different key.");
-        }
-
-        // Record the fixed registration cell on the bubble so migration containment can test against it.
-        bubble.setSpatialKey(key);
-
-        // RDR-018 AC-2: raise the deepest-leaf watermark so the up-walk router locates at a level fine
-        // enough to reach this leaf (monotonic-up; a Bey split inserting L+1 children raises it to L+1).
-        // Atomic max so concurrent inserts at different levels cannot clobber a deeper watermark.
-        int keyLevel = key.getLevel();
-        maxLeafLevel.getAndUpdate(cur -> Math.max(cur, keyLevel));
-
-        // Add to key map (forward and inverse)
-        bubblesByKey.put(key, bubble);
-        keyByBubbleId.put(bubble.id(), key);
 
         // Add to spatial index
         var tet = key.toTet();
@@ -867,15 +925,23 @@ public class TetreeBubbleGrid {
     public boolean removeBubble(UUID bubbleId) {
         Objects.requireNonNull(bubbleId, "Bubble ID cannot be null");
 
-        // O(1) lookup via inverse index — avoids the previous O(N) entrySet scan.
-        var keyToRemove = keyByBubbleId.remove(bubbleId);
+        // O(1) lookup via inverse index — avoids the previous O(N) entrySet scan. Remove from BOTH
+        // maps atomically (Luciferase-0frcy.133) so no UUID-keyed reader observes a half-applied
+        // removal (inverse gone, forward still present, or vice versa).
+        final TetreeKey<?> keyToRemove;
+        indexLock.writeLock().lock();
+        try {
+            keyToRemove = keyByBubbleId.remove(bubbleId);
+            if (keyToRemove != null) {
+                bubblesByKey.remove(keyToRemove);
+            }
+        } finally {
+            indexLock.writeLock().unlock();
+        }
 
         if (keyToRemove == null) {
             return false;
         }
-
-        // Remove from forward key map
-        bubblesByKey.remove(keyToRemove);
 
         // Note: Tetree spatial index does not support remove() operation.
         // The stale entry will not affect correctness since we check bubblesByKey
@@ -891,8 +957,13 @@ public class TetreeBubbleGrid {
      * Clear all bubbles from the grid.
      */
     public void clear() {
-        bubblesByKey.clear();
-        keyByBubbleId.clear();
+        indexLock.writeLock().lock();
+        try {
+            bubblesByKey.clear();
+            keyByBubbleId.clear();
+        } finally {
+            indexLock.writeLock().unlock();
+        }
         neighborFinder.clearCache();
         partitionLevel = -1;
         maxLeafLevel.set(-1);
