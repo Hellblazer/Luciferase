@@ -276,6 +276,65 @@ public final class NodeBootstrap {
     }
 
     /**
+     * Create a bubble and register it with the partition fault subsystem (RDR-021 S2).
+     * <p>
+     * The registration seam lives here, at the composition layer: {@code Manager.createBubble}
+     * dispatches no creation event, so the fault subsystem cannot observe bubble creation itself
+     * (RDR-021 S0, Luciferase-0frcy.135.1). For the single-process node the partition id is the
+     * node's own identity ({@link #resolveNodeId}) — every locally created bubble belongs to the
+     * node's partition.
+     * <p>
+     * {@code Manager.createBubble(UUID)} (deterministic/externally-assigned bubble ids) is
+     * intentionally not wrapped — out of RDR-021 S2 scope; a caller using it must call
+     * {@code recovery.registerBubble} itself.
+     *
+     * @param manager     the VON manager that creates and owns the bubble
+     * @param recovery    the recovery integration to register the bubble with
+     * @param partitionId the owning partition — the node's identity for the single-process node
+     * @return the created, registered bubble
+     */
+    public static Bubble createRegisteredBubble(Manager manager, RecoveryIntegration recovery,
+                                                UUID partitionId) {
+        Objects.requireNonNull(manager, "manager cannot be null");
+        Objects.requireNonNull(recovery, "recovery cannot be null");
+        Objects.requireNonNull(partitionId, "partitionId cannot be null");
+
+        var bubble = manager.createBubble();
+        // If registerBubble threw, the bubble would stay in the manager unregistered (its VON
+        // events outside fault scope). Acceptable: registerBubble throws only on null arguments,
+        // both checked above.
+        recovery.registerBubble(bubble.id(), partitionId);
+        log.debug("Created bubble {} registered to partition {}", bubble.id(), partitionId);
+        return bubble;
+    }
+
+    /**
+     * Unregister a bubble from the fault subsystem, then remove it from the VON (RDR-021 S2).
+     * <p>
+     * <b>Ordering is load-bearing: unregister BEFORE {@code Manager.leave}.</b> A departing
+     * bubble's {@code broadcastLeave()} notifies its neighbors; in-process neighbors dispatch the
+     * resulting VON {@code Leave} back through the manager's listeners. If the bubble were still
+     * registered, the node would report a sync failure against its own partition on every graceful
+     * local removal — escalating partition health during normal operation. Unregistering first
+     * makes that notification a deliberate silent no-op (the unregistered-bubble error contract,
+     * RDR-021 §Technical Design).
+     *
+     * @param manager  the VON manager owning the bubble
+     * @param recovery the recovery integration the bubble was registered with
+     * @param bubble   the bubble to remove
+     */
+    public static void removeRegisteredBubble(Manager manager, RecoveryIntegration recovery,
+                                              Bubble bubble) {
+        Objects.requireNonNull(manager, "manager cannot be null");
+        Objects.requireNonNull(recovery, "recovery cannot be null");
+        Objects.requireNonNull(bubble, "bubble cannot be null");
+
+        recovery.unregisterBubble(bubble.id());
+        manager.leave(bubble);
+        log.debug("Removed bubble {} (unregistered before leave)", bubble.id());
+    }
+
+    /**
      * Production node entry point.
      * <p>
      * Phase 0 skeleton: the live startup path constructs the Fireflies view, resolves the local member,
