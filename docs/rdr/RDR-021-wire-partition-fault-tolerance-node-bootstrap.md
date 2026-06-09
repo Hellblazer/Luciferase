@@ -141,13 +141,17 @@ Verified chain (all file:line confirmed):
 - [x] VON `Manager` exposes a neighbor-leave event stream that `RecoveryIntegration` can subscribe to
   in the assembled node without changing VON internals. — **Status**: **VERIFIED** (Source Search) —
   `Manager.addEventListener(Consumer<Event>)`; `getBubble`/`joinAt` for rejoin.
-- [~] The recovery subscription can be created/torn down at a well-defined point in the RDR-017
+- [x] The recovery subscription can be created/torn down at a well-defined point in the RDR-017
   lifecycle graph without reordering the existing Layer 0/bubble dependencies. — **Status**:
-  **PARTIAL / REFINED** (Source Search) — the subscription start (constructor) / stop (`close()`) maps
-  cleanly onto a lifecycle participant stopped BEFORE the VON manager. BUT the bootstrap constructs no
-  fault subsystem today, so the real prerequisite is constructing a `FaultHandler`, a
-  `PartitionTopology`, and a `PartitionRecovery` strategy in the node (the scope refinement above), and
-  production activation is gated on the live `main()` skeleton (RDR-017 P0).
+  **VERIFIED** (Source Search + design, research pass 2) — `RecoveryIntegration` subscribes in its
+  constructor and tears down via `close()`; the design places it as a lifecycle participant whose
+  `close()` runs before the VON manager stop (mirrors the RDR-017 migrator-before-WAL contract). The
+  fault subsystem is hand-constructed (`SimpleFaultHandler` + `InMemoryPartitionTopology`); production
+  activation is coupled to the live `main()` skeleton but the MVV does not depend on it.
+- [x] The recovery model is VON-event-driven (research pass 2): `Leave`→`reportSyncFailure`,
+  `Join`/`GhostSync`→`markHealthy`→FAILED→HEALTHY→`onPartitionRecovered`→`vonManager.joinAt`. —
+  **Status**: **VERIFIED** (Source Search) — `RecoveryIntegration` does not use
+  `initiateRecovery`/`PartitionRecovery` (Phase-4.2 TODO), so no recovery strategy is registered.
 
 **Method definitions**: Source Search = API verified against dependency source. Spike = behavior
 verified by running code. Docs Only = insufficient for load-bearing assumptions.
@@ -156,32 +160,115 @@ verified by running code. Docs Only = insufficient for load-bearing assumptions.
 
 ### Approach
 
-Refined post-research: the escalation/recovery components are all real, so the work is **composition**,
-not building a state machine. In (or alongside) `NodeBootstrap.assemble`:
-1. Construct the fault subsystem — a `FaultHandler` (decide `DefaultFaultHandler` barrier-timeout vs
-   `SimpleFaultHandler` local), a `PartitionTopology` (`InMemoryPartitionTopology` for the
-   single-process node), and a per-partition `PartitionRecovery` strategy (Cascading/Barrier/NoOp) —
-   or reuse `FaultAwarePartitionRegistry` if it already assembles these coherently (audit below).
-2. Construct `RecoveryIntegration(vonManager, topology, faultHandler)` — its constructor subscribes to
-   VON events (`addEventListener`) and fault changes (`subscribeToChanges`).
-3. Register it as a lifecycle participant whose subscription starts after the VON manager is up and
-   whose `close()` runs **before** the manager stops (mirrors the RDR-017 shutdown-ordering contract for
-   the migrator-before-WAL hazard).
-4. Drive `registerBubble(bubbleId, partitionId)` from the existing bubble-creation path so neighbor
-   departures map to a partition.
+Refined post-research-pass-2: the escalation/recovery components are all real, so the work is
+**composition**, not building a state machine. The recovery model `RecoveryIntegration` actually
+implements is **VON-event-driven** (research-pass-2): a VON `Leave` escalates partition health
+(`reportSyncFailure`), and a later VON `Join`/`GhostSync` for a bubble in that partition calls
+`markHealthy` — the FAILED→HEALTHY transition that fires `onPartitionRecovered` → bubble rejoin. It does
+**not** call `initiateRecovery`/`registerRecovery`, so no `PartitionRecovery` strategy is registered
+(that API — which has a Phase-4.2 TODO in the handlers — is bypassed).
 
-Open scope decisions for the gate: (a) `DefaultFaultHandler` vs `SimpleFaultHandler` and the default
-recovery strategy; (b) whether RDR-020's production resolver wiring (`FirefliesBubbleOwnershipResolver`
-into the bootstrap, the other half of `s23eu`) belongs here or in a sibling RDR; (c) production
-activation is gated on the live `main()` skeleton (RDR-017 P0) — the MVV runs against a test-assembled
-node, but live activation is a named dependency.
+Locked decisions:
+1. **`FaultHandler` = `SimpleFaultHandler`** (not `DefaultFaultHandler`). `DefaultFaultHandler`'s
+   SUSPECTED→FAILED transition is time-gated and fired by a polling `checkTimeouts()` that needs a
+   periodic caller the bootstrap does not have (gate S1). `SimpleFaultHandler` escalates atomically per
+   `reportSyncFailure` (HEALTHY→SUSPECTED on the first, SUSPECTED→FAILED on the second) with no
+   scheduler — correct for the single-process node. Inject `Clock` via `setClock` for deterministic
+   tests. **Confirmation threshold = two sync failures** (two VON leaves for the same partition) to
+   reach FAILED.
+2. **`PartitionTopology` = `InMemoryPartitionTopology`** (no-arg). Distributed topology is a later
+   multi-node dependency, out of scope.
+3. **No `PartitionRecovery` strategy registered** — the recovery path is `markHealthy`-on-VON-join, per
+   the verified VON-event-driven model above.
+4. **Assembly: hand-wire in `NodeBootstrap`** — `FaultAwarePartitionRegistry` is a `PartitionRegistry`
+   barrier-timeout *decorator*, not a `FaultHandler`/topology assembler (gate S2; audit row corrected).
+5. **Resolver wiring → sibling RDR** (gate S3). The RDR-020 `FirefliesBubbleOwnershipResolver`
+   bootstrap wiring (the other `s23eu` half) is independent of fault-subsystem construction; it is
+   scoped to a follow-on RDR, not here.
+
+Wiring (Technical Design specifies it concretely): construct `SimpleFaultHandler` + `start()`,
+`InMemoryPartitionTopology`, then `RecoveryIntegration(vonManager, topology, faultHandler)` (its
+constructor subscribes to VON + fault events); register `RecoveryIntegration` as a lifecycle
+participant whose `close()` runs **before** the VON manager stops (mirrors the RDR-017 migrator-before-WAL
+shutdown contract); drive `registerBubble(bubbleId, partitionId)` from the bubble-creation path.
+
+Named dependency (not a blocker for this RDR's MVV): production activation is coupled to the live
+`main()` (currently throws — Fireflies-view construction incomplete). The MVV runs against a
+test-assembled node, so it does not depend on `main()`.
 
 ### Technical Design
 
-To be completed in research/design. Will specify: the wiring point and lifecycle-layer placement in
-`NodeBootstrap.assemble`; the subscription start/stop contract; the bubble→partition registration
-seam; and error contracts (what happens when a neighbor leaves for an unregistered bubble — today a
-silent no-op).
+**Construction (a new `NodeBootstrap.assemble` overload or a sibling `assembleFaultTolerance(...)`
+helper).** All signatures Verified against source unless marked Assumed.
+
+```text
+// Verified ctor signatures (lucien balancing/fault + simulation/von)
+FaultConfiguration cfg = FaultConfiguration.defaultConfig();      // Verified — failureConfirmationMs unused by SimpleFaultHandler
+SimpleFaultHandler fh   = new SimpleFaultHandler(cfg);            // Verified ctor(FaultConfiguration)
+fh.setClock(clock);                                              // Verified — deterministic tests
+fh.start();                                                      // Verified — lifecycle
+InMemoryPartitionTopology topo = new InMemoryPartitionTopology(); // Verified — no-arg
+RecoveryIntegration ri = new RecoveryIntegration(vonManager, topo, fh /*, clock */);
+//   ^ Verified ctor(Manager, PartitionTopology, FaultHandler[, Clock]); subscribes to
+//     vonManager.addEventListener + fh.subscribeToChanges in the ctor.
+ri.registerBubble(bubbleId, partitionId);                        // Verified — per bubble; topo.register(partitionId, rank)
+// shutdown: ri.close()  (unsubscribes both) BEFORE vonManager stop; then fh.stop().
+```
+
+**Lifecycle-layer placement.** The fault subsystem is orthogonal to the RDR-017 Layer-0
+durability graph (SocketConnectionManager, PersistenceManager) — it holds no WAL and gates no bubble
+dependency. Place it as follows, after the existing `assemble(...)` wiring:
+- Construct + `start()` the `SimpleFaultHandler`, construct the `InMemoryPartitionTopology`, then
+  construct `RecoveryIntegration` (which subscribes to the live VON `Manager` already owned by the
+  node). The VON `Manager` is up by this point (it is the object `assemble` is called on).
+- **Shutdown ordering (mirrors RDR-017 migrator-before-WAL).** `RecoveryIntegration.close()` MUST run
+  **before** `vonManager` stops (so no VON event fires into an unsubscribed/half-torn handler) and
+  before `faultHandler.stop()`. Concretely: register `RecoveryIntegration` as a lifecycle participant
+  ordered to stop ahead of the VON manager, OR (matching the migrator precedent) document that the
+  caller invokes `ri.close()` then `fh.stop()` before `Manager.close()`. Recommend the former
+  (lifecycle participant) so `Manager.close()` drives it deterministically.
+
+**Recovery model (research-pass-2, Verified).** The wired chain is purely VON-membership-driven:
+- `Event.Leave` for a registered bubble → `onNeighborLeave` → `fh.reportSyncFailure(partitionId)`
+  (HEALTHY→SUSPECTED→FAILED across two leaves).
+- `Event.Join`/`Event.GhostSync` for a bubble in that partition → `onNeighbor{Join}`/`onGhostSync` →
+  `fh.markHealthy(partitionId)`; if the partition was FAILED, this fires FAILED→HEALTHY →
+  `handleRecoveryEvent` → `onPartitionRecovered` → `processPartitionRecovery` →
+  `vonManager.joinAt(bubble, position)` per bubble in the partition.
+- The handlers' `initiateRecovery`/`PartitionRecovery`-strategy path (Phase-4.2 TODO) is **not used**;
+  no strategy is registered.
+
+**`bubble → partition` registration seam.** Call `ri.registerBubble(bubbleId, partitionId)` from the
+node's bubble-creation path (where the bubble's owning partition id is known). `unregisterBubble` on
+bubble removal. Partition-id source for the single-process node: Assumed to be the node's own partition
+identity (verify the available partition-id at the creation seam during implementation).
+
+**Error contract.** A VON `Leave`/`Join` for a bubble **not** in `bubbleToPartition` is a deliberate
+silent no-op (the `if (partitionId != null)` guard) — a VON bubble that is not partition-registered is
+legitimately outside this node's fault scope; it is **not** an error and must NOT fail loud (many VON
+neighbors are unregistered). The genuine fail-loud cases are wiring misconfiguration (null
+`vonManager`/`topology`/`faultHandler`), already guarded by `RecoveryIntegration`'s constructor
+`requireNonNull`. This corrects the §Failure Modes "fail-loud on unregistered bubble" framing.
+
+### Decision Rationale
+
+- **`SimpleFaultHandler` over `DefaultFaultHandler`** — the decisive factor is the gate-S1 finding:
+  `DefaultFaultHandler` only reaches FAILED when a periodic `checkTimeouts()` runs, and the node has no
+  scheduler; wiring it would leave partitions stuck at SUSPECTED and the recovery chain dead — the exact
+  failure mode this RDR closes. `SimpleFaultHandler` self-escalates per `reportSyncFailure` with no
+  background machinery, which fits the single-process node and keeps the MVV deterministic (inject two
+  leaves → FAILED; inject a join → recover). The cost — no time-based confirmation delay — is acceptable
+  for a single-process node and revisitable when a distributed deployment needs barrier-timeout
+  detection.
+- **No `PartitionRecovery` strategy** — `RecoveryIntegration` drives recovery via `markHealthy` on VON
+  rejoin, not via `FaultHandler.initiateRecovery`; registering a strategy would be dead wiring (and
+  `initiateRecovery` is itself a Phase-4.2 TODO). Choosing among Cascading/Barrier/NoOp is therefore a
+  non-decision for this path.
+- **Hand-wire, not `FaultAwarePartitionRegistry`** — that class is a `PartitionRegistry` decorator that
+  *reports* barrier timeouts to a `FaultHandler`; it does not assemble one. Hand-wiring the three small
+  objects is the correct, minimal composition.
+- **Resolver wiring deferred to a sibling RDR** — it depends only on RDR-020's resolver, is independent
+  of the fault subsystem, and bundling it would widen this RDR's blast radius without coupling benefit.
 
 ### Existing Infrastructure Audit
 
@@ -190,13 +277,10 @@ silent no-op).
 | Recovery wiring | `RecoveryIntegration` (simulation/von) | Reuse — verified complete; wire, do not reimplement. |
 | Partition fault detection | `DefaultFaultHandler` / `SimpleFaultHandler` (lucien balancing/fault) | Reuse — both verified real; RDR chooses which. |
 | Partition topology | `InMemoryPartitionTopology` (lucien balancing/fault) | Reuse for single-process; distributed topology is a later dependency. |
-| Recovery strategy | `CascadingRecoveryImpl` / `BarrierRecoveryImpl` / `NoOpRecoveryImpl` | Reuse — RDR chooses the per-partition default. |
-| Fault-subsystem assembly | `FaultAwarePartitionRegistry` (lucien) | Audit — reuse as the assembly if it composes FaultHandler+topology coherently; else hand-wire in bootstrap. |
-| Lifecycle composition | `NodeBootstrap.assemble` | Extend — construct the fault subsystem + add the recovery participant to the existing graph. |
-
-### Decision Rationale
-
-To be completed after research (notably the stub-vs-real verification of `FaultHandler`).
+| Recovery strategy | `CascadingRecoveryImpl` / `BarrierRecoveryImpl` / `NoOpRecoveryImpl` | **Not registered** — `RecoveryIntegration` recovers via `markHealthy`-on-VON-join, never `FaultHandler.initiateRecovery()` (Phase-4.2 TODO), so no `PartitionRecovery` strategy is registered in this RDR. |
+| Fault-subsystem assembly | `FaultAwarePartitionRegistry` (lucien) | **Not applicable** — it is a `PartitionRegistry` barrier-timeout *decorator* (`ctor(PartitionRegistry, FaultHandler, long)`) that *reports* timeouts to a FaultHandler; it does not construct a `FaultHandler`/`PartitionTopology`. Hand-wire the subsystem in the bootstrap instead. |
+| Lifecycle composition | `NodeBootstrap.assemble` | Extend — hand-construct `SimpleFaultHandler` + `InMemoryPartitionTopology` + `RecoveryIntegration` and add the recovery participant to the existing graph. |
+| Production resolver wiring | `FirefliesBubbleOwnershipResolver` (RDR-020) | Defer — sibling RDR (the other `s23eu` half; independent of the fault subsystem). |
 
 ## Alternatives Considered
 
@@ -216,30 +300,51 @@ To be completed after research (notably the stub-vs-real verification of `FaultH
 
 ### Risks and Mitigations
 
-- **Risk**: `FaultHandler`/`PartitionTopology` is itself a hollow stub (deep-review theme `yogvu`), so
-  wiring escalates into a no-op. **Mitigation**: verify non-stub status as a Critical Assumption before
-  committing to the wiring scope; split the RDR if the fault machine needs productionizing first.
-- **Risk**: lifecycle-ordering error leaks/double-fires the subscription. **Mitigation**: model the
-  subscription as an explicit lifecycle participant with start-after/stop-before ordering, covered by a test.
+- **Risk** (retired): `FaultHandler`/`PartitionTopology` is a hollow stub. **Status**: verified non-stub
+  (research pass 1); the `yogvu` concern does not apply to this path.
+- **Risk**: lifecycle-ordering error leaks/double-fires the subscription. **Mitigation**: model
+  `RecoveryIntegration` as an explicit lifecycle participant whose `close()` is ordered before the VON
+  manager stop (mirrors RDR-017 migrator-before-WAL), covered by a shutdown-ordering test.
+- **Risk**: the recovery trigger is VON-`Join`-driven — if a failed partition never sees a rejoining
+  bubble, recovery never fires (the partition stays FAILED). **Mitigation**: this is the correct
+  membership-driven semantic (recovery follows VON re-membership); documented in §Technical Design.
+  Partition-status metrics make a stuck-FAILED partition visible.
+- **Risk** (Assumed): the partition-id available at the bubble-creation seam may not match the
+  RecoveryIntegration partition model. **Mitigation**: verify the partition-id source at that seam
+  during implementation (the one remaining Assumed item).
 
 ### Failure Modes
 
 Today (unwired): a partition failure is **silently absorbed** — no signal, no recovery; diagnosed only
-by noticing bubbles never rejoin. After wiring: a misconfigured escalation should **fail loud** (e.g.
-neighbor-leave for an unregistered bubble logged, not silently dropped).
+by noticing bubbles never rejoin. After wiring: wiring misconfiguration (null `vonManager`/`topology`/
+`faultHandler`) fails loud at construction (`requireNonNull`). A VON leave/join for an
+**unregistered** bubble is a deliberate silent no-op (logged at debug), **not** an error — an
+unregistered VON neighbor is outside this node's fault scope (see §Technical Design error contract). A
+partition that reaches SUSPECTED but never gets a second sync failure stays SUSPECTED (no recovery
+fired) — visible in the partition-status metrics, diagnosable.
 
 ## Implementation Plan
 
 ### Prerequisites
 
-- [ ] All Critical Assumptions verified (esp. `FaultHandler` non-stub status).
-- [ ] Decision on whether RDR-020 resolver wiring is in-scope here or a sibling RDR.
+- [x] All Critical Assumptions verified (research pass 1 + 2).
+- [x] FaultHandler variant locked (`SimpleFaultHandler`) — Decision Rationale.
+- [x] Resolver-wiring scope decided (sibling RDR) — Decision Rationale.
 
 ### Minimum Viable Validation
 
-An integration test over the assembled node: inject a VON `Event.Leave` for a registered bubble and
-assert the chain `reportSyncFailure → partition FAILED → onPartitionRecovered → bubble rejoin` fires
-end-to-end (real `RecoveryIntegration` + real `FaultHandler`, not mocked at the escalation boundary).
+An integration test over a **test-assembled** node (real `RecoveryIntegration` + real
+`SimpleFaultHandler` + real `InMemoryPartitionTopology`; `TestClock`; not mocked at the escalation
+boundary) exercising the full VON-event-driven chain:
+1. `registerBubble(bubbleId, partitionId)` for ≥1 bubble in a partition.
+2. Inject **two** VON `Event.Leave` for the **registered** `bubbleId` → assert `SimpleFaultHandler`
+   status for `partitionId` reaches **FAILED** (the two-sync-failure confirmation threshold).
+3. Inject a VON `Event.Join` for a bubble in that partition → `markHealthy` → FAILED→HEALTHY →
+   `onPartitionRecovered` → assert `vonManager.joinAt(...)` is invoked for the partition's bubbles
+   (the rejoin).
+
+This proves Gap 1 (escalation reaches the FaultHandler) and Gap 2 (the FAILED→recovery→rejoin chain
+fires end-to-end against the assembled node), and does not depend on the live `main()`.
 
 ### Phase 1: Code Implementation
 
@@ -258,3 +363,24 @@ To be decomposed after research/gate (`/conexus:rdr-research` → `/conexus:rdr-
   fault subsystem**, not just wire `RecoveryIntegration`; live activation gated on the `main()`
   skeleton (RDR-017 P0). Approach + audit refined accordingly. Next: `/conexus:rdr-gate` (which should
   scrutinize the FaultHandler-variant + recovery-strategy choices and the resolver-wiring scope split).
+- 2026-06-09: **gate BLOCKED** (substantive-critic; 1 Critical, 3 Significant). Critical: Technical
+  Design + Decision Rationale were placeholders. S1: `DefaultFaultHandler` SUSPECTED→FAILED needs a
+  periodic `checkTimeouts()` scheduler the bootstrap lacks (not a free choice vs `SimpleFaultHandler`).
+  S2: `FaultAwarePartitionRegistry` is a decorator, not an assembler. S3: resolver-scope must be
+  recorded in the RDR. Cross-RDR consistency (RDR-017/020) passed.
+- 2026-06-09: **research pass 2 + remediation** (Source Search; T2 `Luciferase_rdr/021-research-2`).
+  Verified the recovery model is **VON-event-driven**: `Leave`→`reportSyncFailure`,
+  `Join`/`GhostSync`→`markHealthy`→FAILED→HEALTHY→`onPartitionRecovered`→`vonManager.joinAt`;
+  `initiateRecovery`/`PartitionRecovery` (Phase-4.2 TODO) is **bypassed**. Locked all decisions:
+  `SimpleFaultHandler` (no scheduler; two-leaf FAILED threshold), `InMemoryPartitionTopology`, no
+  recovery strategy, hand-wire (not `FaultAwarePartitionRegistry`), resolver-wiring → sibling RDR.
+  Filled §Technical Design (verified ctor signatures, lifecycle placement + shutdown ordering, the
+  registration seam, the unregistered-bubble silent-no-op error contract) and §Decision Rationale;
+  corrected the audit row and §Failure Modes; rewrote the MVV to the two-leaves-then-join sequence.
+  Re-gate next.
+- 2026-06-09: **re-gate PASSED** (substantive-critic; 0 Critical). All four first-gate findings verified
+  closed (Technical Design/Decision Rationale filled; SimpleFaultHandler locked with the
+  scheduler/VON-event-driven rationale; FaultAwarePartitionRegistry decorator correction; resolver
+  scope → sibling RDR). One follow-up Significant (stale "Recovery strategy" audit row contradicting the
+  no-strategy decision) fixed; MVV step-2 clarified to the registered bubbleId. Ready for
+  `/conexus:rdr-accept`.
