@@ -218,9 +218,10 @@ public final class NodeBootstrap {
          * Tear down in dependency order: unsubscribe the recovery integration (VON + fault-event
          * listeners) first, then stop the fault handler.
          * <p>
-         * Idempotency is compositional: it holds because {@code RecoveryIntegration.close()}
-         * (listener removal + subscription {@code active} guard) and
-         * {@code SimpleFaultHandler.stop()} (CAS) are each individually idempotent.
+         * Idempotency is compositional: {@code RecoveryIntegration.close()} is idempotent because
+         * listener removal on an absent element is a no-op and the retained subscription's
+         * {@code unsubscribe()} is guarded by {@code SimpleFaultHandler.SimpleSubscription}'s
+         * {@code active} flag; {@code SimpleFaultHandler.stop()} is CAS-guarded.
          * <p>
          * <b>Sole-subscriber invariant.</b> {@code SimpleFaultHandler.stop()} clears the
          * <em>entire</em> subscriber list, not just this subsystem's subscription. This subsystem
