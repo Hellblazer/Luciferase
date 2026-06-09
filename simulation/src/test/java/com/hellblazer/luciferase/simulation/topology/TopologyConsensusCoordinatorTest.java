@@ -16,9 +16,13 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
+import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
+import com.hellblazer.luciferase.simulation.consensus.committee.MigrationProposal;
+import com.hellblazer.luciferase.simulation.consensus.committee.ProposalKind;
 import com.hellblazer.luciferase.simulation.consensus.committee.ViewCommitteeConsensus;
+import com.hellblazer.luciferase.simulation.consensus.ownership.BubbleOwnershipResolver;
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.distributed.integration.EntityAccountant;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +52,7 @@ class TopologyConsensusCoordinatorTest {
     private TopologyConsensusCoordinator coordinator;
     private TestClock testClock;
     private ViewCommitteeConsensus mockConsensus;
+    private Digest localDigest;
 
     @BeforeEach
     void setUp() {
@@ -62,8 +67,41 @@ class TopologyConsensusCoordinatorTest {
         mockConsensus = Mockito.mock(ViewCommitteeConsensus.class);
         coordinator.setConsensusProtocol(mockConsensus);
 
+        // RDR-020 S3: requestConsensus now resolves the region owner through a BubbleOwnershipResolver.
+        // For the cooldown / pre-validation / clock tests the consensus is fully mocked (validateProposal
+        // never runs), so the only requirement is that the two coordinator-level guards pass: the local
+        // node must own the region (owner == local) and a merge's two bubbles must share one owner. A
+        // fixed-owner resolver — owner == local == one digest for every bubble — satisfies both for any
+        // bubble created per-test. Tests that exercise the guard failure paths inject their own resolver.
+        localDigest = DigestAlgorithm.DEFAULT.digest("s3-local-member");
+        coordinator.setOwnershipResolver(fixedOwnerResolver(localDigest, localDigest));
+
         // Mock consensus to always approve
         when(mockConsensus.requestConsensus(any())).thenReturn(CompletableFuture.completedFuture(true));
+    }
+
+    /**
+     * A deterministic {@link BubbleOwnershipResolver} returning fixed owner / local digests for
+     * every bubble (RDR-020 S3). With {@code owner == local} both coordinator-level guards
+     * (ownership, same-owner merge) pass; setting them unequal forces the ownership-guard throw.
+     */
+    private static BubbleOwnershipResolver fixedOwnerResolver(Digest owner, Digest local) {
+        return new BubbleOwnershipResolver() {
+            @Override
+            public Digest resolveOwningMember(UUID bubbleId) {
+                return owner;
+            }
+
+            @Override
+            public Digest localMember() {
+                return local;
+            }
+
+            @Override
+            public Digest memberDigestForNode(UUID nodeId) {
+                return owner;
+            }
+        };
     }
 
     @Test
@@ -270,6 +308,7 @@ class TopologyConsensusCoordinatorTest {
 
         coordinator2.setClock(testClock);
         coordinator2.setConsensusProtocol(mockConsensus);
+        coordinator2.setOwnershipResolver(fixedOwnerResolver(localDigest, localDigest));
 
         testClock.setMillis(1000L);
         var proposal = createSplitProposal(bubble.id());
@@ -582,28 +621,23 @@ class TopologyConsensusCoordinatorTest {
     }
 
     /**
-     * Luciferase-7wzml.182 (toMigrationProposal non-member digests).
+     * RDR-020 S3: {@code toMigrationProposal} builds a TOPOLOGY-kind proposal under the
+     * single-owner node-identity model.
      * <p>
-     * Verifies that {@code toMigrationProposal} produces a non-null, well-formed
-     * {@link com.hellblazer.luciferase.simulation.consensus.committee.MigrationProposal}
-     * that is accepted by a mock consensus (which does not enforce Fireflies membership). The mock
-     * must be invoked exactly once, confirming the proposal reaches the committee and is not
-     * short-circuited by a null/malformed sourceNode or targetNode.
-     * <p>
-     * The known limitation (Luciferase-vhbw3) — that bubble-UUID-derived digests are rejected by
-     * a membership-enforcing consensus — is documented in the Javadoc of {@code toMigrationProposal}
-     * and is out of scope for this test. This test confirms the mock path works and that the
-     * surrounding code does not produce a NullPointerException or other failure from the mapping.
+     * The owner is resolved through the injected {@link BubbleOwnershipResolver}, and because a
+     * topology change is single-region the proposal carries {@code source == target == owner(region)}
+     * with {@code kind == TOPOLOGY}. (The old {@code digestOf}-of-bubble-UUID model — which produced
+     * distinct, non-member source/target digests the live membership-enforcing consensus silently
+     * rejected — is deleted; Luciferase-vhbw3 / Gap 2.)
      */
     @Test
-    void toMigrationProposal_producesWellFormedProposalAcceptedByMockConsensus() {
+    void toMigrationProposal_producesTopologyKindSingleOwnerProposal() {
         bubbleGrid.createBubbles(1, (byte) 1, 10);
         var bubble = bubbleGrid.getAllBubbles().iterator().next();
         addEntities(bubble, 5100);
 
         // Capture the MigrationProposal that reaches the mock consensus.
-        var captured = new java.util.concurrent.atomic.AtomicReference<
-            com.hellblazer.luciferase.simulation.consensus.committee.MigrationProposal>();
+        var captured = new java.util.concurrent.atomic.AtomicReference<MigrationProposal>();
         when(mockConsensus.requestConsensus(any())).thenAnswer(inv -> {
             captured.set(inv.getArgument(0));
             return CompletableFuture.completedFuture(true);
@@ -617,15 +651,111 @@ class TopologyConsensusCoordinatorTest {
 
         var mp = captured.get();
         assertNotNull(mp, "MigrationProposal must have been passed to consensus");
-        assertNotNull(mp.proposalId(), "proposalId must not be null");
-        assertNotNull(mp.entityId(), "entityId must not be null");
-        assertNotNull(mp.sourceNodeId(), "sourceNodeId must not be null (digestOf(bubbleId))");
-        assertNotNull(mp.targetNodeId(), "targetNodeId must not be null (digestOf(proposalId))");
+        assertEquals(ProposalKind.TOPOLOGY, mp.kind(), "Topology change must carry kind=TOPOLOGY");
+        assertEquals(localDigest, mp.sourceNodeId(), "sourceNode must be the resolved region owner");
+        assertEquals(localDigest, mp.targetNodeId(), "targetNode must equal sourceNode (single-owner model)");
+        assertEquals(mp.sourceNodeId(), mp.targetNodeId(),
+                     "TOPOLOGY proposal is source == target == owner(region)");
+        assertEquals(bubble.id(), mp.entityId(), "entityId must be the primary affected bubble");
+        assertEquals(proposal.proposalId(), mp.proposalId(), "proposalId must be threaded through unchanged");
         assertNotNull(mp.viewId(), "viewId must not be null");
-        assertNotEquals(mp.sourceNodeId(), mp.targetNodeId(),
-                        "sourceNode and targetNode must differ (self-migration would be rejected by real consensus)");
-        assertEquals(proposal.proposalId(), mp.proposalId(),
-                     "proposalId must be threaded through unchanged");
+    }
+
+    /**
+     * RDR-020 S3 ownership guard: a node may only propose a topology change for a region it owns.
+     * When the resolved owner differs from the local member, {@code toMigrationProposal} throws
+     * (fail-loud) rather than emitting a proposal to restructure another node's region.
+     */
+    @Test
+    void requestConsensus_nonOwnerProposer_throws() {
+        bubbleGrid.createBubbles(1, (byte) 1, 10);
+        var bubble = bubbleGrid.getAllBubbles().iterator().next();
+        addEntities(bubble, 5100);
+
+        var owner = DigestAlgorithm.DEFAULT.digest("region-owner");
+        var local = DigestAlgorithm.DEFAULT.digest("some-other-node");
+        coordinator.setOwnershipResolver(fixedOwnerResolver(owner, local));
+
+        var proposal = createSplitProposal(bubble.id());
+        // The guard throws synchronously from toMigrationProposal (before any future is returned), so
+        // no .join() — requestConsensus itself throws.
+        var ex = assertThrows(IllegalStateException.class,
+                              () -> coordinator.requestConsensus(proposal));
+        assertTrue(ex.getMessage().contains("may not propose a topology change"),
+                   "Ownership guard message expected, was: " + ex.getMessage());
+        verify(mockConsensus, never()).requestConsensus(any());
+        // The Stage 1 cooldown reservation must be restored on the synchronous-throw path: a rejected
+        // proposal must not lock the bubble out of future topology changes (regression guard for the
+        // orphaned-cooldown bug).
+        assertTrue(coordinator.canProposeTopologyChange(proposal),
+                   "cooldown must be restored after a guard throw, not orphaned");
+        assertEquals(0L, coordinator.getRemainingCooldown(bubble.id()),
+                     "no cooldown should be held after a guard throw");
+    }
+
+    /**
+     * RDR-020 S3 cross-region merge guard: a merge whose two bubbles resolve to different HRW
+     * owners cannot be represented by the single-owner model and throws fail-loud. A two-node merge
+     * protocol is explicitly out of scope (s23eu / RDR-015 follow-on).
+     */
+    @Test
+    void requestConsensus_crossRegionMerge_throws() {
+        // Create the full 8-child set so an adjacent pair is guaranteed, then pick one
+        // deterministically (merge pre-validation requires the two bubbles to be neighbors).
+        bubbleGrid.createBubbles(8, (byte) 1, 10);
+        var all = bubbleGrid.getAllBubbles().stream().toList();
+        UUID id1 = null;
+        UUID id2 = null;
+        outer:
+        for (var a : all) {
+            var neighbors = bubbleGrid.getNeighbors(a.id());
+            for (var b : all) {
+                if (!a.id().equals(b.id()) && neighbors.contains(b.id())) {
+                    id1 = a.id();
+                    id2 = b.id();
+                    break outer;
+                }
+            }
+        }
+        assertNotNull(id1, "an adjacent bubble pair must exist in the 8-child set");
+        var bubble1 = bubbleGrid.getBubbleById(id1);
+        var bubble2 = bubbleGrid.getBubbleById(id2);
+        addEntities(bubble1, 300);
+        addEntities(bubble2, 300);
+
+        // Resolver assigning each bubble a distinct owner; local owns bubble1 so only the
+        // cross-region (two-owner) condition — not the ownership guard — is what trips.
+        var ownerA = DigestAlgorithm.DEFAULT.digest("owner-A");
+        var ownerB = DigestAlgorithm.DEFAULT.digest("owner-B");
+        final UUID firstId = id1;
+        coordinator.setOwnershipResolver(new BubbleOwnershipResolver() {
+            @Override
+            public Digest resolveOwningMember(UUID bubbleId) {
+                return bubbleId.equals(firstId) ? ownerA : ownerB;
+            }
+
+            @Override
+            public Digest localMember() {
+                return ownerA;
+            }
+
+            @Override
+            public Digest memberDigestForNode(UUID nodeId) {
+                return ownerA;
+            }
+        });
+
+        var proposal = new MergeProposal(UUID.randomUUID(), bubble1.id(), bubble2.id(),
+                                         DigestAlgorithm.DEFAULT.getOrigin(), testClock.currentTimeMillis());
+        var ex = assertThrows(IllegalStateException.class,
+                              () -> coordinator.requestConsensus(proposal));
+        assertEquals("cross-region merge not yet supported", ex.getMessage());
+        verify(mockConsensus, never()).requestConsensus(any());
+        // Both merge bubbles' cooldown reservations must be restored after the guard throw.
+        assertEquals(0L, coordinator.getRemainingCooldown(bubble1.id()),
+                     "bubble1 cooldown must be restored after cross-region merge throw");
+        assertEquals(0L, coordinator.getRemainingCooldown(bubble2.id()),
+                     "bubble2 cooldown must be restored after cross-region merge throw");
     }
 
     private SplitProposal createSplitProposal(UUID bubbleId) {

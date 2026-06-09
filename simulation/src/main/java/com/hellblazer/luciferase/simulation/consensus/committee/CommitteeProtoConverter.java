@@ -135,7 +135,37 @@ public final class CommitteeProtoConverter {
             .setProposerAddress(proposerAddress)
             .setViewId(digestToHex(proposal.viewId()))
             .setTimestamp(proposal.timestamp())
+            .setKind(toProtoKind(proposal.kind()))
             .build();
+    }
+
+    /**
+     * Map the domain {@link ProposalKind} to its proto counterpart (RDR-020 S3).
+     */
+    private static com.hellblazer.luciferase.simulation.consensus.committee.proto.ProposalKind toProtoKind(
+        ProposalKind kind) {
+        return switch (kind) {
+            case ENTITY_MIGRATION ->
+                com.hellblazer.luciferase.simulation.consensus.committee.proto.ProposalKind.ENTITY_MIGRATION;
+            case TOPOLOGY ->
+                com.hellblazer.luciferase.simulation.consensus.committee.proto.ProposalKind.TOPOLOGY;
+        };
+    }
+
+    /**
+     * Map the proto {@link com.hellblazer.luciferase.simulation.consensus.committee.proto.ProposalKind}
+     * back to the domain {@link ProposalKind} (RDR-020 S3).
+     * <p>
+     * An absent field decodes to the proto default {@code ENTITY_MIGRATION} (ordinal 0). An
+     * {@code UNRECOGNIZED} value from a newer peer is conservatively treated as
+     * {@code ENTITY_MIGRATION} — the safe default that retains the self-migration reject rather
+     * than silently skipping it.
+     */
+    private static ProposalKind fromProtoKind(
+        com.hellblazer.luciferase.simulation.consensus.committee.proto.ProposalKind kind) {
+        return kind == com.hellblazer.luciferase.simulation.consensus.committee.proto.ProposalKind.TOPOLOGY
+               ? ProposalKind.TOPOLOGY
+               : ProposalKind.ENTITY_MIGRATION;
     }
 
     /**
@@ -155,7 +185,8 @@ public final class CommitteeProtoConverter {
             hexToDigest(proto.getSourceNodeId()),
             hexToDigest(proto.getTargetNodeId()),
             hexToDigest(proto.getViewId()),
-            proto.getTimestamp()
+            proto.getTimestamp(),
+            fromProtoKind(proto.getKind())
         );
     }
 

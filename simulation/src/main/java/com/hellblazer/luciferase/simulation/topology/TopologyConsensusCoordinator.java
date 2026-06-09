@@ -16,11 +16,11 @@
  */
 package com.hellblazer.luciferase.simulation.topology;
 
-import com.hellblazer.delos.cryptography.Digest;
-import com.hellblazer.delos.cryptography.DigestAlgorithm;
 import com.hellblazer.luciferase.simulation.bubble.TetreeBubbleGrid;
 import com.hellblazer.luciferase.simulation.consensus.committee.MigrationProposal;
+import com.hellblazer.luciferase.simulation.consensus.committee.ProposalKind;
 import com.hellblazer.luciferase.simulation.consensus.committee.ViewCommitteeConsensus;
+import com.hellblazer.luciferase.simulation.consensus.ownership.BubbleOwnershipResolver;
 import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,6 +112,17 @@ public class TopologyConsensusCoordinator {
     private ViewCommitteeConsensus consensusProtocol;
 
     /**
+     * Resolves the HRW owning member of a region for the TOPOLOGY node-identity model (RDR-020 S3).
+     * <p>
+     * Set via {@link #setOwnershipResolver(BubbleOwnershipResolver)} for dependency injection.
+     * Required before {@link #requestConsensus(TopologyProposal)} can build a proposal: a topology
+     * change must carry the real, in-view member identity of the region's owner, not a
+     * bubble-UUID-derived digest (the old {@code digestOf} which the live membership-enforcing
+     * consensus silently rejected — RDR-020 Gap 2 / Luciferase-vhbw3).
+     */
+    private BubbleOwnershipResolver ownershipResolver;
+
+    /**
      * Creates a topology consensus coordinator with default 30-second cooldown.
      *
      * @param bubbleGrid the bubble grid for validation
@@ -164,6 +175,20 @@ public class TopologyConsensusCoordinator {
     }
 
     /**
+     * Sets the bubble ownership resolver (RDR-020 S3).
+     * <p>
+     * Dependency injection for {@link BubbleOwnershipResolver}. Required before
+     * {@link #requestConsensus(TopologyProposal)} can map a topology change to a TOPOLOGY-kind
+     * {@link MigrationProposal} carrying the region owner's real Fireflies member identity.
+     *
+     * @param resolver the ownership resolver
+     * @throws NullPointerException if resolver is null
+     */
+    public void setOwnershipResolver(BubbleOwnershipResolver resolver) {
+        this.ownershipResolver = Objects.requireNonNull(resolver, "ownershipResolver must not be null");
+    }
+
+    /**
      * Requests consensus for a topology change proposal.
      * <p>
      * Performs three-stage validation:
@@ -178,7 +203,11 @@ public class TopologyConsensusCoordinator {
      * @param proposal the topology change proposal
      * @return CompletableFuture<Boolean> - true if approved, false if rejected
      * @throws NullPointerException  if proposal is null
-     * @throws IllegalStateException if consensusProtocol not set
+     * @throws IllegalStateException if {@code consensusProtocol} is not set, if
+     *                               {@code ownershipResolver} is not set, if the local node does not
+     *                               own the region being restructured, or if a merge spans two HRW
+     *                               regions (cross-region merge, out of scope — RDR-020 S3). On any of
+     *                               these the Stage 1 cooldown reservation is restored before the throw.
      */
     public CompletableFuture<Boolean> requestConsensus(TopologyProposal proposal) {
         Objects.requireNonNull(proposal, "proposal must not be null");
@@ -223,7 +252,21 @@ public class TopologyConsensusCoordinator {
                  proposal.viewId(),
                  proposal.timestamp());
 
-        return consensusProtocol.requestConsensus(toMigrationProposal(proposal))
+        // Build the consensus envelope BEFORE entering the future chain. toMigrationProposal can
+        // throw synchronously (resolver unset, ownership guard, cross-region merge); were it evaluated
+        // inline as the requestConsensus(...) argument, the throw would escape before .handle() is
+        // registered, orphaning the Stage 1 cooldown reservation (it would never be restored). Restore
+        // the reservation on the synchronous-throw path so a rejected proposal imposes no spurious
+        // cooldown, then rethrow.
+        final MigrationProposal migrationProposal;
+        try {
+            migrationProposal = toMigrationProposal(proposal);
+        } catch (RuntimeException e) {
+            restoreCooldown(proposal, priorTimestamps);
+            throw e;
+        }
+
+        return consensusProtocol.requestConsensus(migrationProposal)
                                 .handle((approved, ex) -> {
                                     if (ex == null && Boolean.TRUE.equals(approved)) {
                                         // Cooldown was already reserved atomically in Stage 1;
@@ -248,43 +291,61 @@ public class TopologyConsensusCoordinator {
 
     /**
      * Adapts a {@link TopologyProposal} to the consensus layer's
-     * {@link MigrationProposal} envelope for committee voting.
+     * {@link MigrationProposal} envelope for committee voting (RDR-020 S3).
      * <p>
-     * The consensus layer votes on opaque proposal identity (proposalId + viewId +
-     * timestamp); the topology-specific payload is validated locally in Stage 2.
-     * The affected bubble is mapped to source/target node identities so the
-     * proposal is well-formed for the voting protocol.
+     * A topology change is a single-region structural change, so it uses the
+     * <b>TOPOLOGY node-identity model</b>: {@code source == target == owner(region)}, where the
+     * owner is the HRW member of the primary affected bubble resolved through the injected
+     * {@link BubbleOwnershipResolver}. This replaces the old {@code digestOf} hash of bubble UUIDs,
+     * which produced identities the live membership-enforcing {@code ViewCommitteeConsensus} would
+     * silently reject as "node not in view" (RDR-020 Gap 2 / Luciferase-vhbw3).
      * <p>
-     * <b>Known limitation (Luciferase-vhbw3):</b> the source/target node identities
-     * here are {@link #digestOf(UUID) digests derived from bubble UUIDs}, which are
-     * NOT Fireflies member IDs. A live {@code ViewCommitteeConsensus.validateProposal}
-     * gates on {@code isNodeInView(...)} against the actual Fireflies membership view,
-     * so a bubble-UUID-derived digest will be rejected as "node not in view". The
-     * mapping is therefore only sound against a test/mock consensus that does not
-     * enforce membership. Wiring real Fireflies member IDs through this envelope is
-     * tracked by bead Luciferase-vhbw3.
+     * Two fail-loud guards encode safety invariants the old hash silently lacked:
+     * <ul>
+     *   <li><b>Ownership.</b> The local process may only restructure a region it owns:
+     *       {@code resolver.localMember().equals(ownerNode)} or an {@link IllegalStateException}
+     *       is thrown.</li>
+     *   <li><b>Cross-region merge (out of scope).</b> A {@link MergeProposal} whose two bubbles
+     *       resolve to different owners cannot be represented by the single-owner model and throws
+     *       {@code IllegalStateException("cross-region merge not yet supported")} — a two-node merge
+     *       protocol is a named boundary (s23eu / RDR-015 follow-on). On the single-process live
+     *       path both bubbles share the one local owner, so the guard is a no-op there.</li>
+     * </ul>
      *
      * @param proposal the topology proposal to wrap
-     * @return a migration proposal carrying the same identity for committee voting
+     * @return a TOPOLOGY-kind migration proposal carrying the region owner's member identity
+     * @throws IllegalStateException if the resolver is unset, the local process does not own the
+     *                               region, or the merge spans two HRW regions
      */
     private MigrationProposal toMigrationProposal(TopologyProposal proposal) {
+        if (ownershipResolver == null) {
+            throw new IllegalStateException("ownershipResolver not set - call setOwnershipResolver()");
+        }
         var affected = getAffectedBubbles(proposal);
         var primary = affected.get(0);
-        var entityId = primary;
-        var sourceNode = digestOf(primary);
-        var targetNode = affected.size() > 1 ? digestOf(affected.get(1)) : digestOf(proposal.proposalId());
-        return new MigrationProposal(proposal.proposalId(), entityId, sourceNode, targetNode,
-                                     proposal.viewId(), proposal.timestamp());
-    }
+        var ownerNode = ownershipResolver.resolveOwningMember(primary);
 
-    /**
-     * Derives a stable {@link Digest} identity from a UUID for the consensus envelope.
-     *
-     * @param id the source identifier
-     * @return a deterministic digest of the identifier
-     */
-    private static Digest digestOf(UUID id) {
-        return DigestAlgorithm.DEFAULT.digest(id.toString());
+        // Cross-region merge guard: a merge is the one two-bubble case; both bubbles must share one
+        // HRW owner for the single-owner model to hold. Cross-region merge is explicitly out of scope.
+        if (proposal instanceof MergeProposal) {
+            var secondOwner = ownershipResolver.resolveOwningMember(affected.get(1));
+            if (!ownerNode.equals(secondOwner)) {
+                throw new IllegalStateException("cross-region merge not yet supported");
+            }
+        }
+
+        // Ownership guard: a node may only propose topology changes for a region it owns. This gives
+        // the proposal a meaningful in-view source identity AND prevents a node from restructuring
+        // another node's region (a safety property the old digestOf hash silently lacked).
+        var localMember = ownershipResolver.localMember();
+        if (!localMember.equals(ownerNode)) {
+            throw new IllegalStateException(
+                "Local node " + localMember + " may not propose a topology change for region owned by "
+                + ownerNode + " (primary bubble " + primary + ")");
+        }
+
+        return new MigrationProposal(proposal.proposalId(), primary, ownerNode, ownerNode,
+                                     proposal.viewId(), proposal.timestamp(), ProposalKind.TOPOLOGY);
     }
 
     /**

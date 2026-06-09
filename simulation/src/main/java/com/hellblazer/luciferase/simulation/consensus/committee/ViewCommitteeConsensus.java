@@ -361,8 +361,12 @@ public class ViewCommitteeConsensus {
             return false;
         }
 
-        // Prevent self-migration (source == target)
-        if (proposal.sourceNodeId().equals(proposal.targetNodeId())) {
+        // Prevent self-migration (source == target) — ENTITY_MIGRATION only.
+        // RDR-020 S3: TOPOLOGY proposals are single-region structural changes where
+        // source == target == owner(region) by construction, so the self-migration reject does
+        // NOT apply to them; every other validity gate (null-viewId, in-view membership) does.
+        if (proposal.kind() != ProposalKind.TOPOLOGY
+            && proposal.sourceNodeId().equals(proposal.targetNodeId())) {
             log.warn("Rejected proposal {} with source == target (self-migration): {}",
                     proposal.proposalId(), proposal.sourceNodeId());
             return false;

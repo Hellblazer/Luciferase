@@ -229,6 +229,69 @@ public class ViewCommitteeConsensusTest {
         assertFalse(result, "Proposal with old viewId should be rejected immediately");
     }
 
+    // ===== RDR-020 S3: TOPOLOGY-kind self-source proposals skip the self-migration reject =====
+
+    @Test
+    public void testTopologyKindSkipsSelfMigrationReject() throws Exception {
+        // A TOPOLOGY proposal is single-region: source == target == owner(region). A committee
+        // member (members.get(0)) is both source and target. validateProposal must NOT self-migration-
+        // reject it; instead it proceeds to voting (future remains in-flight pending votes), then
+        // reaches quorum.
+        var owner = members.get(0).getId();
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(), UUID.randomUUID(),
+            owner, owner,                       // self-source == self-target
+            view1, ZE0EQ_CLOCK.currentTimeMillis(),
+            ProposalKind.TOPOLOGY);
+
+        var future = consensus.requestConsensus(proposal);
+        assertFalse(future.isDone(),
+                    "TOPOLOGY self-owner proposal must pass validateProposal and enter voting (not self-rejected)");
+
+        for (int i = 0; i < 2; i++) {
+            votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(i).getId(), true, view1));
+        }
+        assertTrue(future.get(1, TimeUnit.SECONDS),
+                   "TOPOLOGY proposal must reach quorum once it passes validation");
+    }
+
+    @Test
+    public void testTopologyKindStillEnforcesInViewMembership() throws Exception {
+        // RDR-020 S3: TOPOLOGY skips ONLY the self-migration reject. The isNodeInView gate still
+        // applies — a TOPOLOGY proposal whose owner is NOT a current-view member is rejected. (The
+        // owner digest here is absent from the committee's member set.)
+        var outOfViewOwner = DigestAlgorithm.DEFAULT.digest("not-a-cluster-member");
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(), UUID.randomUUID(),
+            outOfViewOwner, outOfViewOwner,
+            view1, ZE0EQ_CLOCK.currentTimeMillis(),
+            ProposalKind.TOPOLOGY);
+
+        var future = consensus.requestConsensus(proposal);
+        assertTrue(future.isDone(), "out-of-view TOPOLOGY owner must be rejected immediately");
+        assertFalse(future.get(100, TimeUnit.MILLISECONDS),
+                    "TOPOLOGY proposal with owner not in view must be rejected by isNodeInView");
+    }
+
+    @Test
+    public void testEntityMigrationKindSelfMigrationRejected() throws Exception {
+        // The SAME self-source proposal as ENTITY_MIGRATION (the default kind / old-peer encoding)
+        // IS self-migration-rejected — immediately completes false. This pins both the kind-branch
+        // and the mixed-version contract: a pre-amendment validator reads TOPOLOGY as ENTITY_MIGRATION
+        // and rejects it.
+        var owner = members.get(0).getId();
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(), UUID.randomUUID(),
+            owner, owner,                       // self-source == self-target
+            view1, ZE0EQ_CLOCK.currentTimeMillis(),
+            ProposalKind.ENTITY_MIGRATION);
+
+        var future = consensus.requestConsensus(proposal);
+        assertTrue(future.isDone(), "ENTITY_MIGRATION self-source proposal must be rejected immediately");
+        assertFalse(future.get(100, TimeUnit.MILLISECONDS),
+                    "ENTITY_MIGRATION self-migration must be rejected (source == target)");
+    }
+
     // ===== Per-entity in-flight migration mutex (Luciferase-0frcy.94) =====
 
     @Test

@@ -35,6 +35,9 @@ import java.util.UUID;
  * @param targetNodeId Target node for migration
  * @param viewId       View context (prevents cross-view double-commit)
  * @param timestamp    Proposal creation time (optional, for ordering/debugging)
+ * @param kind         Node-identity model (ENTITY_MIGRATION vs TOPOLOGY); governs the
+ *                     self-migration reject in {@code ViewCommitteeConsensus.validateProposal}
+ *                     (RDR-020 S3)
  * @author hal.hildebrand
  */
 public record MigrationProposal(
@@ -43,6 +46,19 @@ public record MigrationProposal(
     Digest sourceNodeId,
     Digest targetNodeId,
     Digest viewId,
-    long timestamp
+    long timestamp,
+    ProposalKind kind
 ) {
+    /**
+     * Back-compatible constructor defaulting {@link #kind()} to
+     * {@link ProposalKind#ENTITY_MIGRATION} (RDR-020 S3).
+     * <p>
+     * Preserves the pre-amendment 6-arg signature so the existing entity-migration
+     * construction sites compile unchanged; only the topology path passes an explicit
+     * {@link ProposalKind#TOPOLOGY}.
+     */
+    public MigrationProposal(UUID proposalId, UUID entityId, Digest sourceNodeId, Digest targetNodeId, Digest viewId,
+                             long timestamp) {
+        this(proposalId, entityId, sourceNodeId, targetNodeId, viewId, timestamp, ProposalKind.ENTITY_MIGRATION);
+    }
 }
