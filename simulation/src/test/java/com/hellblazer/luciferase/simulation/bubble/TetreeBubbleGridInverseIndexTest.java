@@ -394,4 +394,89 @@ class TetreeBubbleGridInverseIndexTest {
         assertThat(grid.inverseIndexSize()).isEqualTo(0);
         assertThat(grid.getBubbleCount()).isEqualTo(0);
     }
+
+    /**
+     * Luciferase-0frcy.133: the paired {@code bubblesByKey}/{@code keyByBubbleId} mutations are now
+     * atomic w.r.t. the UUID-keyed readers. Under heavy concurrent add/remove with concurrent readers,
+     * the grid must not deadlock, throw, or leave the two maps drifted. Deterministic: each writer owns
+     * a distinct key and ends on removeBubble, so the grid drains to empty and both map sizes agree.
+     */
+    @Test
+    void concurrentAddRemoveWithReaders_noDeadlockNoDriftNoException() throws Exception {
+        final int writers = 4;       // level-1 children child(0..3) → distinct keys
+        final int readers = 4;
+        // Modest count: each re-add inserts a fresh entry into the (remove-less) Tetree spatial index,
+        // so high iteration counts just bloat that index without adding concurrency coverage. A few
+        // hundred interleaved add/remove/read cycles per writer is ample to exercise the lock.
+        final int iterations = 500;
+
+        var ids = new java.util.ArrayList<UUID>();
+        var keys = new java.util.ArrayList<TetreeKey<?>>();
+        for (int w = 0; w < writers; w++) {
+            ids.add(UUID.randomUUID());
+            keys.add(new Tet(0, 0, 0, (byte) 0, (byte) 0).child(w).tmIndex());
+        }
+
+        var stop = new java.util.concurrent.atomic.AtomicBoolean(false);
+        var error = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(writers + readers);
+        var done = new java.util.concurrent.CountDownLatch(writers);
+
+        try {
+            for (int w = 0; w < writers; w++) {
+                final int wi = w;
+                pool.submit(() -> {
+                    try {
+                        for (int i = 0; i < iterations && error.get() == null; i++) {
+                            grid.addBubble(new EnhancedBubble(ids.get(wi), (byte) 1, 16L), keys.get(wi));
+                            grid.removeBubble(ids.get(wi));
+                        }
+                    } catch (Throwable t) {
+                        error.compareAndSet(null, t);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            for (int r = 0; r < readers; r++) {
+                pool.submit(() -> {
+                    try {
+                        while (!stop.get() && error.get() == null) {
+                            for (var id : ids) {
+                                grid.getBubbleById(id);
+                                grid.getKeyForBubble(id);
+                                // getNeighbors(UUID) is the fail-loud path (throws NoSuchElementException
+                                // when the bubble is absent). A throw is legitimate when the bubble is
+                                // genuinely not present (between a writer's remove and its next add); the
+                                // fix guarantees it is NEVER thrown for a half-applied add (key resolved
+                                // but bubble not yet visible). So swallow NSE but let any OTHER throwable
+                                // (e.g. a deadlock-induced or consistency error) fail the test.
+                                try {
+                                    grid.getNeighbors(id);
+                                } catch (java.util.NoSuchElementException expectedWhenAbsent) {
+                                    // ok — bubble not currently in the grid
+                                }
+                            }
+                        }
+                    } catch (Throwable t) {
+                        error.compareAndSet(null, t);
+                    }
+                });
+            }
+
+            // No deadlock: writers must finish well within the timeout.
+            assertThat(done.await(30, java.util.concurrent.TimeUnit.SECONDS))
+                .as("writers must complete without deadlocking").isTrue();
+            stop.set(true);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        if (error.get() != null) {
+            throw new AssertionError("concurrent add/remove/read threw", error.get());
+        }
+        // Every writer ended on removeBubble → grid fully drained, both maps agree.
+        assertThat(grid.getBubbleCount()).as("grid drains to empty").isZero();
+        assertThat(grid.inverseIndexSize()).as("inverse index agrees with forward map").isZero();
+    }
 }
