@@ -114,4 +114,29 @@ class MigrationProposalTest {
         // Then: Proposals are different
         assertNotEquals(proposal1, proposal2);
     }
+
+    /**
+     * RDR-020 S3: the back-compatible 6-arg constructor defaults {@code kind} to
+     * {@link ProposalKind#ENTITY_MIGRATION}, so the ~70 existing entity-migration construction
+     * sites compile and behave unchanged.
+     */
+    @Test
+    void sixArgConstructorDefaultsToEntityMigration() {
+        var proposal = new MigrationProposal(UUID.randomUUID(), UUID.randomUUID(),
+                                             DigestAlgorithm.DEFAULT.random(), DigestAlgorithm.DEFAULT.random(),
+                                             DigestAlgorithm.DEFAULT.random(), 1000L);
+        assertEquals(ProposalKind.ENTITY_MIGRATION, proposal.kind(),
+                     "6-arg ctor must default kind to ENTITY_MIGRATION");
+    }
+
+    /**
+     * RDR-020 S3: the canonical 7-arg constructor carries an explicit {@link ProposalKind}.
+     */
+    @Test
+    void sevenArgConstructorCarriesExplicitKind() {
+        var proposal = new MigrationProposal(UUID.randomUUID(), UUID.randomUUID(),
+                                             DigestAlgorithm.DEFAULT.random(), DigestAlgorithm.DEFAULT.random(),
+                                             DigestAlgorithm.DEFAULT.random(), 1000L, ProposalKind.TOPOLOGY);
+        assertEquals(ProposalKind.TOPOLOGY, proposal.kind(), "explicit kind must be retained");
+    }
 }

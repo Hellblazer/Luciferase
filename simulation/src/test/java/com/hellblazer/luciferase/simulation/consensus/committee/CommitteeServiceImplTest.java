@@ -74,7 +74,11 @@ public class CommitteeServiceImplTest {
         when(mockContext.size()).thenReturn(3);
         when(mockContext.toleranceLevel()).thenReturn(1);
         when(mockContext.bftSubset(Mockito.any())).thenReturn(new java.util.LinkedHashSet<>());
-        when(mockContext.allMembers()).thenReturn(java.util.stream.Stream.empty());
+        when(mockContext.allMembers()).thenAnswer(inv -> java.util.stream.Stream.empty());
+        when(mockContext.active()).thenAnswer(inv -> java.util.stream.Stream.empty());
+        when(mockContext.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class))).thenReturn(true);
+
+
 
         var executor = Executors.newScheduledThreadPool(1);
         var votingProtocol = new CommitteeVotingProtocol(mockContext, CommitteeConfig.defaultConfig(), executor);

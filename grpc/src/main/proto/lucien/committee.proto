@@ -18,6 +18,15 @@ import "google/protobuf/empty.proto";
  * View ID prevents double-commit race conditions across view boundaries.
  */
 
+// Node-identity model for a proposal (RDR-020 S3).
+// ENTITY_MIGRATION (default, ordinal 0) = two-distinct-node migration; TOPOLOGY = single-region
+// structural change where source == target == owner(region) and the self-migration reject is skipped.
+// A pre-amendment peer omits the field, so it defaults to ENTITY_MIGRATION.
+enum ProposalKind {
+    ENTITY_MIGRATION = 0;
+    TOPOLOGY = 1;
+}
+
 // Migration proposal for committee voting
 message CommitteeMigrationProposal {
     string proposal_id = 1;           // UUID as string
@@ -27,6 +36,7 @@ message CommitteeMigrationProposal {
     string proposer_address = 5;      // gRPC address of proposer (for vote replies)
     string view_id = 6;               // Digest as hex string (prevents cross-view double-commit)
     int64 timestamp = 7;              // Proposal creation time (for ordering/debugging)
+    ProposalKind kind = 8;            // RDR-020 S3: node-identity model (default ENTITY_MIGRATION)
 }
 
 // Vote from committee member

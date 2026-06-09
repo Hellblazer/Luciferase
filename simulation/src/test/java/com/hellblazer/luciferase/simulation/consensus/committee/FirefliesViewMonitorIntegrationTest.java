@@ -124,6 +124,7 @@ class FirefliesViewMonitorIntegrationTest {
         when(mockContext.getId()).thenReturn(viewId);
         when(mockContext.allMembers()).thenReturn(java.util.stream.Stream.empty());
 
+
         return new FirefliesMembershipView(mockView);
     }
 }

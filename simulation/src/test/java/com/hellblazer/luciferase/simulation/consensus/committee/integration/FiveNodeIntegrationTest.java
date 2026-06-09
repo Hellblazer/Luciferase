@@ -94,6 +94,10 @@ public class FiveNodeIntegrationTest {
         // Mock allMembers for Byzantine validation (ViewCommitteeSelector.isNodeInView)
         // Use thenAnswer to create fresh stream for each call (streams can only be consumed once)
         when(context.allMembers()).thenAnswer(invocation -> members.stream());
+        when(context.active()).thenAnswer(invocation -> members.stream());
+        when(context.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class))).thenReturn(true);
+
+
 
         // Create view monitor
         viewMonitor = new MockViewMonitor(viewId);

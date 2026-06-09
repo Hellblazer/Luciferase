@@ -198,21 +198,41 @@ public class ViewCommitteeConsensus {
                  proposal.viewId(),
                  committeeIds.size());
 
+        // Track proposal for view change rollback. Luciferase-0frcy.132: this MUST be written
+        // BEFORE the inFlightByEntity reservation. onViewChange iterates pendingProposals and, for
+        // each stale-view entry, releases the matching inFlightByEntity slot. If the entity slot were
+        // reserved first and a view change fired in the gap before pendingProposals.put, onViewChange
+        // would not see the proposal and would never release the slot — orphaning the entity. With
+        // pendingProposals written first, onViewChange always sees the proposal (and a post-write
+        // view re-check below reconciles the residual interleaving where the scan ran entirely before
+        // the entity reservation).
+        var entityId = proposal.entityId();
+        var tracking = new ProposalTracking(proposal, committeeIds);
+        pendingProposals.put(proposal.proposalId(), tracking);
+
         // Per-entity in-flight guard (Luciferase-0frcy.94): reserve the migration
         // slot for this entity. If another proposal already holds it, reject this
         // one immediately so two concurrent proposals for the same entity cannot
         // both reach quorum and double-register the entity at two targets.
-        var entityId = proposal.entityId();
         var existing = inFlightByEntity.putIfAbsent(entityId, proposal.proposalId());
         if (existing != null) {
             log.debug("Entity {} already has in-flight migration proposal {}, rejecting {}",
                      entityId, existing, proposal.proposalId());
+            pendingProposals.remove(proposal.proposalId());  // undo the tracking entry we just added
             return CompletableFuture.completedFuture(false);
         }
 
-        // Track proposal for view change rollback
-        var tracking = new ProposalTracking(proposal, committeeIds);
-        pendingProposals.put(proposal.proposalId(), tracking);
+        // Luciferase-0frcy.132: reconcile a view change that raced between the early viewId check and
+        // the two writes above. If the view has since changed, onViewChange may have run its scan
+        // before either entry was visible; clean up both ourselves and reject (fail-closed, never an
+        // orphaned slot or a stale-view proposal entering voting).
+        if (!proposal.viewId().equals(getCurrentViewId())) {
+            log.debug("View changed during reservation for proposal {}, releasing slot and aborting",
+                     proposal.proposalId());
+            inFlightByEntity.remove(entityId, proposal.proposalId());
+            pendingProposals.remove(proposal.proposalId());
+            return CompletableFuture.completedFuture(false);
+        }
 
         // Submit to voting protocol
         var votingFuture = votingProtocol.requestConsensus(proposal, committeeIds);
@@ -361,8 +381,12 @@ public class ViewCommitteeConsensus {
             return false;
         }
 
-        // Prevent self-migration (source == target)
-        if (proposal.sourceNodeId().equals(proposal.targetNodeId())) {
+        // Prevent self-migration (source == target) — ENTITY_MIGRATION only.
+        // RDR-020 S3: TOPOLOGY proposals are single-region structural changes where
+        // source == target == owner(region) by construction, so the self-migration reject does
+        // NOT apply to them; every other validity gate (null-viewId, in-view membership) does.
+        if (proposal.kind() != ProposalKind.TOPOLOGY
+            && proposal.sourceNodeId().equals(proposal.targetNodeId())) {
             log.warn("Rejected proposal {} with source == target (self-migration): {}",
                     proposal.proposalId(), proposal.sourceNodeId());
             return false;

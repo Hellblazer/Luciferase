@@ -64,6 +64,10 @@ class CommitteeVotingProtocolTest {
         config = CommitteeConfig.defaultConfig();
         scheduler = Executors.newScheduledThreadPool(2);
         viewId = DigestAlgorithm.DEFAULT.getOrigin();
+        // yagnw.1: recordVote now drops votes from inactive members. These tests model a healthy
+        // committee where every voter is active; stub isActive=true so quorum is reachable.
+        when(mockContext.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class)))
+            .thenReturn(true);
     }
 
     @AfterEach
@@ -143,6 +147,37 @@ class CommitteeVotingProtocolTest {
 
         var result = future.get(1, TimeUnit.SECONDS);
         assertTrue(result, "Future should complete with true when quorum reached");
+    }
+
+    /**
+     * yagnw.1: a vote from an inactive (evicted-but-not-GC'd) committee member must NOT count toward
+     * quorum. selectCommittee draws the committee from the full ring, so an offline member can sit in
+     * the committee set; recordVote drops its vote (fails closed).
+     */
+    @Test
+    void testInactiveCommitteeMemberVoteDroppedFromQuorum() throws Exception {
+        // 3-node committee, quorum=2.
+        when(mockContext.size()).thenReturn(3);
+        when(mockContext.toleranceLevel()).thenReturn(1);
+        // member-1 is in the committee but inactive (evicted-not-GC'd); override the blanket stub.
+        var inactiveDigest = DigestAlgorithm.DEFAULT.digest("member-1");
+        when(mockContext.isActive(inactiveDigest)).thenReturn(false);
+
+        var protocol = new CommitteeVotingProtocol(mockContext, config, scheduler);
+        var proposal = createProposal();
+        var committee = createCommittee(3);
+        var future = protocol.requestConsensus(proposal, committee);
+
+        // YES from an active member (counts) + YES from the inactive member (dropped) → only 1 counts.
+        protocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-0"), true, viewId));
+        protocol.recordVote(new Vote(proposal.proposalId(), inactiveDigest, true, viewId));
+        assertFalse(future.isDone(),
+                    "the inactive member's vote must not count — quorum (2) not reached with 1 active YES");
+
+        // A second ACTIVE YES reaches quorum.
+        protocol.recordVote(new Vote(proposal.proposalId(), DigestAlgorithm.DEFAULT.digest("member-2"), true, viewId));
+        assertTrue(future.get(1, TimeUnit.SECONDS),
+                   "two active YES votes must reach quorum once the inactive vote is excluded");
     }
 
     /**

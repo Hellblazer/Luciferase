@@ -201,4 +201,43 @@ class CommitteeProtoConverterTest {
         assertArrayEquals(viewId.getBytes(), reconstructed.viewId().getBytes(),
                           "View ID bytes must match exactly");
     }
+
+    /**
+     * RDR-020 S3: {@code kind} survives proto conversion in both directions for both values —
+     * it is correctness-critical on the wire because every committee member re-validates a received
+     * proposal and branches on kind.
+     */
+    @Test
+    void kindPreservedAcrossSerialization() {
+        for (var kind : ProposalKind.values()) {
+            var proposal = new MigrationProposal(UUID.randomUUID(), UUID.randomUUID(),
+                                                 DigestAlgorithm.DEFAULT.random(), DigestAlgorithm.DEFAULT.random(),
+                                                 DigestAlgorithm.DEFAULT.random(), 1000L, kind);
+            var reconstructed = CommitteeProtoConverter.fromProto(
+                CommitteeProtoConverter.toProto(proposal, "localhost:12345"));
+            assertEquals(kind, reconstructed.kind(), "kind must round-trip for " + kind);
+        }
+    }
+
+    /**
+     * RDR-020 S3 back-compat: a proto with no {@code kind} field set (the pre-amendment / old-peer
+     * encoding) decodes to the default {@link ProposalKind#ENTITY_MIGRATION}, so old senders are read
+     * as entity migrations and retain the self-migration reject.
+     */
+    @Test
+    void absentKindDecodesToEntityMigration() {
+        // Build a proto WITHOUT setting kind — mirrors an old-peer / default encoding.
+        var proto = com.hellblazer.luciferase.simulation.consensus.committee.proto.CommitteeMigrationProposal
+            .newBuilder()
+            .setProposalId(UUID.randomUUID().toString())
+            .setEntityId(UUID.randomUUID().toString())
+            .setSourceNodeId(CommitteeProtoConverter.digestToHex(DigestAlgorithm.DEFAULT.random()))
+            .setTargetNodeId(CommitteeProtoConverter.digestToHex(DigestAlgorithm.DEFAULT.random()))
+            .setViewId(CommitteeProtoConverter.digestToHex(DigestAlgorithm.DEFAULT.random()))
+            .setTimestamp(1000L)
+            .build();
+        var reconstructed = CommitteeProtoConverter.fromProto(proto);
+        assertEquals(ProposalKind.ENTITY_MIGRATION, reconstructed.kind(),
+                     "absent kind must default to ENTITY_MIGRATION");
+    }
 }

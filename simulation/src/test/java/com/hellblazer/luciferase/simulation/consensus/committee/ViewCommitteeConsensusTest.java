@@ -88,6 +88,10 @@ public class ViewCommitteeConsensusTest {
 
         // Mock allMembers() to return a new stream each time (Byzantine validation)
         when(context.allMembers()).thenAnswer(invocation -> members.stream());
+        when(context.active()).thenAnswer(invocation -> members.stream());
+        when(context.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class))).thenReturn(true);
+
+
 
         // Create mock view monitor
         mockMonitor = new MockViewMonitor(view1);
@@ -227,6 +231,123 @@ public class ViewCommitteeConsensusTest {
         // Should immediately return false (view mismatch)
         var result = future.get(100, TimeUnit.MILLISECONDS);
         assertFalse(result, "Proposal with old viewId should be rejected immediately");
+    }
+
+    // ===== RDR-020 S3: TOPOLOGY-kind self-source proposals skip the self-migration reject =====
+
+    @Test
+    public void testTopologyKindSkipsSelfMigrationReject() throws Exception {
+        // A TOPOLOGY proposal is single-region: source == target == owner(region). A committee
+        // member (members.get(0)) is both source and target. validateProposal must NOT self-migration-
+        // reject it; instead it proceeds to voting (future remains in-flight pending votes), then
+        // reaches quorum.
+        var owner = members.get(0).getId();
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(), UUID.randomUUID(),
+            owner, owner,                       // self-source == self-target
+            view1, ZE0EQ_CLOCK.currentTimeMillis(),
+            ProposalKind.TOPOLOGY);
+
+        var future = consensus.requestConsensus(proposal);
+        assertFalse(future.isDone(),
+                    "TOPOLOGY self-owner proposal must pass validateProposal and enter voting (not self-rejected)");
+
+        for (int i = 0; i < 2; i++) {
+            votingProtocol.recordVote(new Vote(proposal.proposalId(), members.get(i).getId(), true, view1));
+        }
+        assertTrue(future.get(1, TimeUnit.SECONDS),
+                   "TOPOLOGY proposal must reach quorum once it passes validation");
+    }
+
+    @Test
+    public void testTopologyKindStillEnforcesInViewMembership() throws Exception {
+        // RDR-020 S3: TOPOLOGY skips ONLY the self-migration reject. The isNodeInView gate still
+        // applies — a TOPOLOGY proposal whose owner is NOT a current-view member is rejected. (The
+        // owner digest here is absent from the committee's member set.)
+        var outOfViewOwner = DigestAlgorithm.DEFAULT.digest("not-a-cluster-member");
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(), UUID.randomUUID(),
+            outOfViewOwner, outOfViewOwner,
+            view1, ZE0EQ_CLOCK.currentTimeMillis(),
+            ProposalKind.TOPOLOGY);
+
+        var future = consensus.requestConsensus(proposal);
+        assertTrue(future.isDone(), "out-of-view TOPOLOGY owner must be rejected immediately");
+        assertFalse(future.get(100, TimeUnit.MILLISECONDS),
+                    "TOPOLOGY proposal with owner not in view must be rejected by isNodeInView");
+    }
+
+    @Test
+    public void testEntityMigrationKindSelfMigrationRejected() throws Exception {
+        // The SAME self-source proposal as ENTITY_MIGRATION (the default kind / old-peer encoding)
+        // IS self-migration-rejected — immediately completes false. This pins both the kind-branch
+        // and the mixed-version contract: a pre-amendment validator reads TOPOLOGY as ENTITY_MIGRATION
+        // and rejects it.
+        var owner = members.get(0).getId();
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(), UUID.randomUUID(),
+            owner, owner,                       // self-source == self-target
+            view1, ZE0EQ_CLOCK.currentTimeMillis(),
+            ProposalKind.ENTITY_MIGRATION);
+
+        var future = consensus.requestConsensus(proposal);
+        assertTrue(future.isDone(), "ENTITY_MIGRATION self-source proposal must be rejected immediately");
+        assertFalse(future.get(100, TimeUnit.MILLISECONDS),
+                    "ENTITY_MIGRATION self-migration must be rejected (source == target)");
+    }
+
+    @Test
+    public void testViewChangeReleasesInFlightEntitySlot() {
+        // Luciferase-0frcy.132: a view change that rolls back a pending proposal must release the
+        // entity's in-flight slot — otherwise the entity is permanently blocked from re-migration.
+        // Coverage boundary: this exercises the sequential onViewChange slot-release path (the reorder
+        // ensures pendingProposals holds the entry before onViewChange scans). The concurrent window
+        // the reorder + post-write re-check close (onViewChange scanning between the two writes) is not
+        // deterministically reproducible single-threaded; the post-write re-check in requestConsensus
+        // is the structural guard for that interleaving.
+        var entityId = UUID.randomUUID();
+        var p1 = new MigrationProposal(UUID.randomUUID(), entityId,
+                                       members.get(0).getId(), members.get(1).getId(),
+                                       view1, ZE0EQ_CLOCK.currentTimeMillis());
+        var f1 = consensus.requestConsensus(p1);
+        assertFalse(f1.isDone(), "first proposal must be in-flight pending votes");
+
+        // View changes; onViewChange rolls back the stale-view proposal and releases the entity slot.
+        mockMonitor.setCurrentViewId(view2);
+        consensus.onViewChange(view2);
+
+        // A fresh proposal for the SAME entity in the new view must be accepted (slot released), not
+        // rejected as a duplicate in-flight migration.
+        var p2 = new MigrationProposal(UUID.randomUUID(), entityId,
+                                       members.get(0).getId(), members.get(1).getId(),
+                                       view2, ZE0EQ_CLOCK.currentTimeMillis());
+        var f2 = consensus.requestConsensus(p2);
+        assertFalse(f2.isDone(),
+                    "a new proposal for the same entity must be accepted once the view change released "
+                    + "the in-flight slot (regression guard for the orphaned-slot bug)");
+    }
+
+    @Test
+    public void testEvictedButNotGcdTargetRejectedByActiveOnlyGate() throws Exception {
+        // RDR-020 S6 end-to-end (non-tautological): make members.get(2) present in allMembers() but
+        // ABSENT from active() — an evicted-but-not-GC'd member. A proposal targeting it must be
+        // rejected by validateProposal's isNodeInView gate, which (post-S6) consults active() only.
+        // isNodeInView consults context.active() (not context.isActive), so re-stubbing active() here
+        // is sufficient; no isActive stub needed for this proposal-admission gate.
+        when(context.active()).thenAnswer(inv -> Stream.of(members.get(0), members.get(1)));
+
+        var source = members.get(0).getId();       // active
+        var evictedTarget = members.get(2).getId(); // in allMembers, NOT active
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(), UUID.randomUUID(),
+            source, evictedTarget,
+            view1, ZE0EQ_CLOCK.currentTimeMillis());
+
+        var future = consensus.requestConsensus(proposal);
+        assertTrue(future.isDone(),
+                   "a proposal targeting an evicted (inactive) member must be rejected immediately");
+        assertFalse(future.get(100, TimeUnit.MILLISECONDS),
+                    "isNodeInView (active-only) must reject an evicted-but-not-GC'd target");
     }
 
     // ===== Per-entity in-flight migration mutex (Luciferase-0frcy.94) =====

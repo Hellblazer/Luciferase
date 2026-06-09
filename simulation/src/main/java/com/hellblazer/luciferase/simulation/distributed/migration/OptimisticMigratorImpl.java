@@ -70,8 +70,18 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
     // Per-entity deferred update queue (bounded, lock-free)
     private final Map<UUID, java.util.concurrent.BlockingDeque<DeferredUpdate>> deferredQueues;
 
-    // Integration with committee consensus (Phase 7G.3)
-    private com.hellblazer.luciferase.simulation.consensus.committee.OptimisticMigratorIntegration consensusIntegration;
+    // Integration with committee consensus (Phase 7G.3).
+    // volatile: requestMigrationApproval is documented as concurrently callable (see the AtomicLong
+    // metrics), and this field is written via a setter; volatile gives the read a happens-before edge
+    // so a concurrent caller never observes a stale null after wiring (RDR-020 S4 review).
+    private volatile com.hellblazer.luciferase.simulation.consensus.committee.OptimisticMigratorIntegration consensusIntegration;
+
+    // Node-identity boundary for entity migration (RDR-020 S4). Resolves the target bubble UUID to
+    // the HRW owning member Digest and supplies the local member Digest as the source. Required when
+    // consensusIntegration is set; without it the bubble-UUID→member-Digest mapping the integration
+    // needs is unavailable and approval fails loud rather than silently bypassing the quorum gate.
+    // volatile for the same concurrent-visibility reason as consensusIntegration.
+    private volatile com.hellblazer.luciferase.simulation.consensus.ownership.BubbleOwnershipResolver ownershipResolver;
 
     // Metrics — AtomicLong because all increments occur from public interface methods that the
     // class documents as concurrently callable; plain long read-add-write triples lose
@@ -104,6 +114,25 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         log.debug("Consensus integration set");
     }
 
+    /**
+     * Set the bubble ownership resolver (RDR-020 S4).
+     * <p>
+     * Required alongside {@link #setConsensusIntegration} so {@link #requestMigrationApproval} can map
+     * the target bubble UUID to its HRW owning member {@link com.hellblazer.delos.cryptography.Digest}
+     * (target node) and supply the local member as the source node. Without it, a consensus-gated
+     * approval fails loud rather than silently bypassing the quorum gate.
+     *
+     * @param resolver the ownership resolver
+     */
+    // Production wiring note (RDR-020 / s23eu): no bootstrap assembly calls this yet — the live path
+    // is single-process and consensus integration is unwired; multi-node wiring lands with bead
+    // Luciferase-s23eu.
+    public void setOwnershipResolver(
+        com.hellblazer.luciferase.simulation.consensus.ownership.BubbleOwnershipResolver resolver) {
+        this.ownershipResolver = resolver;
+        log.debug("Ownership resolver set");
+    }
+
     @Override
     public void initiateOptimisticMigration(UUID entityId, UUID targetBubbleId) {
         Objects.requireNonNull(entityId, "entityId must not be null");
@@ -126,19 +155,30 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
         Objects.requireNonNull(entityId, "entityId must not be null");
         Objects.requireNonNull(targetBubble, "targetBubble must not be null");
 
-        // Phase 7G.3 / Luciferase-0frcy.35: when a consensus integration is wired, the caller
-        // expects the committee-quorum gate to actually run. The integration's
-        // requestMigrationApproval requires Digest source/target node identities, but this impl
-        // only has UUID bubble ids and no UUID→Digest mapping. Previously this branch silently
-        // returned `true`, bypassing the quorum check entirely while logging "Delegating ...".
-        // That is a safety hazard: a caller relying on the gate would skip it without any signal.
-        // Fail loud instead of silently approving until a real UUID→Digest mapping is wired.
+        // Phase 7G.3 / Luciferase-0frcy.35 / RDR-020 S4: when a consensus integration is wired the
+        // caller expects the committee-quorum gate to actually run. The integration needs Digest
+        // source/target node identities; the BubbleOwnershipResolver (S1) supplies them — target is the
+        // HRW owner of the target BUBBLE UUID, source is the local member (possession). This replaces
+        // the old UnsupportedOperationException gate, which existed only because no UUID→Digest mapping
+        // was available. Fail-loud invariants are preserved: a configured integration with no resolver
+        // throws (rather than silently approving), and resolveOwningMember itself throws on an
+        // unresolvable target (never a silent approve).
         if (consensusIntegration != null) {
-            throw new UnsupportedOperationException(
-                "Consensus-gated migration approval is configured but the UUID→Digest mapping "
-                + "required to delegate to committee consensus is not available "
-                + "(entity=" + entityId + ", target=" + targetBubble + "). Refusing to silently "
-                + "approve and bypass the quorum gate.");
+            if (ownershipResolver == null) {
+                throw new IllegalStateException(
+                    "Consensus-gated migration approval is configured but no BubbleOwnershipResolver is "
+                    + "set, so the target bubble cannot be resolved to a member Digest "
+                    + "(entity=" + entityId + ", target=" + targetBubble + "). Refusing to silently "
+                    + "approve and bypass the quorum gate.");
+            }
+            // targetBubble is a BUBBLE UUID → resolve directly to its HRW owner (no node-UUID lookup).
+            // resolveOwningMember fails loud (IllegalStateException) on an unresolvable target;
+            // localMember() always returns this process's own in-view member (possession).
+            var targetNodeId = ownershipResolver.resolveOwningMember(targetBubble);
+            var sourceId = ownershipResolver.localMember();
+            log.debug("Delegating migration approval to committee consensus: entity={}, source={}, target={}",
+                    entityId, sourceId, targetNodeId);
+            return consensusIntegration.requestMigrationApproval(entityId, sourceId, targetNodeId);
         }
 
         // Backward compatibility: default to approved when consensus not configured
