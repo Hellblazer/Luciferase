@@ -113,7 +113,9 @@ public class LifecycleCoordinator {
     private static final long MAX_LAYER_TIMEOUT_MS = 300_000; // 5 minutes
     private static final long DEFAULT_COMPONENT_TIMEOUT_MS = 5000L; // 5 seconds per component
 
-    final ConcurrentHashMap<String, LifecycleComponent> components;  // Package-private for Test 27 dual-map race detection
+    // Package-private for Test 27 dual-map race detection AND the componentNames() production
+    // read (RDR-021 S3) — do not make private without relocating both.
+    final ConcurrentHashMap<String, LifecycleComponent> components;
     private final ConcurrentHashMap<String, LifecycleState> states;
     private final ConcurrentHashMap<String, ReentrantReadWriteLock> componentLocks;  // Luciferase-ucks: Per-component locks
     private final AtomicBoolean isStarted;
@@ -360,7 +362,10 @@ public class LifecycleCoordinator {
      * Then the component is unregistered from lifecycle management.
      * <p>
      * This method checks if any other components depend on this one and throws if so.
-     * This prevents removing components that are dependencies of others.
+     * This prevents removing components that are dependencies of others. Dependents whose
+     * dependencies are {@linkplain LifecycleComponent#dependenciesAreOrderingOnly() ordering-only}
+     * (shutdown-ordering hints over a dynamic set, e.g. {@code RecoveryIntegrationAdapter}) do
+     * not block removal — they tolerate dependencies vanishing at any time (RDR-021 S3).
      *
      * @param componentName the name of the component to stop and remove
      * @throws LifecycleException if other components depend on this one
@@ -377,7 +382,7 @@ public class LifecycleCoordinator {
 
             // CRITICAL: Check if any component depends on this one
             for (var comp : components.values()) {
-                if (comp.dependencies().contains(componentName)) {
+                if (!comp.dependenciesAreOrderingOnly() && comp.dependencies().contains(componentName)) {
                     throw new LifecycleException(
                         "Cannot remove " + componentName + " - " + comp.name() + " depends on it");
                 }
@@ -670,6 +675,21 @@ public class LifecycleCoordinator {
     }
 
     /**
+     * Live view of registered component names, for dynamic dependency resolution (RDR-021 S3).
+     * <p>
+     * Package-private by design: the only sanctioned production caller is
+     * {@link RecoveryIntegrationAdapter#dependencies()}, which is invoked from inside
+     * {@code computeLayers()} while {@code inCoordinatorCall} is set — it must therefore be a
+     * plain map read with <b>no</b> {@code checkReentrancy()} guard and must never call back
+     * into a public coordinator method. Do NOT widen visibility.
+     *
+     * @return the live key set of registered components (weakly-consistent concurrent view)
+     */
+    java.util.Set<String> componentNames() {
+        return components.keySet();
+    }
+
+    /**
      * Get the current lifecycle state of a component.
      *
      * @param componentName the component name
@@ -722,6 +742,16 @@ public class LifecycleCoordinator {
             for (var depName : component.dependencies()) {
                 // Validate dependency exists
                 if (!components.containsKey(depName)) {
+                    if (component.dependenciesAreOrderingOnly()) {
+                        // RDR-021 S3 TOCTOU: an ordering-only (dynamic) dependency can vanish
+                        // between the dependencies() snapshot and this check (concurrent
+                        // stopAndUnregister during stop()). The vanished component cannot
+                        // participate in shutdown ordering anyway — skip it rather than abort
+                        // the whole coordinated shutdown.
+                        log.debug("Ordering-only dependency {} of {} vanished concurrently - skipping",
+                                  depName, name);
+                        continue;
+                    }
                     throw new LifecycleException(
                     "Component " + name + " depends on non-existent component: " + depName);
                 }

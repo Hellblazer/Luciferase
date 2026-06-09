@@ -16,6 +16,7 @@ import com.hellblazer.luciferase.lucien.balancing.fault.InMemoryPartitionTopolog
 import com.hellblazer.luciferase.lucien.balancing.fault.SimpleFaultHandler;
 import com.hellblazer.luciferase.simulation.causality.EntityMigrationStateMachine;
 import com.hellblazer.luciferase.simulation.lifecycle.PersistenceManagerAdapter;
+import com.hellblazer.luciferase.simulation.lifecycle.RecoveryIntegrationAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.SocketConnectionManagerAdapter;
 import com.hellblazer.luciferase.simulation.persistence.MigrationRecoveryStateSink;
 import com.hellblazer.luciferase.simulation.persistence.PersistenceManager;
@@ -194,8 +195,11 @@ public final class NodeBootstrap {
      * {@link #assemble(Manager, SocketConnectionManagerAdapter, PersistenceManagerAdapter,
      * BubbleMigrator)}).</b> {@link #close()} MUST run <b>before</b> the VON manager stops — it
      * unsubscribes the recovery integration from VON and fault events (so no event fires into a
-     * half-torn handler), then stops the fault handler. Lifecycle-integrating this ordering into
-     * {@code Manager.close()} is RDR-021 S3 (Luciferase-0frcy.135.4).
+     * half-torn handler), then stops the fault handler. Since RDR-021 S3 (Luciferase-0frcy.135.4)
+     * this ordering is lifecycle-integrated: {@link #assembleFaultTolerance} registers a
+     * {@code RecoveryIntegrationAdapter} whose dynamic bubble dependencies order it to stop ahead
+     * of every bubble adapter, so {@code Manager.close()} drives this {@code close()}
+     * deterministically. Calling {@code close()} manually beforehand remains safe (idempotent).
      *
      * @param recovery     the VON↔fault-recovery integration, subscribed at construction
      * @param faultHandler the started fault handler driving partition status
@@ -256,10 +260,17 @@ public final class NodeBootstrap {
      * Per-bubble registration ({@code recovery().registerBubble(bubbleId, partitionId)} with the
      * node's identity as the partition id) is driven from the bubble-creation path — RDR-021 S2
      * (Luciferase-0frcy.135.3).
+     * <p>
+     * <b>Lifecycle integration (RDR-021 S3).</b> The subsystem is registered with the manager's
+     * coordinator as a {@link RecoveryIntegrationAdapter} whose dynamic dependencies on the live
+     * {@code EnhancedBubble-*} adapters order it to stop <b>ahead of every bubble</b>:
+     * {@code Manager.close()} unsubscribes the recovery integration before any bubble's
+     * {@code broadcastLeave()} can re-enter it as a VON event (which would otherwise self-report
+     * sync failures against the node's own partitions during normal shutdown).
      *
      * @param manager the live VON manager the recovery integration subscribes to
      * @param clock   the clock for fault-handler and recovery timestamps (TestClock in tests)
-     * @return the assembled subsystem; close it before the VON manager stops
+     * @return the assembled subsystem, lifecycle-registered; {@code Manager.close()} stops it
      */
     public static FaultSubsystem assembleFaultTolerance(Manager manager, Clock clock) {
         Objects.requireNonNull(manager, "manager cannot be null");
@@ -271,8 +282,11 @@ public final class NodeBootstrap {
         faultHandler.start();
         var topology = new InMemoryPartitionTopology();
         var recovery = new RecoveryIntegration(manager, topology, faultHandler, clock);
-        log.info("Partition fault subsystem assembled: SimpleFaultHandler (started) + InMemoryPartitionTopology + RecoveryIntegration subscribed to VON manager");
-        return new FaultSubsystem(recovery, faultHandler, topology);
+        var subsystem = new FaultSubsystem(recovery, faultHandler, topology);
+        var coordinator = manager.coordinator();
+        coordinator.registerAndStart(new RecoveryIntegrationAdapter(subsystem, coordinator));
+        log.info("Partition fault subsystem assembled: SimpleFaultHandler (started) + InMemoryPartitionTopology + RecoveryIntegration subscribed to VON manager; lifecycle participant {} registered", RecoveryIntegrationAdapter.NAME);
+        return subsystem;
     }
 
     /**

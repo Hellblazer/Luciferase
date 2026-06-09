@@ -31,6 +31,12 @@ import java.util.Objects;
  */
 public class EnhancedBubbleAdapter extends AbstractLifecycleAdapter {
 
+    /**
+     * Component-name prefix for bubble adapters: {@code NAME_PREFIX + bubble.id()}. Used by
+     * {@link RecoveryIntegrationAdapter} to compute its dynamic bubble dependencies (RDR-021 S3).
+     */
+    public static final String NAME_PREFIX = "EnhancedBubble-";
+
     private static final Logger log = LoggerFactory.getLogger(EnhancedBubbleAdapter.class);
 
     private final EnhancedBubble bubble;
@@ -70,7 +76,7 @@ public class EnhancedBubbleAdapter extends AbstractLifecycleAdapter {
 
     @Override
     protected String getComponentName() {
-        return "EnhancedBubble-" + bubble.id();
+        return NAME_PREFIX + bubble.id();
     }
 
     @Override
