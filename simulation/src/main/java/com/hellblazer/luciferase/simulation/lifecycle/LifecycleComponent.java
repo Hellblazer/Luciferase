@@ -148,4 +148,23 @@ public interface LifecycleComponent {
      * @return list of component names this component depends on, never null (may be empty)
      */
     List<String> dependencies();
+
+    /**
+     * Whether this component's {@link #dependencies()} are <b>ordering-only hints</b> rather than
+     * liveness requirements (RDR-021 S3, Luciferase-0frcy.135.4).
+     * <p>
+     * A liveness dependency (the default) means this component needs the dependency alive to
+     * function; {@link LifecycleCoordinator#stopAndUnregister} refuses to remove a component that
+     * others depend on. An ordering-only dependent merely uses the dependency edge to be stopped
+     * <em>earlier</em> during full shutdown ({@code computeLayers} reverse order) and tolerates
+     * its dependencies being removed out from under it at any time — so the dependents guard in
+     * {@code stopAndUnregister} skips it. Components returning {@code true} typically compute
+     * {@link #dependencies()} dynamically (e.g. {@code RecoveryIntegrationAdapter}'s live bubble
+     * set).
+     *
+     * @return true if dependencies are ordering hints only; false (default) for liveness deps
+     */
+    default boolean dependenciesAreOrderingOnly() {
+        return false;
+    }
 }
