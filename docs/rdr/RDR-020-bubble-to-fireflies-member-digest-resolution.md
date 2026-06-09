@@ -2,12 +2,13 @@
 title: "Bubble→Fireflies Member Digest Resolution for Migration Consensus"
 id: RDR-020
 type: Bug Fix
-status: accepted
+status: implemented
 priority: high
 author: self
 reviewed-by: self
 created: 2026-06-08
 accepted_date: 2026-06-08
+closed_date: 2026-06-09
 related_issues: [Luciferase-vhbw3, Luciferase-l5c8q, Luciferase-0frcy, Luciferase-s23eu]
 ---
 
@@ -662,3 +663,25 @@ than absorbed here.
   target, which a position-derived owner can contradict. **Decision**: HRW `owner(targetBubbleKey, view)` is
   authoritative; an explicit `targetNodeId` is validated against it and **fails loud on mismatch**. All
   assumptions now resolved; ready for `/conexus:rdr-gate` (which should scrutinize the B1 decision).
+- 2026-06-09: **IMPLEMENTED** — full Phase-1 arc shipped on `feature/rdr-020-scope` and validated.
+  Steps: S1 view-derived HRW resolver (`Luciferase-bucvb`), S2 O(1) inverse index (`epihi`), S3 TOPOLOGY
+  `ProposalKind` + coordinator wiring / `digestOf` deleted (`e8gl4`), S4 `OptimisticMigratorImpl` wiring /
+  UOE removed (`jf7u6`), S5 node-UUID hint validation + `isActiveMember` (`kcgj1`), S6 `isNodeInView`
+  active-only (`i4prr`), S7 opt-in-contract pin (`h3lc6`), MVV end-to-end integration (`u911y`), holistic
+  phase-boundary review (`05ms3`). External Gap bugs closed: `vhbw3` (Gap 2), `l5c8q` (Gap 3).
+  Every increment passed stacked review (code-review-expert + substantive-critic); phase-review-gate PASSED
+  (9/9 §Approach items); full simulation suite 3241 tests green.
+  **Key divergences from the original design** (all gated/tracked): (1) the single-region TOPOLOGY
+  node-identity model (S3 amendment) — `source == target == owner(region)`, self-migration reject skipped
+  only for TOPOLOGY. (2) `BubbleOwnershipResolver` gained a 4th method `isActiveMember` (S5) — the spec's
+  3-method sketch understated it; `memberDigestForNode` resolves over all-members (B4) so the hint guard
+  needs a separate active check. (3) S6's active-only invariant covers source/target identity at the
+  validator; the committee-*composition* active-only gap (offline member voting) was closed separately at
+  vote-receipt (`yagnw.1` → `CommitteeVotingProtocol.recordVote` drops inactive votes), the safety-
+  conservative option that fixes the quorum denominator at the original committee size.
+  **Named deferrals (out of scope, tracked):** placement-honors-HRW partition seeding and production
+  resolver wiring → `s23eu` (multi-node bootstrap); cross-region merge → fail-loud guard (two-node merge
+  protocol later); committee-resizing-under-churn liveness → `Luciferase-0frcy.134`; pre-existing
+  `TetreeBubbleGrid` dual-map atomicity → tracked under `0frcy`. The live path is single-process
+  (`s23eu` unwired), where every proposal is a correctly-rejected self-migration — correct today, not by
+  coincidence. Post-mortem: `docs/rdr/post-mortem/020-bubble-to-fireflies-member-digest-resolution.md`.
