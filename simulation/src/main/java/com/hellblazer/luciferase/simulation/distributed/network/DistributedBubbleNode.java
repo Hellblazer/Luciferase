@@ -119,6 +119,8 @@ public class DistributedBubbleNode implements BubbleNetworkChannel.EntityDepartu
      *
      * @param resolver the ownership resolver, or {@code null} to disable hint validation
      */
+    // Production wiring note (RDR-020 / s23eu): no bootstrap assembly calls this yet — the live path
+    // is single-process; multi-node wiring lands with bead Luciferase-s23eu.
     public void setOwnershipResolver(BubbleOwnershipResolver resolver) {
         if (resolver == null && this.ownershipResolver != null) {
             // Surface the downgrade: clearing a previously-wired resolver silently re-opens the

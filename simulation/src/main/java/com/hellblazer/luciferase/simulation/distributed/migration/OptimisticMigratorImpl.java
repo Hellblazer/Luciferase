@@ -124,6 +124,9 @@ public class OptimisticMigratorImpl implements OptimisticMigrator {
      *
      * @param resolver the ownership resolver
      */
+    // Production wiring note (RDR-020 / s23eu): no bootstrap assembly calls this yet — the live path
+    // is single-process and consensus integration is unwired; multi-node wiring lands with bead
+    // Luciferase-s23eu.
     public void setOwnershipResolver(
         com.hellblazer.luciferase.simulation.consensus.ownership.BubbleOwnershipResolver resolver) {
         this.ownershipResolver = resolver;

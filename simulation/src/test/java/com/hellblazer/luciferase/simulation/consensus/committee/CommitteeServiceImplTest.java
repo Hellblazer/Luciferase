@@ -74,8 +74,8 @@ public class CommitteeServiceImplTest {
         when(mockContext.size()).thenReturn(3);
         when(mockContext.toleranceLevel()).thenReturn(1);
         when(mockContext.bftSubset(Mockito.any())).thenReturn(new java.util.LinkedHashSet<>());
-        when(mockContext.allMembers()).thenReturn(java.util.stream.Stream.empty());
-        when(mockContext.active()).thenReturn(java.util.stream.Stream.empty());
+        when(mockContext.allMembers()).thenAnswer(inv -> java.util.stream.Stream.empty());
+        when(mockContext.active()).thenAnswer(inv -> java.util.stream.Stream.empty());
 
 
         var executor = Executors.newScheduledThreadPool(1);

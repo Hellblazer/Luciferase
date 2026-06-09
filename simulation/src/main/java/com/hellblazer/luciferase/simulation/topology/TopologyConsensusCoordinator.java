@@ -107,9 +107,11 @@ public class TopologyConsensusCoordinator {
     /**
      * Underlying consensus protocol for Byzantine fault tolerance.
      * <p>
-     * Set via setConsensusProtocol() for dependency injection.
+     * Set via setConsensusProtocol() for dependency injection. volatile: written by the setter and
+     * read in requestConsensus on a possibly-different thread; volatile gives the read a happens-before
+     * edge so it never observes a stale null after wiring (matches OptimisticMigratorImpl, RDR-020 review).
      */
-    private ViewCommitteeConsensus consensusProtocol;
+    private volatile ViewCommitteeConsensus consensusProtocol;
 
     /**
      * Resolves the HRW owning member of a region for the TOPOLOGY node-identity model (RDR-020 S3).
@@ -119,8 +121,13 @@ public class TopologyConsensusCoordinator {
      * change must carry the real, in-view member identity of the region's owner, not a
      * bubble-UUID-derived digest (the old {@code digestOf} which the live membership-enforcing
      * consensus silently rejected — RDR-020 Gap 2 / Luciferase-vhbw3).
+     * volatile for the same concurrent-visibility reason as consensusProtocol.
+     * <p>
+     * Production wiring note (RDR-020 / s23eu): no bootstrap assembly wires this resolver yet — the
+     * live path is single-process where every proposal is a self-migration, so the resolver is not
+     * needed. Multi-node productionization wires it via the node bootstrap (bead Luciferase-s23eu).
      */
-    private BubbleOwnershipResolver ownershipResolver;
+    private volatile BubbleOwnershipResolver ownershipResolver;
 
     /**
      * Creates a topology consensus coordinator with default 30-second cooldown.

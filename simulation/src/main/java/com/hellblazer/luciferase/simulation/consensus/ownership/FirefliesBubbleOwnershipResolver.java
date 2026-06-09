@@ -137,6 +137,12 @@ public final class FirefliesBubbleOwnershipResolver implements BubbleOwnershipRe
      *   <li>Verify the result is in the active set (defensive; the HRW function guarantees
      *       this invariant, but we fail loud on any violation).</li>
      * </ol>
+     * <p>
+     * Note: the active set is a snapshot read at call time. A view transition between this call and
+     * the moment the resulting proposal reaches {@code validateProposal}/{@code isNodeInView} can make
+     * the returned owner stale — the consensus layer's view-ID binding is the authoritative guard and
+     * rejects such a proposal visibly (never a mis-route). This two-read TOCTOU is a best-effort
+     * boundary, not an atomic guarantee.
      */
     @Override
     public Digest resolveOwningMember(UUID bubbleId) {
