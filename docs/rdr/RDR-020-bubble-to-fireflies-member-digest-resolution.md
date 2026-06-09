@@ -333,6 +333,9 @@ interface BubbleOwnershipResolver {
     Digest resolveOwningMember(UUID bubbleId);   // throws IllegalStateException if no current-view owner
     Digest localMember();                         // this process's own member Digest (source node)
     Digest memberDigestForNode(UUID nodeId);      // canonical node-UUID -> member Digest (B4); throws if unknown
+    boolean isActiveMember(Digest member);        // S5: active-only (RDR-005) membership test; memberDigestForNode
+                                                  // resolves over all-members so the node-UUID hint guard needs
+                                                  // this to reject evicted-but-not-GC'd members
 }
 
 // Deterministic, view-derived ownership — pure function, identical on every node.

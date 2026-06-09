@@ -91,4 +91,19 @@ public interface BubbleOwnershipResolver {
      * @throws IllegalStateException if no member with this node UUID is found
      */
     Digest memberDigestForNode(UUID nodeId);
+
+    /**
+     * Report whether {@code member} is a <em>current-view active</em> member (RDR-020 S5 / RDR-005).
+     * <p>
+     * {@link #memberDigestForNode(UUID)} resolves over the all-members backing
+     * ({@code FirefliesMemberLookup.getMemberByUuid}, built on the misnamed all-members accessor), so it
+     * can return a member that has been evicted but not yet garbage-collected from the view. Node-UUID
+     * hint validation must additionally confirm the resolved member is in the <em>active-only</em> set
+     * ({@code DynamicContext.active()} / {@code MembershipView.activeMembers()}). This method exposes
+     * that determination without leaking the membership backing to callers.
+     *
+     * @param member the member {@link Digest} to test; must not be {@code null}
+     * @return {@code true} iff {@code member} is in the current active-only member set
+     */
+    boolean isActiveMember(Digest member);
 }

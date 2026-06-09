@@ -110,4 +110,16 @@ public final class StubBubbleOwnershipResolver implements BubbleOwnershipResolve
         }
         return digest;
     }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Tests membership against the seeded active member list (this double uses the same set for
+     * active and all members — see the class note).
+     */
+    @Override
+    public boolean isActiveMember(Digest member) {
+        Objects.requireNonNull(member, "member must not be null");
+        return activeMembers.contains(member);
+    }
 }

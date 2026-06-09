@@ -101,6 +101,11 @@ class TopologyConsensusCoordinatorTest {
             public Digest memberDigestForNode(UUID nodeId) {
                 return owner;
             }
+
+            @Override
+            public boolean isActiveMember(Digest member) {
+                return true;
+            }
         };
     }
 
@@ -742,6 +747,11 @@ class TopologyConsensusCoordinatorTest {
             @Override
             public Digest memberDigestForNode(UUID nodeId) {
                 return ownerA;
+            }
+
+            @Override
+            public boolean isActiveMember(Digest member) {
+                return true;
             }
         });
 

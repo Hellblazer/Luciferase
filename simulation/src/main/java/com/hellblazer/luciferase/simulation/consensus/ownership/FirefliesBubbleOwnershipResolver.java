@@ -199,4 +199,18 @@ public final class FirefliesBubbleOwnershipResolver implements BubbleOwnershipRe
                            .orElseThrow(() -> new IllegalStateException(
                                "No Fireflies member found for node UUID: " + nodeId));
     }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Tests {@code member} against the <em>active-only</em> set ({@code membershipView.activeMembers()},
+     * RDR-005) — never the misnamed all-members backing.
+     */
+    @Override
+    public boolean isActiveMember(Digest member) {
+        Objects.requireNonNull(member, "member must not be null");
+        return membershipView.activeMembers()
+                             .map(Member::getId)
+                             .anyMatch(member::equals);
+    }
 }

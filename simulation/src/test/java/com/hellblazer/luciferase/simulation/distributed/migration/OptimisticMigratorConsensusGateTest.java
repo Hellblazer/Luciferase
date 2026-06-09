@@ -67,6 +67,11 @@ class OptimisticMigratorConsensusGateTest {
             public Digest memberDigestForNode(UUID nodeId) {
                 return owner;
             }
+
+            @Override
+            public boolean isActiveMember(Digest member) {
+                return true;
+            }
         };
     }
 
@@ -156,6 +161,11 @@ class OptimisticMigratorConsensusGateTest {
             @Override
             public Digest memberDigestForNode(UUID nodeId) {
                 return DigestAlgorithm.DEFAULT.digest("s4-local");
+            }
+
+            @Override
+            public boolean isActiveMember(Digest member) {
+                return true;
             }
         });
 

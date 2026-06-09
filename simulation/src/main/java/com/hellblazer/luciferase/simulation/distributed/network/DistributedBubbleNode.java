@@ -8,6 +8,7 @@ package com.hellblazer.luciferase.simulation.distributed.network;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import com.hellblazer.luciferase.simulation.bubble.EnhancedBubbleMigrationIntegration;
 import com.hellblazer.luciferase.simulation.causality.*;
+import com.hellblazer.luciferase.simulation.consensus.ownership.BubbleOwnershipResolver;
 import com.hellblazer.luciferase.simulation.distributed.migration.*;
 import com.hellblazer.luciferase.simulation.events.*;
 import java.util.UUID;
@@ -30,6 +31,16 @@ public class DistributedBubbleNode implements BubbleNetworkChannel.EntityDepartu
     private final BubbleNetworkChannel networkChannel;
     private final EnhancedBubbleMigrationIntegration migrationIntegration;
     private final EntityMigrationStateMachine fsm;
+
+    /**
+     * Node-identity resolver for validating an explicit {@code targetNodeId} hint (RDR-020 S5).
+     * <p>
+     * Optional: when set, {@link #initiateRemoteMigration(UUID, UUID)} fails loud if the supplied
+     * {@code targetNodeId} does not resolve to a current-view active member. When unset (the default),
+     * the hint is not validated (backward compatibility). volatile for safe visibility across the
+     * concurrently-callable migration path.
+     */
+    private volatile BubbleOwnershipResolver ownershipResolver;
 
     /**
      * Create a distributed bubble node with network communication.
@@ -102,13 +113,56 @@ public class DistributedBubbleNode implements BubbleNetworkChannel.EntityDepartu
     }
 
     /**
+     * Set the node-identity resolver used to validate an explicit {@code targetNodeId} hint
+     * (RDR-020 S5). When set, {@link #initiateRemoteMigration} fails loud on a node UUID that does
+     * not resolve to a current-view active member; when unset the hint is not validated.
+     *
+     * @param resolver the ownership resolver, or {@code null} to disable hint validation
+     */
+    public void setOwnershipResolver(BubbleOwnershipResolver resolver) {
+        if (resolver == null && this.ownershipResolver != null) {
+            // Surface the downgrade: clearing a previously-wired resolver silently re-opens the
+            // unvalidated-hint path. Make it visible rather than a quiet safety regression.
+            log.warn("Ownership resolver cleared on node {}: targetNodeId hint validation now disabled", nodeId);
+        }
+        this.ownershipResolver = resolver;
+    }
+
+    /**
      * Initiate an optimistic migration to a remote node.
      *
      * @param entityId    UUID of entity to migrate
      * @param targetNodeId UUID of target node
      * @return true if migration successfully initiated
+     * @throws IllegalStateException if an ownership resolver is wired and {@code targetNodeId} does not
+     *                               resolve to a current-view active member (RDR-020 S5 fail-loud hint
+     *                               validation) — a stale/forged/random node UUID is a consistency
+     *                               error, not a transient condition. Note: the resolution and
+     *                               active-membership check are two reads, not one atomic snapshot; a
+     *                               view transition between them may yield a false-pass or false-fail.
+     *                               That is acceptable — an in-flight migration is independently subject
+     *                               to view-change rollback downstream (a false-pass self-heals), and a
+     *                               false-fail is a visible fail-loud, never a mis-route.
      */
     public boolean initiateRemoteMigration(UUID entityId, UUID targetNodeId) {
+        // RDR-020 S5 (B1/B4): when a resolver is wired, validate the explicit node-UUID hint before
+        // anything else. targetNodeId carries no destination region key, so HRW owner(destKey) is not
+        // computable here (that cross-check lives at the bubble-keyed consensus entry points, S3/S4);
+        // the implementable guard is the canonical node-UUID -> member-Digest resolution plus an
+        // active-only membership check. A random/unknown UUID resolves to no member, and an
+        // evicted-but-not-GC'd node resolves but is inactive — both fail loud rather than silently
+        // initiating a migration toward a node that cannot own the entity.
+        var resolver = ownershipResolver;
+        if (resolver != null) {
+            var targetDigest = resolver.memberDigestForNode(targetNodeId); // throws if no such member
+            if (!resolver.isActiveMember(targetDigest)) {
+                throw new IllegalStateException(
+                    "Target node " + targetNodeId + " resolves to member " + targetDigest
+                    + " which is not a current-view active member; refusing to initiate migration of "
+                    + entityId + " toward an inactive node");
+            }
+        }
+
         // Check if target is reachable
         if (!networkChannel.isNodeReachable(targetNodeId)) {
             log.warn("Cannot migrate {}: target node {} unreachable", entityId, targetNodeId);
