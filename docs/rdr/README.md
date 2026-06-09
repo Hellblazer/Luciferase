@@ -30,7 +30,8 @@ See the [RDR process documentation](https://github.com/cwensel/rdr) for the full
 | [RDR-017](RDR-017-production-node-bootstrap.md) | Production Node Bootstrap — Compose the Distributed Simulation Node (Lifecycle, WAL, Recovery, Migration) | implemented | Architecture | medium |
 | [RDR-018](RDR-018-dynamic-topology-vs-single-level-partition.md) | Dynamic Topology (Split/Merge) vs the RDR-015 Single-Level Migration Partition | implemented | Architecture | medium |
 | [RDR-019](RDR-019-wal-checkpoint-recovery-durability.md) | WAL Checkpoint/Recovery Durability — Bound Replay Safely (Snapshot or Compaction) | accepted | Bug Fix | high |
-| [RDR-020](RDR-020-bubble-to-fireflies-member-digest-resolution.md) | Bubble→Fireflies Member Digest Resolution for Migration Consensus | accepted | Bug Fix | high |
+| [RDR-020](RDR-020-bubble-to-fireflies-member-digest-resolution.md) | Bubble→Fireflies Member Digest Resolution for Migration Consensus | implemented | Bug Fix | high |
+| [RDR-021](RDR-021-wire-partition-fault-tolerance-node-bootstrap.md) | Wire Partition Fault Tolerance into the Production Node Bootstrap | accepted | Architecture | medium |
 
 ## Post-Mortems
 

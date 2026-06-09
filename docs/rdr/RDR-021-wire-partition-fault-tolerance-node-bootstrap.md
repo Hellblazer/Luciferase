@@ -2,12 +2,12 @@
 title: "Wire Partition Fault Tolerance into the Production Node Bootstrap"
 id: RDR-021
 type: Architecture
-status: draft
+status: accepted
 priority: medium
 author: self
 reviewed-by: self
 created: 2026-06-09
-accepted_date:
+accepted_date: 2026-06-09
 related_issues: [Luciferase-s23eu, Luciferase-0frcy, Luciferase-n6jrh.1, Luciferase-n6jrh.2]
 ---
 
