@@ -145,9 +145,9 @@ Verified chain (all file:line confirmed):
   lifecycle graph without reordering the existing Layer 0/bubble dependencies. — **Status**:
   **PARTIAL / REFINED** (Source Search) — the subscription start (constructor) / stop (`close()`) maps
   cleanly onto a lifecycle participant stopped BEFORE the VON manager. BUT the bootstrap constructs no
-  fault subsystem today, so the real prerequisite is constructing `FaultHandler` + `PartitionTopology`
-  + a `PartitionRecovery` strategy in the node (the scope refinement above), and production activation
-  is gated on the live `main()` skeleton (RDR-017 P0).
+  fault subsystem today, so the real prerequisite is constructing a `FaultHandler`, a
+  `PartitionTopology`, and a `PartitionRecovery` strategy in the node (the scope refinement above), and
+  production activation is gated on the live `main()` skeleton (RDR-017 P0).
 
 **Method definitions**: Source Search = API verified against dependency source. Spike = behavior
 verified by running code. Docs Only = insufficient for load-bearing assumptions.
