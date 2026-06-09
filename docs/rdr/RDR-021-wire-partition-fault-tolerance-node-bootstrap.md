@@ -2,12 +2,13 @@
 title: "Wire Partition Fault Tolerance into the Production Node Bootstrap"
 id: RDR-021
 type: Architecture
-status: accepted
+status: implemented
 priority: medium
 author: self
 reviewed-by: self
 created: 2026-06-09
 accepted_date: 2026-06-09
+closed_date: 2026-06-09
 related_issues: [Luciferase-s23eu, Luciferase-0frcy, Luciferase-n6jrh.1, Luciferase-n6jrh.2]
 ---
 
@@ -384,3 +385,12 @@ To be decomposed after research/gate (`/conexus:rdr-research` → `/conexus:rdr-
   scope → sibling RDR). One follow-up Significant (stale "Recovery strategy" audit row contradicting the
   no-strategy decision) fixed; MVV step-2 clarified to the registered bubbleId. Ready for
   `/conexus:rdr-accept`.
+- 2026-06-09: **implemented — closed**. Shipped via PRs #225 (S1 `assembleFaultTolerance` +
+  `FaultSubsystem`), #226 (S2 registration seam, unregister-before-leave), #227 (S3
+  `RecoveryIntegrationAdapter` lifecycle ordering, dynamic ordering-only dependencies), #228 (MVV
+  `Rdr021MvvIntegrationTest` — Gap 1 + Gap 2 proven end-to-end + the decision-#9 negative oracle).
+  Phase-review-gate cross-walk PASSED (5/5 §Approach items); full suite 3268/0/0. One gated
+  divergence: `LifecycleComponent.dependenciesAreOrderingOnly()` coordinator extension (bounded S3
+  remediation — see post-mortem). Post-mortem:
+  `post-mortem/021-wire-partition-fault-tolerance-node-bootstrap.md`. `Luciferase-s23eu` stays open
+  for the resolver half (sibling RDR).
