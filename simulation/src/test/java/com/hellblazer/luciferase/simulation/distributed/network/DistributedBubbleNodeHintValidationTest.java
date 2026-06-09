@@ -120,6 +120,21 @@ class DistributedBubbleNodeHintValidationTest {
     }
 
     @Test
+    void noResolverWired_randomNodeUuidIsNotValidated() {
+        // RDR-020 S7 (Luciferase-h3lc6): the S5 hint validation is OPT-IN — it runs only when a
+        // resolver is wired. With no resolver (the default), an arbitrary/random node UUID that does
+        // not resolve to any member is NOT validated and the migration proceeds. This is the contract
+        // the performance/resilience suites rely on (they drive initiateRemoteMigration with random
+        // node UUIDs and no resolver); pinning it here guards against a regression that made
+        // validation unconditional. Canonical (digestToUuid-derived) identities become required only
+        // once a resolver is wired by the multi-node bootstrap (bead Luciferase-s23eu).
+        var node = nodeWith(/* resolver */ null, UUID.randomUUID());
+        var initiated = node.node().initiateRemoteMigration(UUID.randomUUID(), node.targetNodeId());
+        assertTrue(initiated, "with no resolver wired, a random node UUID must not be validated (no throw)");
+        verify(node.migrator()).initiateOptimisticMigration(any(), any());
+    }
+
+    @Test
     void clearingResolverDisablesValidation() {
         var targetNodeId = UUID.randomUUID();
         var entityId = UUID.randomUUID();
