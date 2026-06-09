@@ -75,6 +75,8 @@ public class CommitteeServiceImplTest {
         when(mockContext.toleranceLevel()).thenReturn(1);
         when(mockContext.bftSubset(Mockito.any())).thenReturn(new java.util.LinkedHashSet<>());
         when(mockContext.allMembers()).thenReturn(java.util.stream.Stream.empty());
+        when(mockContext.active()).thenReturn(java.util.stream.Stream.empty());
+
 
         var executor = Executors.newScheduledThreadPool(1);
         var votingProtocol = new CommitteeVotingProtocol(mockContext, CommitteeConfig.defaultConfig(), executor);

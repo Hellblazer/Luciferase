@@ -88,6 +88,8 @@ public class ViewCommitteeConsensusTest {
 
         // Mock allMembers() to return a new stream each time (Byzantine validation)
         when(context.allMembers()).thenAnswer(invocation -> members.stream());
+        when(context.active()).thenAnswer(invocation -> members.stream());
+
 
         // Create mock view monitor
         mockMonitor = new MockViewMonitor(view1);
@@ -290,6 +292,27 @@ public class ViewCommitteeConsensusTest {
         assertTrue(future.isDone(), "ENTITY_MIGRATION self-source proposal must be rejected immediately");
         assertFalse(future.get(100, TimeUnit.MILLISECONDS),
                     "ENTITY_MIGRATION self-migration must be rejected (source == target)");
+    }
+
+    @Test
+    public void testEvictedButNotGcdTargetRejectedByActiveOnlyGate() throws Exception {
+        // RDR-020 S6 end-to-end (non-tautological): make members.get(2) present in allMembers() but
+        // ABSENT from active() — an evicted-but-not-GC'd member. A proposal targeting it must be
+        // rejected by validateProposal's isNodeInView gate, which (post-S6) consults active() only.
+        when(context.active()).thenAnswer(inv -> Stream.of(members.get(0), members.get(1)));
+
+        var source = members.get(0).getId();       // active
+        var evictedTarget = members.get(2).getId(); // in allMembers, NOT active
+        var proposal = new MigrationProposal(
+            UUID.randomUUID(), UUID.randomUUID(),
+            source, evictedTarget,
+            view1, ZE0EQ_CLOCK.currentTimeMillis());
+
+        var future = consensus.requestConsensus(proposal);
+        assertTrue(future.isDone(),
+                   "a proposal targeting an evicted (inactive) member must be rejected immediately");
+        assertFalse(future.get(100, TimeUnit.MILLISECONDS),
+                    "isNodeInView (active-only) must reject an evicted-but-not-GC'd target");
     }
 
     // ===== Per-entity in-flight migration mutex (Luciferase-0frcy.94) =====

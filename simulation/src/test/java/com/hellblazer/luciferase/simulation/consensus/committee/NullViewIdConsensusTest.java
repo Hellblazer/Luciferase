@@ -77,6 +77,8 @@ public class NullViewIdConsensusTest {
         var committee = new java.util.LinkedHashSet<>(members.subList(0, 3));
         when(context.bftSubset(Mockito.any(Digest.class))).thenReturn((java.util.SequencedSet) committee);
         when(context.allMembers()).thenAnswer(invocation -> members.stream());
+        when(context.active()).thenAnswer(invocation -> members.stream());
+
 
         selector = new ViewCommitteeSelector(context);
         var config = CommitteeConfig.defaultConfig();

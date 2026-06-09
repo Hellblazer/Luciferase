@@ -71,17 +71,29 @@ public class ViewCommitteeSelector {
     }
 
     /**
-     * Check if a node exists in the current view.
+     * Check if a node is an <em>active</em> member of the current view.
      * <p>
-     * Used for Byzantine input validation - verify target node exists
-     * before allowing migration proposal.
+     * Used for Byzantine input validation — verify the target/source node is a current-view active
+     * member before admitting a migration proposal.
+     * <p>
+     * RDR-020 S6 (RDR-005 active-only invariant): this matches against {@code context.active()}, NOT
+     * {@code context.allMembers()}. The all-members backing can still contain an evicted member that
+     * has not yet been garbage-collected from the view; admitting it would let a proposal target a node
+     * that is no longer participating. The resolver enforces active-only on the ownership side
+     * ({@code MembershipView.activeMembers()}); this gate enforces the same invariant for the proposal's
+     * <b>source/target node identity</b> at the validator.
+     * <p>
+     * Scope: this gate covers the source/target membership check only. Committee <em>composition</em>
+     * ({@link #selectCommittee} → {@code context.bftSubset}) still draws from the full ring and may
+     * include an offline member as a <em>voter</em> — a distinct, adjacent active-only gap tracked
+     * separately (Luciferase-yagnw.1), not closed here.
      *
      * @param nodeId Node identifier (member ID) to check
-     * @return true if node exists in current view, false otherwise
+     * @return true if the node is a current-view active member, false otherwise
      */
     public boolean isNodeInView(Digest nodeId) {
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-        return context.allMembers()
+        return context.active()
                       .anyMatch(member -> member.getId().equals(nodeId));
     }
 }

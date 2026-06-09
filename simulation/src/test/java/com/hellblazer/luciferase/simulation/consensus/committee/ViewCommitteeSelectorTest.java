@@ -152,6 +152,30 @@ class ViewCommitteeSelectorTest {
         verify(context).bftSubset(viewDiadem2);
     }
 
+    /**
+     * RDR-020 S6 (RDR-005 active-only invariant): {@code isNodeInView} matches against
+     * {@code context.active()}, so a current-view active member is in-view and an evicted-but-not-GC'd
+     * member (still in {@code allMembers()} but absent from {@code active()}) is NOT in-view.
+     */
+    @Test
+    void isNodeInViewMatchesActiveOnly() {
+        var context = mockContext();
+        var active = new com.hellblazer.delos.membership.MockMember(DigestAlgorithm.DEFAULT.getOrigin().prefix(1));
+        var evicted = new com.hellblazer.delos.membership.MockMember(DigestAlgorithm.DEFAULT.getOrigin().prefix(2));
+
+        // active() contains only the active member; the evicted member is intentionally absent even
+        // though a real all-members backing might still carry it (not GC'd).
+        when(context.active()).thenAnswer(inv -> java.util.stream.Stream.of(active));
+
+        var selector = new ViewCommitteeSelector(context);
+
+        assertTrue(selector.isNodeInView(active.getId()), "an active member must be in view");
+        assertFalse(selector.isNodeInView(evicted.getId()),
+                    "an evicted-but-not-GC'd member must NOT be in view (active-only gate)");
+        // The active-only invariant requires the gate never consult the all-members backing.
+        verify(context, never()).allMembers();
+    }
+
     // Helper method to create mock DynamicContext
     @SuppressWarnings("unchecked")
     private DynamicContext<Member> mockContext() {

@@ -274,6 +274,8 @@ public class CommitteeP2PIntegrationTest {
         // Mock allMembers for Byzantine validation (ViewCommitteeSelector.isNodeInView)
         // Use thenAnswer to create fresh stream for each call (streams can only be consumed once)
         when(mockContext.allMembers()).thenAnswer(invocation -> members.stream());
+        when(mockContext.active()).thenAnswer(invocation -> members.stream());
+
 
         return mockContext;
     }

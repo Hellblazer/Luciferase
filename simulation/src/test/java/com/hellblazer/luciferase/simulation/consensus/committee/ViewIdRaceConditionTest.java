@@ -93,6 +93,8 @@ public class ViewIdRaceConditionTest {
         // Mock allMembers for Byzantine validation (ViewCommitteeSelector.isNodeInView)
         // Use thenAnswer to create fresh stream for each call (streams can only be consumed once)
         when(context.allMembers()).thenAnswer(invocation -> members.stream());
+        when(context.active()).thenAnswer(invocation -> members.stream());
+
 
         // Create view IDs
         view1 = DigestAlgorithm.DEFAULT.digest("view1".getBytes());
