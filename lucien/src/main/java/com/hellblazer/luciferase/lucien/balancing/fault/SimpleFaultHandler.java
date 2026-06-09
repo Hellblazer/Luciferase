@@ -28,11 +28,15 @@ import java.util.function.Consumer;
  *   <li>Unit testing fault detection logic</li>
  *   <li>Integration test scaffolding</li>
  *   <li>Single-JVM distributed forest testing</li>
+ *   <li>Single-process production nodes with no periodic scheduler (RDR-021): unlike
+ *       {@code DefaultFaultHandler}, whose SUSPECTED&rarr;FAILED transition requires a periodic
+ *       {@code checkTimeouts()} poller, this handler escalates atomically per report call —
+ *       see {@code NodeBootstrap.assembleFaultTolerance} in the simulation module</li>
  * </ul>
  * <p>
  * Not suitable for:
  * <ul>
- *   <li>Production distributed deployments (no cross-process coordination)</li>
+ *   <li>Multi-process distributed deployments (no cross-process coordination)</li>
  *   <li>Consensus-based failure detection (no quorum)</li>
  * </ul>
  */
