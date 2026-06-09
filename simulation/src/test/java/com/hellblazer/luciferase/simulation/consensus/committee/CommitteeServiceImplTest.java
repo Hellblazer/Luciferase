@@ -76,6 +76,8 @@ public class CommitteeServiceImplTest {
         when(mockContext.bftSubset(Mockito.any())).thenReturn(new java.util.LinkedHashSet<>());
         when(mockContext.allMembers()).thenAnswer(inv -> java.util.stream.Stream.empty());
         when(mockContext.active()).thenAnswer(inv -> java.util.stream.Stream.empty());
+        when(mockContext.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class))).thenReturn(true);
+
 
 
         var executor = Executors.newScheduledThreadPool(1);

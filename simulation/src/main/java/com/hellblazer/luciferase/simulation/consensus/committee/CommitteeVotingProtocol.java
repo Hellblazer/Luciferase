@@ -157,6 +157,26 @@ public class CommitteeVotingProtocol {
             return;
         }
 
+        // yagnw.1: Verify the voter is a current-view ACTIVE member. selectCommittee draws the
+        // committee from context.bftSubset, which walks the full ring — an evicted-but-not-GC'd
+        // member can still sit in the committee set. S6 tightened the source/target identity gate
+        // (isNodeInView) to active-only; this gate stops such a member from contributing a vote
+        // toward quorum. Fails closed: an offline committee member's vote is dropped, never counted.
+        //
+        // Liveness tradeoff (known, by design): the quorum denominator is fixed at committee
+        // formation time from committee.size() (which includes offline members); this guard drops
+        // their votes but does NOT shrink the threshold. So if more than floor(n/2) of the selected
+        // committee are simultaneously offline, no set of active votes can reach quorum and the
+        // proposal times out (then retries in the next view). This is the conservative choice: it
+        // preserves a genuine majority-of-the-original-committee requirement (safety) at the cost of
+        // liveness under heavy churn, rather than shrinking the committee toward the unsafe
+        // committeeQuorum(2)==1 floor. Resizing the committee to the active set under churn is tracked
+        // as a follow-up (Luciferase-0frcy.134).
+        if (!context.isActive(vote.voterId())) {
+            // Vote from an inactive (evicted-but-not-GC'd) committee member (ignore)
+            return;
+        }
+
         // Verify view ID matches proposal
         if (!vote.viewId().equals(state.proposal.viewId())) {
             // Vote from different view (ignore)

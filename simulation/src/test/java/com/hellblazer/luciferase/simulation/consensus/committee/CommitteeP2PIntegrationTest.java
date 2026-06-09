@@ -275,6 +275,8 @@ public class CommitteeP2PIntegrationTest {
         // Use thenAnswer to create fresh stream for each call (streams can only be consumed once)
         when(mockContext.allMembers()).thenAnswer(invocation -> members.stream());
         when(mockContext.active()).thenAnswer(invocation -> members.stream());
+        when(mockContext.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class))).thenReturn(true);
+
 
 
         return mockContext;

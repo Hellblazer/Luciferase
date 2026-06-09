@@ -78,6 +78,8 @@ public class NullViewIdConsensusTest {
         when(context.bftSubset(Mockito.any(Digest.class))).thenReturn((java.util.SequencedSet) committee);
         when(context.allMembers()).thenAnswer(invocation -> members.stream());
         when(context.active()).thenAnswer(invocation -> members.stream());
+        when(context.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class))).thenReturn(true);
+
 
 
         selector = new ViewCommitteeSelector(context);

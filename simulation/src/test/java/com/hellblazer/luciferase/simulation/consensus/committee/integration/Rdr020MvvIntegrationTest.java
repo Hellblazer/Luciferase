@@ -121,6 +121,8 @@ class Rdr020MvvIntegrationTest {
         when(context.bftSubset(any(Digest.class))).thenReturn(committee);
         when(context.allMembers()).thenAnswer(inv -> members.stream().map(m -> (Member) m));
         when(context.active()).thenAnswer(inv -> members.stream().map(m -> (Member) m));
+        when(context.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class))).thenReturn(true);
+
 
         viewMonitor = new ScheduledViewMonitor(viewId);
         selector    = new ViewCommitteeSelector(context);
@@ -413,6 +415,8 @@ class Rdr020MvvIntegrationTest {
         when(soloContext.bftSubset(any(Digest.class))).thenReturn(soloCommittee);
         when(soloContext.allMembers()).thenAnswer(inv -> Stream.of((Member) soloMember));
         when(soloContext.active()).thenAnswer(inv -> Stream.of((Member) soloMember));
+        when(soloContext.isActive(org.mockito.Mockito.any(com.hellblazer.delos.cryptography.Digest.class))).thenReturn(true);
+
 
         var soloSelector = new ViewCommitteeSelector(soloContext);
         var soloProtocol = new CommitteeVotingProtocol(soloContext, CommitteeConfig.defaultConfig(),
