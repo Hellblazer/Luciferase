@@ -84,9 +84,16 @@ public class ViewCommitteeSelector {
      * <b>source/target node identity</b> at the validator.
      * <p>
      * Scope: this gate covers the source/target membership check only. Committee <em>composition</em>
-     * ({@link #selectCommittee} → {@code context.bftSubset}) still draws from the full ring and may
-     * include an offline member as a <em>voter</em> — a distinct, adjacent active-only gap tracked
-     * separately (Luciferase-yagnw.1), not closed here.
+     * ({@link #selectCommittee} → {@code context.bftSubset}) deliberately draws from the full ring,
+     * NOT an active-only subset: committee selection must be deterministic across nodes (same view →
+     * same committee), but {@code context.active()}/{@code isActive} is failure-detector state set by
+     * per-node round timers ({@code View.gc} → {@code context.offline}), not synchronized at the view
+     * boundary — so an active-only walk could yield different committees on different nodes (split-brain
+     * quorum) and could under-size the committee below the BFT-safe threshold. The offline-member-as-
+     * voter case is instead handled at vote-receipt in {@code CommitteeVotingProtocol.recordVote}
+     * (drops inactive votes; the cluster stalls-and-retries rather than deciding under-quorum). This
+     * was investigated and decided under Luciferase-0frcy.134 (active-only selection rejected as
+     * unsound).
      *
      * @param nodeId Node identifier (member ID) to check
      * @return true if the node is a current-view active member, false otherwise
