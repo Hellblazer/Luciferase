@@ -10,6 +10,10 @@ package com.hellblazer.luciferase.simulation.von;
 
 import com.hellblazer.delos.cryptography.Digest;
 import com.hellblazer.delos.membership.Member;
+import com.hellblazer.luciferase.common.time.Clock;
+import com.hellblazer.luciferase.lucien.balancing.fault.FaultConfiguration;
+import com.hellblazer.luciferase.lucien.balancing.fault.InMemoryPartitionTopology;
+import com.hellblazer.luciferase.lucien.balancing.fault.SimpleFaultHandler;
 import com.hellblazer.luciferase.simulation.causality.EntityMigrationStateMachine;
 import com.hellblazer.luciferase.simulation.lifecycle.PersistenceManagerAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.SocketConnectionManagerAdapter;
@@ -179,6 +183,96 @@ public final class NodeBootstrap {
         // schedulers up), so the migration WAL bracket can durably log against it.
         migrator.setPersistenceManager(pmAdapter.getPersistenceManager());
         log.info("Migration durability wired: BubbleMigrator → {}", pmAdapter.name());
+    }
+
+    /**
+     * The assembled partition fault subsystem (RDR-021): a started {@link SimpleFaultHandler} and
+     * {@link InMemoryPartitionTopology} backing a {@link RecoveryIntegration} subscribed to the
+     * live VON {@link Manager}.
+     * <p>
+     * <b>Shutdown ordering contract (mirrors the migrator-before-WAL contract on
+     * {@link #assemble(Manager, SocketConnectionManagerAdapter, PersistenceManagerAdapter,
+     * BubbleMigrator)}).</b> {@link #close()} MUST run <b>before</b> the VON manager stops — it
+     * unsubscribes the recovery integration from VON and fault events (so no event fires into a
+     * half-torn handler), then stops the fault handler. Lifecycle-integrating this ordering into
+     * {@code Manager.close()} is RDR-021 S3 (Luciferase-0frcy.135.4).
+     *
+     * @param recovery     the VON↔fault-recovery integration, subscribed at construction
+     * @param faultHandler the started fault handler driving partition status
+     * @param topology     the partition topology the recovery integration registers into
+     */
+    public record FaultSubsystem(RecoveryIntegration recovery, SimpleFaultHandler faultHandler,
+                                 InMemoryPartitionTopology topology) implements AutoCloseable {
+
+        public FaultSubsystem {
+            Objects.requireNonNull(recovery, "recovery cannot be null");
+            Objects.requireNonNull(faultHandler, "faultHandler cannot be null");
+            Objects.requireNonNull(topology, "topology cannot be null");
+        }
+
+        /**
+         * Tear down in dependency order: unsubscribe the recovery integration (VON + fault-event
+         * listeners) first, then stop the fault handler.
+         * <p>
+         * Idempotency is compositional: it holds because {@code RecoveryIntegration.close()}
+         * (listener removal + subscription {@code active} guard) and
+         * {@code SimpleFaultHandler.stop()} (CAS) are each individually idempotent.
+         * <p>
+         * <b>Sole-subscriber invariant.</b> {@code SimpleFaultHandler.stop()} clears the
+         * <em>entire</em> subscriber list, not just this subsystem's subscription. This subsystem
+         * assumes it is the sole manager of {@code faultHandler}'s subscribers; any subscriber
+         * registered externally via {@code faultHandler().subscribeToChanges(...)} is silently
+         * dropped here, not notified of shutdown.
+         */
+        @Override
+        public void close() {
+            recovery.close();
+            faultHandler.stop();
+        }
+    }
+
+    /**
+     * Construct and wire the partition fault subsystem against the node's VON manager (RDR-021).
+     * <p>
+     * Hand-wires {@code SimpleFaultHandler + InMemoryPartitionTopology + RecoveryIntegration}; the
+     * {@link RecoveryIntegration} constructor subscribes to VON events and fault-handler partition
+     * changes, closing the loop: a VON {@code Leave} for a registered bubble escalates partition
+     * health ({@code reportSyncFailure}: HEALTHY&rarr;SUSPECTED on the first, SUSPECTED&rarr;FAILED on
+     * the second), and a later VON {@code Join}/{@code GhostSync} marks it healthy — the
+     * FAILED&rarr;HEALTHY transition that drives {@code vonManager.joinAt} rejoin of the partition's
+     * bubbles.
+     * <p>
+     * Locked design decisions (RDR-021 §Decision Rationale — do not reopen):
+     * <ul>
+     *   <li>{@link SimpleFaultHandler}, NOT {@code DefaultFaultHandler}: the latter's
+     *       SUSPECTED&rarr;FAILED transition requires a periodic {@code checkTimeouts()} poller the
+     *       bootstrap does not have — partitions would stall at SUSPECTED.</li>
+     *   <li>No {@code PartitionRecovery} strategy is registered: {@code RecoveryIntegration}
+     *       recovers via {@code markHealthy}-on-VON-join and never calls
+     *       {@code initiateRecovery}.</li>
+     *   <li>{@code faultHandler.start()} is load-bearing: {@code notifySubscribers} drops events
+     *       when the handler is not running, which would silently kill the recovery chain.</li>
+     * </ul>
+     * Per-bubble registration ({@code recovery().registerBubble(bubbleId, partitionId)} with the
+     * node's identity as the partition id) is driven from the bubble-creation path — RDR-021 S2
+     * (Luciferase-0frcy.135.3).
+     *
+     * @param manager the live VON manager the recovery integration subscribes to
+     * @param clock   the clock for fault-handler and recovery timestamps (TestClock in tests)
+     * @return the assembled subsystem; close it before the VON manager stops
+     */
+    public static FaultSubsystem assembleFaultTolerance(Manager manager, Clock clock) {
+        Objects.requireNonNull(manager, "manager cannot be null");
+        Objects.requireNonNull(clock, "clock cannot be null");
+
+        var faultHandler = new SimpleFaultHandler(FaultConfiguration.defaultConfig());
+        // setClock BEFORE start(): no report/markHealthy call may ever stamp Clock.system() time.
+        faultHandler.setClock(clock);
+        faultHandler.start();
+        var topology = new InMemoryPartitionTopology();
+        var recovery = new RecoveryIntegration(manager, topology, faultHandler, clock);
+        log.info("Partition fault subsystem assembled: SimpleFaultHandler (started) + InMemoryPartitionTopology + RecoveryIntegration subscribed to VON manager");
+        return new FaultSubsystem(recovery, faultHandler, topology);
     }
 
     /**
