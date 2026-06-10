@@ -2,12 +2,13 @@
 title: "Wire Bubble Ownership Resolution into the Production Node Bootstrap"
 id: RDR-022
 type: Architecture
-status: accepted
+status: implemented
 priority: medium
 author: self
 reviewed-by: self
 created: 2026-06-10
 accepted_date: 2026-06-10
+closed_date: 2026-06-10
 related_issues: [Luciferase-s23eu, Luciferase-0frcy]
 ---
 
@@ -421,3 +422,14 @@ To be decomposed after research/gate (`/conexus:rdr-research` → `/conexus:rdr-
   `ownershipResolver not set` baseline before asserting gap closure); "mirrors primary ctor"
   wording corrected to "minus `SpatialOwnershipFunction` (fixed internally)". Ready for
   `/conexus:rdr-accept`.
+- 2026-06-10: **implemented — closed**. Shipped via PR #230 (merged 884712f0): S1
+  `NodeBootstrap.assembleOwnershipResolver` (two overloads) + 9 unit tests
+  (`Luciferase-0frcy.136.1`); MVV `Rdr022MvvIntegrationTest` — negative control → HRW probe →
+  real committee quorum, non-vacuous supplier threading, fail-loud survival, mutation-verified
+  (`0frcy.136.2`). Stacked review 0 Critical both reviewers, doc findings fixed pre-merge
+  (`0frcy.136.3`). Phase-review-gate cross-walk PASSED 5/5 (Item5 placement-honors-HRW =
+  explicit `none` deferral); full suite 3279/0/0 (`0frcy.136.4`). **Zero design divergences.**
+  Named deferrals carried forward (consumer assembly, placement-honors-HRW, live `main()`
+  View) — see post-mortem `post-mortem/022-wire-bubble-ownership-resolver-node-bootstrap.md`.
+  Closes the `Luciferase-s23eu` resolver half; with RDR-021, both halves of that boundary are
+  now wired.
