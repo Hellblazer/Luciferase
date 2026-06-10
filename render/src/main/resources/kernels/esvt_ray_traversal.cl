@@ -49,7 +49,7 @@ inline float getRayTmaxFromBuffer(__global const float* rays, int rayIdx) {
 
 // ESVT Node Structure - 8 bytes (matches ESVTNodeUnified.java)
 typedef struct {
-    uint childDescriptor;   // [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
+    uint childDescriptor;   // [childptr(15)|far(1)|childmask(8)|leafmask(8)]
     uint contourDescriptor; // [contour_ptr(20)|normals(4)|contour(4)|type(3)|pad(1)]
 } ESVTNode;
 
@@ -177,20 +177,20 @@ bool isChildLeaf(ESVTNode node, int childIdx) {
 }
 
 uint getChildPtr(ESVTNode node) {
-    return (node.childDescriptor >> 17) & 0x3FFFu;
+    return (node.childDescriptor >> 17) & 0x7FFFu;
 }
 
 bool isFar(ESVTNode node) {
     return (node.childDescriptor & 0x10000u) != 0;
 }
 
-uint getChildIndex(__global const ESVTNode* nodes, ESVTNode node, int childIdx, uint parentIdx) {
+uint getChildIndex(__global const int* farPointers, ESVTNode node, int childIdx, uint parentIdx) {
     uint childPtr = getChildPtr(node);
     uint mask = getChildMask(node);
     uint offset = popcount(mask & ((1u << childIdx) - 1u));
 
     if (isFar(node)) {
-        childPtr = nodes[parentIdx + childPtr].childDescriptor;
+        childPtr = (uint) farPointers[childPtr];
     }
 
     return parentIdx + childPtr + offset;
@@ -618,12 +618,13 @@ void getChildVertices(int parentType, int childIdx, float scale,
 // ============================================================================
 
 __kernel void traverseESVT(
-    __global const float* rays,     // Raw float buffer, 8 floats per ray
-    __global const ESVTNode* nodes,
-    __global const int* contours,
-    __global float4* hitResults,    // xyz = hit point, w = distance
-    __global float4* hitNormals,    // xyz = normal, w = 1 if hit
-    const uint maxDepth)
+    __global const float* rays,       // Raw float buffer, 8 floats per ray (arg 0)
+    __global const ESVTNode* nodes,   // Node array (arg 1)
+    __global const int* farPointers,  // Far-pointer indirection table (arg 2; may be a 4-byte stub)
+    __global const int* contours,     // Contour data (arg 3)
+    __global float4* hitResults,      // xyz = hit point, w = distance (arg 4)
+    __global float4* hitNormals,      // xyz = normal, w = 1 if hit (arg 5)
+    const uint maxDepth)              // (arg 6)
     // Note: sceneMin/sceneMax removed - root tetrahedron uses SIMPLEX_STANDARD
 {
     int gid = get_global_id(0);
@@ -804,7 +805,7 @@ __kernel void traverseESVT(
 
                 // Check if leaf
                 if (isChildLeaf(node, childIdx)) {
-                    uint childNodeIdx = getChildIndex(nodes, node, childIdx, parentIdx);
+                    uint childNodeIdx = getChildIndex(farPointers, node, childIdx, parentIdx);
                     ESVTNode childNode = nodes[childNodeIdx];
                     float childScale = scaleExp2 * 0.5f;
 
@@ -865,7 +866,7 @@ __kernel void traverseESVT(
                 stack[scale].v3 = pv3;
 
                 // Update state for child - child vertices become new parent vertices
-                parentIdx = getChildIndex(nodes, node, childIdx, parentIdx);
+                parentIdx = getChildIndex(farPointers, node, childIdx, parentIdx);
                 // childIdx is Morton index; convert to Bey index for type lookup
                 int beyIdx = INDEX_TO_BEY_NUMBER[parentType * 8 + childIdx];
                 parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + beyIdx];

@@ -100,7 +100,7 @@ shared int stack_type[64 * CAST_STACK_DEPTH];
 shared int stack_entryFace[64 * CAST_STACK_DEPTH];
 
 // SSBO for ESVT nodes (8 bytes per node = 2 x uint)
-// childDescriptor: [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
+// childDescriptor: [childptr(15)|far(1)|childmask(8)|leafmask(8)]
 // contourDescriptor: [contour_ptr(20)|normals(4)|contour(4)|type(3)|pad(1)]
 layout(std430, binding = 0) readonly buffer ESVTBuffer {
     uvec2 nodes[];  // First uint = childDescriptor, Second uint = contourDescriptor
@@ -111,6 +111,15 @@ layout(std430, binding = 0) readonly buffer ESVTBuffer {
 layout(std430, binding = 6) readonly buffer ContourBuffer {
     int contours[];  // Encoded contour values
 } contourData;
+
+// SSBO for far-pointer table (binding 7)
+// farPointers[i] is the RELATIVE offset stored for far-flagged child pointers.
+// When a node has isFar()==true, its childPtr field is an index into this table,
+// and the actual relative child offset is farPointers[childPtr].
+// When no far pointers are present a minimal 1-element placeholder buffer is bound.
+layout(std430, binding = 7) readonly buffer FarPointerBuffer {
+    int farPointers[];
+};
 
 // Output image
 layout(rgba8, binding = 1) uniform image2D outputImage;
@@ -220,9 +229,9 @@ bool isChildLeaf(uvec2 node, int childIdx) {
     return (getLeafMask(node) & (1u << childIdx)) != 0u;
 }
 
-// Get child pointer (bits 17-30)
+// Get child pointer (bits 17-31, 15-bit field)
 uint getChildPtr(uvec2 node) {
-    return (node.x >> 17) & 0x3FFFu;
+    return (node.x >> 17) & 0x7FFFu;
 }
 
 // Check if far pointer (bit 16)
@@ -230,14 +239,16 @@ bool isFar(uvec2 node) {
     return (node.x & 0x10000u) != 0u;
 }
 
-// Get sparse child index using popcount
+// Get sparse child index using popcount.
+// When the far flag is set, childPtr is an index into farPointers[] which holds
+// the actual RELATIVE offset — do NOT perform an in-band nodes[] read here.
 uint getChildIndex(uvec2 node, int childIdx, uint parentIdx) {
     uint childPtr = getChildPtr(node);
     uint mask = getChildMask(node);
     uint offset = bitCount(mask & ((1u << childIdx) - 1u));
 
     if (isFar(node)) {
-        childPtr = esvt.nodes[parentIdx + childPtr].x;
+        childPtr = uint(farPointers[childPtr]);
     }
 
     return parentIdx + childPtr + offset;
