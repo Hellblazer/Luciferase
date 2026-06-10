@@ -32,7 +32,7 @@ See the [RDR process documentation](https://github.com/cwensel/rdr) for the full
 | [RDR-019](RDR-019-wal-checkpoint-recovery-durability.md) | WAL Checkpoint/Recovery Durability — Bound Replay Safely (Snapshot or Compaction) | accepted | Bug Fix | high |
 | [RDR-020](RDR-020-bubble-to-fireflies-member-digest-resolution.md) | Bubble→Fireflies Member Digest Resolution for Migration Consensus | implemented | Bug Fix | high |
 | [RDR-021](RDR-021-wire-partition-fault-tolerance-node-bootstrap.md) | Wire Partition Fault Tolerance into the Production Node Bootstrap | implemented | Architecture | medium |
-| [RDR-022](RDR-022-wire-bubble-ownership-resolver-node-bootstrap.md) | Wire Bubble Ownership Resolution into the Production Node Bootstrap | accepted | Architecture | medium |
+| [RDR-022](RDR-022-wire-bubble-ownership-resolver-node-bootstrap.md) | Wire Bubble Ownership Resolution into the Production Node Bootstrap | implemented | Architecture | medium |
 
 ## Post-Mortems
 
@@ -47,5 +47,12 @@ Closed/implemented RDRs carry a post-mortem under [`post-mortem/`](post-mortem/)
 | RDR-007 | [post-mortem/007-extract-lucien-distributed-module.md](post-mortem/007-extract-lucien-distributed-module.md) |
 | RDR-008 | [post-mortem/008-decompose-abstractspatialindex.md](post-mortem/008-decompose-abstractspatialindex.md) |
 | RDR-009 | [post-mortem/009-prism-full-cube-coverage.md](post-mortem/009-prism-full-cube-coverage.md) |
+| RDR-010 | [post-mortem/010-pyramid-spatial-index.md](post-mortem/010-pyramid-spatial-index.md) |
+| RDR-012 | [post-mortem/012-pyramid-deep-cross-shape-productionization.md](post-mortem/012-pyramid-deep-cross-shape-productionization.md) |
+| RDR-015 | [post-mortem/015-revive-dead-migration-path.md](post-mortem/015-revive-dead-migration-path.md) |
 | RDR-017 | [post-mortem/017-production-node-bootstrap.md](post-mortem/017-production-node-bootstrap.md) |
 | RDR-018 | [post-mortem/018-dynamic-topology-vs-single-level-partition.md](post-mortem/018-dynamic-topology-vs-single-level-partition.md) |
+| RDR-019 | [post-mortem/019-wal-checkpoint-recovery-durability.md](post-mortem/019-wal-checkpoint-recovery-durability.md) |
+| RDR-020 | [post-mortem/020-bubble-to-fireflies-member-digest-resolution.md](post-mortem/020-bubble-to-fireflies-member-digest-resolution.md) |
+| RDR-021 | [post-mortem/021-wire-partition-fault-tolerance-node-bootstrap.md](post-mortem/021-wire-partition-fault-tolerance-node-bootstrap.md) |
+| RDR-022 | [post-mortem/022-wire-bubble-ownership-resolver-node-bootstrap.md](post-mortem/022-wire-bubble-ownership-resolver-node-bootstrap.md) |
