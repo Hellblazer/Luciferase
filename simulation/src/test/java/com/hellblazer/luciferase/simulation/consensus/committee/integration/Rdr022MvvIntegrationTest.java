@@ -287,7 +287,11 @@ class Rdr022MvvIntegrationTest {
         public Digest getCurrentViewId() { return currentViewId; }
     }
 
-    /** No-op MembershipView used only to satisfy FirefliesViewMonitor's constructor. */
+    /**
+     * No-op MembershipView used only to satisfy FirefliesViewMonitor's constructor. Safe: the
+     * monitor's view-change listener registration is dropped, but ScheduledViewMonitor overrides
+     * getCurrentViewId() directly and ViewCommitteeConsensus needs nothing else in this test.
+     */
     private static class NoopMembershipView implements MembershipView<Member> {
         @Override public void addListener(Consumer<MembershipView.ViewChange<Member>> listener) {}
         @Override public Stream<Member> getMembers() { return Stream.empty(); }

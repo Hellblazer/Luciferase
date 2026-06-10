@@ -388,12 +388,18 @@ public final class NodeBootstrap {
      * canonical place they obtain the resolver from.
      *
      * @param memberLookup      the Fireflies member lookup (local member + canonical node-UUID
-     *                          mapping); requires a live Fireflies view at call time
+     *                          mapping); requires a live Fireflies view at <em>first use</em> —
+     *                          assembly wires method references lazily and does not dereference
+     *                          the view
      * @param membershipView    the active-only membership source for ownership resolution
      * @param bubbleKeyResolver maps a bubble {@code UUID} to its {@code TetreeKey} ({@code null} if
      *                          unknown — the resolver fails loud); caller-supplied, e.g.
      *                          {@code grid::getKeyForBubble}
      * @return the assembled, lifecycle-passive resolver
+     * @throws NullPointerException if any argument is null — {@code memberLookup} is validated at
+     *                              the factory (it is dereferenced here for method references);
+     *                              {@code membershipView}/{@code bubbleKeyResolver} are validated
+     *                              by the resolver's constructor (the throw site in the stack)
      */
     public static BubbleOwnershipResolver assembleOwnershipResolver(
             FirefliesMemberLookup memberLookup,
