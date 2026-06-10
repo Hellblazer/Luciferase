@@ -220,13 +220,10 @@ class ESVTGPUCPUParityTest {
                 float gpuHitFlag = normalBuffer.get(i * 4 + 3);
                 boolean gpuHit = gpuHitFlag > 0.5f;
 
-                // CPU traversal
-                ESVTResult cpuResult;
-                if (contours != null) {
-                    cpuResult = cpuTraversal.castRay(ray, nodes, contours, farPointers, 0);
-                } else {
-                    cpuResult = cpuTraversal.castRay(ray, nodes, 0);
-                }
+                // CPU traversal — always pass farPointers; the 5-arg overload tolerates null
+                // contours, and the short overload would silently drop the far-pointer table
+                // (throwing or going vacuous on any far node).
+                var cpuResult = cpuTraversal.castRay(ray, nodes, contours, farPointers, 0);
 
                 // Compare results
                 boolean matches = compareResults(gpuHit, gpuX, gpuY, gpuZ, gpuDist,
@@ -462,6 +459,136 @@ class ESVTGPUCPUParityTest {
         System.out.println("Inserted " + inserted + " entities for sphere at depth " + depth);
 
         return builder.build(tetree);
+    }
+
+    /**
+     * GPU/CPU parity test for a far-pointer model tree (Luciferase-8putk).
+     *
+     * <p>Builds an ESVTData with a far node at a NON-zero index (index 2, children at index 5)
+     * so that relative != absolute — the structural case root-only trees hide.
+     * Renders a 64×64 frame on GPU and compares against CPU ESVTTraversal, requiring
+     * ≥ 95% ray agreement with tolerance 1e-4f.
+     */
+    @Test
+    @DisplayName("GPU/CPU parity - far-pointer model (far node at non-zero index)")
+    void testFarPointerModelParity() {
+        Assumptions.assumeTrue(openclAvailable, "OpenCL not available");
+
+        var farData = buildFarPointerParityData();
+        System.out.println("Far-pointer parity data: " + farData.nodeCount() + " nodes, "
+                           + farData.farPointerCount() + " far pointer(s)");
+
+        var cameraPos = new Vector3f(2.0f, 2.0f, 2.0f);
+        var lookAt = new Vector3f(0.5f, 0.5f, 0.5f);
+        float fov = 60.0f;
+
+        var result = runParityTestWithData(farData, cameraPos, lookAt, fov);
+
+        System.out.println("\n=== Far-Pointer Model GPU/CPU Parity Test ===");
+        result.printReport();
+
+        assertTrue(result.accuracy >= ACCURACY_THRESHOLD,
+                String.format("Far-pointer model accuracy %.2f%% below threshold %.2f%%",
+                        result.accuracy * 100, ACCURACY_THRESHOLD * 100));
+    }
+
+    /**
+     * Build ESVTData with a far node at index 2 (children at index 5, relative offset 3).
+     * This tests the N>0 case where relative != absolute.
+     */
+    private ESVTData buildFarPointerParityData() {
+        // 6-node tree:
+        //   0: root (near, childMask=0x01, childPtr=2 => child at index 2)
+        //   1: filler leaf
+        //   2: far interior node (far=true, childMask=0x01, childPtr=0 => farPointers[0]=3)
+        //   3: filler leaf
+        //   4: filler leaf
+        //   5: leaf child of node 2
+        var nodes = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified[6];
+
+        nodes[0] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
+        nodes[0].setChildMask(0x01);
+        nodes[0].setChildPtr(2);
+
+        nodes[1] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
+        nodes[1].setLeafMask(0xFF);
+
+        nodes[2] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
+        nodes[2].setChildMask(0x01);
+        nodes[2].setFar(true);
+        nodes[2].setChildPtr(0); // farPointers[0] = 3
+
+        nodes[3] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
+        nodes[3].setLeafMask(0xFF);
+
+        nodes[4] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
+        nodes[4].setLeafMask(0xFF);
+
+        nodes[5] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
+        nodes[5].setLeafMask(0xFF);
+
+        return ESVTData.builder()
+                       .nodes(nodes)
+                       .farPointers(new int[]{ 3 }) // relative offset: 5 - 2 = 3
+                       .rootType(0)
+                       .maxDepth(3)
+                       .leafCount(4)
+                       .internalCount(2)
+                       .build();
+    }
+
+    /**
+     * Run a parity test with explicitly supplied ESVTData.
+     */
+    private ParityResult runParityTestWithData(ESVTData data, Vector3f cameraPos, Vector3f lookAt, float fov) {
+        var result = new ParityResult();
+
+        try (var renderer = new ESVTOpenCLRenderer(FRAME_SIZE, FRAME_SIZE)) {
+            renderer.initialize();
+            renderer.uploadData(data);
+
+            renderer.renderFrame(cameraPos, lookAt, fov);
+
+            var resultBuffer = renderer.getResultBufferForTesting();
+            var normalBuffer = renderer.getNormalBufferForTesting();
+
+            var rays = generateRays(cameraPos, lookAt, fov, FRAME_SIZE, FRAME_SIZE);
+            var cpuTraversal = new ESVTTraversal();
+            var nodes = data.nodes();
+            // Always pass both contours and farPointers via the 5-arg overload so that far nodes
+            // (isFar()==true) are resolved correctly regardless of whether contours are present.
+            // The 5-arg castRay tolerates null contours (delegates to the no-contour path internally).
+            var contours = data.hasContours() ? data.contours() : null;
+            var farPointers = data.hasFarPointers() ? data.farPointers() : null;
+
+            result.totalRays = rays.size();
+
+            for (int i = 0; i < rays.size(); i++) {
+                var ray = rays.get(i);
+
+                float gpuX = resultBuffer.get(i * 4);
+                float gpuY = resultBuffer.get(i * 4 + 1);
+                float gpuZ = resultBuffer.get(i * 4 + 2);
+                float gpuDist = resultBuffer.get(i * 4 + 3);
+                float gpuHitFlag = normalBuffer.get(i * 4 + 3);
+                boolean gpuHit = gpuHitFlag > 0.5f;
+
+                // Always use the 5-arg overload: if this is a far-pointer tree (farPointers != null)
+                // the 3-arg shortcut would drop farPointers and throw IllegalStateException when
+                // any ray reaches a far node (isFar()==true with null farPointer table).
+                ESVTResult cpuResult = cpuTraversal.castRay(ray, nodes, contours, farPointers, 0);
+
+                boolean matches = compareResults(gpuHit, gpuX, gpuY, gpuZ, gpuDist,
+                        cpuResult, result, i, ray);
+                if (matches) {
+                    result.matches++;
+                }
+            }
+
+            result.accuracy = (double) result.matches / result.totalRays;
+        }
+
+        return result;
     }
 
     /**

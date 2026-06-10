@@ -205,7 +205,13 @@ public class ESVTGPURenderBridge implements AutoCloseable {
             gpuMemory = new ESVTGPUMemory(data);
             gpuMemory.uploadToGPU();
 
-            log.debug("Uploaded ESVT data to GPU: {} nodes", data.nodeCount());
+            // Far-pointer table travels separately from the node SSBO; without this the
+            // renderer binds its zero placeholder and far-flagged nodes resolve to offset 0
+            // (silently corrupt geometry, Luciferase-8putk).
+            gpuRenderer.uploadData(data);
+
+            log.debug("Uploaded ESVT data to GPU: {} nodes, {} far pointers", data.nodeCount(),
+                      data.farPointerCount());
         }, glThread);
     }
 

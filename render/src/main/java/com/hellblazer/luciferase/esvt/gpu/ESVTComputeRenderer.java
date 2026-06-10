@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.esvt.gpu;
 
+import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.resource.UnifiedResourceManager;
 import com.hellblazer.luciferase.resource.opengl.BufferResource;
 import com.hellblazer.luciferase.resource.opengl.ShaderProgramResource;
@@ -29,6 +30,8 @@ import javax.vecmath.Matrix4f;
 import javax.vecmath.Vector3f;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.charset.StandardCharsets;
 
@@ -63,6 +66,8 @@ public final class ESVTComputeRenderer {
     public static final int RENDER_FLAGS_UBO_BINDING = 3;
     public static final int COARSE_OUTPUT_BINDING = 4;
     public static final int COARSE_INPUT_BINDING = 5;
+    // CONTOUR_BUFFER_BINDING = 6 is defined in the shader but not yet wired in Java
+    public static final int FAR_POINTER_BUFFER_BINDING = 7;
 
     // Beam optimization constants
     public static final int DEFAULT_COARSE_SIZE = 4;
@@ -82,6 +87,10 @@ public final class ESVTComputeRenderer {
     private TextureResource outputTexture;
     private TextureResource coarseTexture;
     private int coarseSampler;
+
+    // Far-pointer SSBO (binding 7). Always bound — contains a 4-byte placeholder
+    // when no far pointers are present so the shader binding slot is always valid.
+    private BufferResource farPointerSSBO;
 
     // Camera UBO size: 4 matrices (4x4) + 2 vec4 (position+nearPlane, direction+farPlane)
     private static final int CAMERA_UBO_SIZE = 64 * 4 + 16 * 2;
@@ -141,6 +150,50 @@ public final class ESVTComputeRenderer {
     }
 
     /**
+     * Upload far-pointer data from an ESVTData instance to the GPU SSBO at binding 7.
+     *
+     * <p>When {@code data.hasFarPointers()} is false (empty array) a minimal 4-byte
+     * placeholder buffer is uploaded so the shader binding slot is always valid — the
+     * same convention the OpenCL path uses for its far-pointer cl_mem arg.
+     *
+     * <p>Must be called from the OpenGL context thread, after {@link #initialize()}.
+     *
+     * @param data the ESVT data whose far-pointer table to upload
+     */
+    public void uploadData(ESVTData data) {
+        if (!initialized) {
+            throw new IllegalStateException("Renderer not initialized");
+        }
+        if (disposed) {
+            throw new IllegalStateException("Renderer has been disposed");
+        }
+
+        int[] fps = data.hasFarPointers() ? data.farPointers() : null;
+        int byteCount = (fps != null && fps.length > 0) ? fps.length * Integer.BYTES : Integer.BYTES;
+
+        if (farPointerSSBO == null) {
+            farPointerSSBO = resourceManager.createStorageBuffer(byteCount, "ESVTFarPointerSSBO");
+        }
+
+        ByteBuffer buf = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder());
+        if (fps != null && fps.length > 0) {
+            for (int fp : fps) {
+                buf.putInt(fp);
+            }
+        } else {
+            buf.putInt(0);  // 4-byte placeholder
+        }
+        buf.flip();
+
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, farPointerSSBO.getOpenGLId());
+        glBufferData(GL_SHADER_STORAGE_BUFFER, buf, GL_STATIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, FAR_POINTER_BUFFER_BINDING, farPointerSSBO.getOpenGLId());
+
+        log.debug("Uploaded {} far-pointer entries ({} bytes) to SSBO binding {}",
+                  fps != null ? fps.length : 0, byteCount, FAR_POINTER_BUFFER_BINDING);
+    }
+
+    /**
      * Render a frame using the ESVT data
      *
      * @param esvtMemory GPU memory containing ESVT node data
@@ -162,6 +215,18 @@ public final class ESVTComputeRenderer {
 
         // Bind ESVT data
         esvtMemory.bindToShader(ESVT_BUFFER_BINDING);
+
+        // Bind far-pointer SSBO (binding 7) — if not yet uploaded, bind a minimal placeholder
+        // so the shader binding slot is always valid regardless of whether uploadData() was called.
+        if (farPointerSSBO == null) {
+            farPointerSSBO = resourceManager.createStorageBuffer(Integer.BYTES, "ESVTFarPointerSSBOPlaceholder");
+            ByteBuffer placeholder = ByteBuffer.allocateDirect(Integer.BYTES).order(ByteOrder.nativeOrder());
+            placeholder.putInt(0);
+            placeholder.flip();
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, farPointerSSBO.getOpenGLId());
+            glBufferData(GL_SHADER_STORAGE_BUFFER, placeholder, GL_STATIC_DRAW);
+        }
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, FAR_POINTER_BUFFER_BINDING, farPointerSSBO.getOpenGLId());
 
         // Update camera uniforms
         updateCameraUniforms(viewMatrix, projMatrix, objectToWorld, tetreeToObject);
@@ -248,6 +313,17 @@ public final class ESVTComputeRenderer {
 
         // Bind ESVT data
         esvtMemory.bindToShader(ESVT_BUFFER_BINDING);
+
+        // Bind far-pointer SSBO (binding 7) — always required by the shader
+        if (farPointerSSBO == null) {
+            farPointerSSBO = resourceManager.createStorageBuffer(Integer.BYTES, "ESVTFarPointerSSBOPlaceholder");
+            ByteBuffer placeholder = ByteBuffer.allocateDirect(Integer.BYTES).order(ByteOrder.nativeOrder());
+            placeholder.putInt(0);
+            placeholder.flip();
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, farPointerSSBO.getOpenGLId());
+            glBufferData(GL_SHADER_STORAGE_BUFFER, placeholder, GL_STATIC_DRAW);
+        }
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, FAR_POINTER_BUFFER_BINDING, farPointerSSBO.getOpenGLId());
 
         // Update camera uniforms
         updateCameraUniforms(viewMatrix, projMatrix, objectToWorld, tetreeToObject);
@@ -488,6 +564,11 @@ public final class ESVTComputeRenderer {
             if (coarseSampler != 0) {
                 glDeleteSamplers(coarseSampler);
                 coarseSampler = 0;
+            }
+
+            if (farPointerSSBO != null) {
+                farPointerSSBO.close();
+                farPointerSSBO = null;
             }
         } catch (Exception e) {
             log.error("Error disposing GPU resources", e);

@@ -25,6 +25,7 @@ import com.hellblazer.luciferase.sparse.gpu.AbstractOpenCLRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
 import static org.lwjgl.opencl.CL10.*;
@@ -56,6 +57,7 @@ public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTNodeUni
 
     // Raw cl_mem handles for ByteBuffer upload
     private long clNodeBuffer;
+    private long clFarPointerBuffer;
     private long clContourBuffer;
 
     // Additional GPU buffers for ESVT
@@ -145,25 +147,55 @@ public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTNodeUni
         sceneMinBuffer.upload(new float[]{0.0f, 0.0f, 0.0f, 0.0f});
         sceneMaxBuffer.upload(new float[]{1.0f, 1.0f, 1.0f, 0.0f});
 
-        // Initialize empty node/contour buffers (will be replaced when data is uploaded)
+        // Initialize empty node/contour/far-pointer buffers (will be replaced when data is uploaded)
         clNodeBuffer = 0;
+        clFarPointerBuffer = 0;
         clContourBuffer = 0;
     }
 
     @Override
     protected void uploadDataBuffers(ESVTData data) {
-        // Release old node buffer if exists
+        // Release old node buffer if exists (G4: include untrackRawHandle to prevent double-free on dispose)
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
+            untrackRawHandle(clNodeBuffer);
+            clNodeBuffer = 0;
         }
 
         // Upload node data using raw ByteBuffer
         var nodeData = data.nodesToByteBuffer();
         clNodeBuffer = createRawBuffer(nodeData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
 
-        // Upload contour data if present
+        // Upload far-pointer table (arg slot always bound; may be a 4-byte stub when empty)
+        if (clFarPointerBuffer != 0) {
+            clReleaseMemObject(clFarPointerBuffer);
+            untrackRawHandle(clFarPointerBuffer);
+            clFarPointerBuffer = 0;
+        }
+        var farPointers = data.farPointers();
+        if (farPointers != null && farPointers.length > 0) {
+            log.debug("Uploading {} far pointer(s) to GPU", farPointers.length);
+            var fpData = memAlloc(farPointers.length * Integer.BYTES);
+            fpData.order(ByteOrder.nativeOrder());
+            for (int fp : farPointers) {
+                fpData.putInt(fp);
+            }
+            fpData.flip();
+            try {
+                clFarPointerBuffer = createRawBuffer(fpData, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR);
+            } finally {
+                memFree(fpData);
+            }
+        } else {
+            // No far pointers — supply a minimal placeholder buffer so the kernel arg slot is always bound
+            clFarPointerBuffer = createEmptyRawBuffer(Integer.BYTES, CL_MEM_READ_ONLY);
+        }
+
+        // Upload contour data if present (G4: include untrackRawHandle to prevent double-free on dispose)
         if (clContourBuffer != 0) {
             clReleaseMemObject(clContourBuffer);
+            untrackRawHandle(clContourBuffer);
+            clContourBuffer = 0;
         }
 
         if (data.hasContours()) {
@@ -176,25 +208,31 @@ public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTNodeUni
             clContourBuffer = createEmptyRawBuffer(4, CL_MEM_READ_ONLY);
         }
 
-        log.debug("Uploaded ESVT data: {} nodes, {} contours", nodeCount, contourCount);
+        log.debug("Uploaded ESVT data: {} nodes, {} far pointers, {} contours",
+                  data.nodeCount(), data.farPointerCount(), contourCount);
     }
 
     @Override
     protected void setKernelArguments() {
-        // Set node buffer (arg 1)
+        // arg 0: rays — set by base class (AbstractOpenCLRenderer.executeKernel)
+
+        // arg 1: node buffer
         setRawBufferArg(1, clNodeBuffer);
 
-        // Set contour buffer (arg 2)
-        setRawBufferArg(2, clContourBuffer);
+        // arg 2: far-pointer indirection table (always bound; may be a 4-byte stub when no far pointers)
+        setRawBufferArg(2, clFarPointerBuffer);
 
-        // Set result buffer (arg 3)
-        kernel.setBufferArg(3, resultBuffer, ComputeKernel.BufferAccess.WRITE);
+        // arg 3: contour buffer
+        setRawBufferArg(3, clContourBuffer);
 
-        // Set normal buffer (arg 4)
-        kernel.setBufferArg(4, normalBuffer, ComputeKernel.BufferAccess.WRITE);
+        // arg 4: result buffer (write)
+        kernel.setBufferArg(4, resultBuffer, ComputeKernel.BufferAccess.WRITE);
 
-        // Set maxDepth (arg 5)
-        kernel.setIntArg(5, maxDepth);
+        // arg 5: normal buffer (write)
+        kernel.setBufferArg(5, normalBuffer, ComputeKernel.BufferAccess.WRITE);
+
+        // arg 6: maxDepth
+        kernel.setIntArg(6, maxDepth);
 
         // Note: sceneMin/sceneMax removed from kernel - not used, was causing type mismatch
     }
@@ -249,10 +287,17 @@ public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTNodeUni
         // Release raw OpenCL buffers
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
+            untrackRawHandle(clNodeBuffer);
             clNodeBuffer = 0;
+        }
+        if (clFarPointerBuffer != 0) {
+            clReleaseMemObject(clFarPointerBuffer);
+            untrackRawHandle(clFarPointerBuffer);
+            clFarPointerBuffer = 0;
         }
         if (clContourBuffer != 0) {
             clReleaseMemObject(clContourBuffer);
+            untrackRawHandle(clContourBuffer);
             clContourBuffer = 0;
         }
 
