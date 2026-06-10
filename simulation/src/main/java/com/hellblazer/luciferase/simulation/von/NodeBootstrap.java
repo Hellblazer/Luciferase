@@ -14,7 +14,12 @@ import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.lucien.balancing.fault.FaultConfiguration;
 import com.hellblazer.luciferase.lucien.balancing.fault.InMemoryPartitionTopology;
 import com.hellblazer.luciferase.lucien.balancing.fault.SimpleFaultHandler;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.simulation.causality.EntityMigrationStateMachine;
+import com.hellblazer.luciferase.simulation.consensus.ownership.BubbleOwnershipResolver;
+import com.hellblazer.luciferase.simulation.consensus.ownership.FirefliesBubbleOwnershipResolver;
+import com.hellblazer.luciferase.simulation.consensus.ownership.RendezvousOwnershipFunction;
+import com.hellblazer.luciferase.simulation.delos.MembershipView;
 import com.hellblazer.luciferase.simulation.lifecycle.PersistenceManagerAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.RecoveryIntegrationAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.SocketConnectionManagerAdapter;
@@ -28,7 +33,10 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Production node bootstrap — composes the distributed simulation node (RDR-017).
@@ -347,6 +355,88 @@ public final class NodeBootstrap {
         recovery.unregisterBubble(bubble.id());
         manager.leave(bubble);
         log.debug("Removed bubble {} (unregistered before leave)", bubble.id());
+    }
+
+    /**
+     * Assemble the bubble→node ownership resolver (RDR-022) — production form.
+     * <p>
+     * Constructs a {@link FirefliesBubbleOwnershipResolver} over a live
+     * {@link FirefliesMemberLookup}: local member via {@code memberLookup::getLocalMember}, node-UUID
+     * hint resolution via {@code memberLookup::getMemberByUuid} (RDR-020 B4), and the
+     * {@link RendezvousOwnershipFunction} (HRW) fixed internally — the one canonical ownership
+     * function; a parameterized function would invite divergent ownership across a cluster and break
+     * the every-node-computes-identically property (RDR-022 locked decision 1).
+     * <p>
+     * <b>The resolver is lifecycle-passive</b> (stateless, no subscriptions, nothing to close —
+     * RDR-022 A2): it is returned, not registered with the lifecycle coordinator, and needs no
+     * shutdown ordering.
+     * <p>
+     * <b>{@code bubbleKeyResolver} is caller-supplied</b> (RDR-022 A4): the bootstrap/{@link Manager}
+     * domain owns no {@code TetreeBubbleGrid}; a caller that owns one passes
+     * {@code grid::getKeyForBubble}.
+     * <p>
+     * <b>Active-only invariant (RDR-020 B4 / RDR-005):</b> {@code membershipView} is the
+     * <em>active-members</em> source consulted for ownership; the misnamed
+     * {@code FirefliesMemberLookup.getActiveMembers()} (all-members backed) is never used for it.
+     * <p>
+     * <b>Injection contract (normative):</b> a consumer assembly point that constructs
+     * {@code TopologyConsensusCoordinator}, {@code OptimisticMigratorImpl}, or
+     * {@code DistributedBubbleNode} MUST inject an assembled resolver via the consumer's
+     * {@code setOwnershipResolver(...)} before first consensus use; the consumers' existing
+     * fail-loud guards enforce this. No production consumer is constructed by this bootstrap today
+     * — consumer assembly lands with the multi-node arcs (Luciferase-s23eu); this factory is the
+     * canonical place they obtain the resolver from.
+     *
+     * @param memberLookup      the Fireflies member lookup (local member + canonical node-UUID
+     *                          mapping); requires a live Fireflies view at <em>first use</em> —
+     *                          assembly wires method references lazily and does not dereference
+     *                          the view
+     * @param membershipView    the active-only membership source for ownership resolution
+     * @param bubbleKeyResolver maps a bubble {@code UUID} to its {@code TetreeKey} ({@code null} if
+     *                          unknown — the resolver fails loud); caller-supplied, e.g.
+     *                          {@code grid::getKeyForBubble}
+     * @return the assembled, lifecycle-passive resolver
+     * @throws NullPointerException if any argument is null — {@code memberLookup} is validated at
+     *                              the factory (it is dereferenced here for method references);
+     *                              {@code membershipView}/{@code bubbleKeyResolver} are validated
+     *                              by the resolver's constructor (the throw site in the stack)
+     */
+    public static BubbleOwnershipResolver assembleOwnershipResolver(
+            FirefliesMemberLookup memberLookup,
+            MembershipView<Member> membershipView,
+            Function<UUID, TetreeKey<?>> bubbleKeyResolver) {
+        Objects.requireNonNull(memberLookup, "memberLookup cannot be null");
+        return assembleOwnershipResolver(memberLookup::getLocalMember, memberLookup::getMemberByUuid,
+                                         bubbleKeyResolver, membershipView);
+    }
+
+    /**
+     * Assemble the bubble→node ownership resolver (RDR-022) — narrow-seam form.
+     * <p>
+     * Matches {@link FirefliesBubbleOwnershipResolver}'s primary constructor minus the
+     * {@code SpatialOwnershipFunction}, which this factory fixes to {@link RendezvousOwnershipFunction}
+     * (RDR-022 locked decision 1). Enables assembly without a live Fireflies view — the MVV /
+     * test-assembled-node path (RDR-022 A3); production callers use the
+     * {@link #assembleOwnershipResolver(FirefliesMemberLookup, MembershipView, Function)} overload.
+     * All seams are validated fail-loud by the resolver's constructor.
+     *
+     * @param localMemberSupplier returns this node's own {@link Member}
+     * @param nodeResolver        canonical node-UUID → {@link Member} mapping (RDR-020 B4)
+     * @param bubbleKeyResolver   bubble {@code UUID} → {@code TetreeKey} ({@code null} if unknown)
+     * @param membershipView      the active-only membership source for ownership resolution
+     * @return the assembled, lifecycle-passive resolver
+     */
+    public static BubbleOwnershipResolver assembleOwnershipResolver(
+            Supplier<Member> localMemberSupplier,
+            Function<UUID, Optional<Member>> nodeResolver,
+            Function<UUID, TetreeKey<?>> bubbleKeyResolver,
+            MembershipView<Member> membershipView) {
+        var resolver = new FirefliesBubbleOwnershipResolver(localMemberSupplier, nodeResolver,
+                                                            bubbleKeyResolver, membershipView,
+                                                            new RendezvousOwnershipFunction());
+        log.info("Bubble ownership resolver assembled: FirefliesBubbleOwnershipResolver + "
+                 + "RendezvousOwnershipFunction (HRW); lifecycle-passive, not registered");
+        return resolver;
     }
 
     /**
