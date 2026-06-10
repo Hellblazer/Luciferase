@@ -32,6 +32,7 @@ See the [RDR process documentation](https://github.com/cwensel/rdr) for the full
 | [RDR-019](RDR-019-wal-checkpoint-recovery-durability.md) | WAL Checkpoint/Recovery Durability — Bound Replay Safely (Snapshot or Compaction) | accepted | Bug Fix | high |
 | [RDR-020](RDR-020-bubble-to-fireflies-member-digest-resolution.md) | Bubble→Fireflies Member Digest Resolution for Migration Consensus | implemented | Bug Fix | high |
 | [RDR-021](RDR-021-wire-partition-fault-tolerance-node-bootstrap.md) | Wire Partition Fault Tolerance into the Production Node Bootstrap | implemented | Architecture | medium |
+| [RDR-022](RDR-022-wire-bubble-ownership-resolver-node-bootstrap.md) | Wire Bubble Ownership Resolution into the Production Node Bootstrap | accepted | Architecture | medium |
 
 ## Post-Mortems
 
