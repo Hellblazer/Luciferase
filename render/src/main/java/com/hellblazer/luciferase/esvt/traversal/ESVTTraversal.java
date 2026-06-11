@@ -169,14 +169,22 @@ public final class ESVTTraversal {
         // Ray hits cube - start traversal
         int parentIdx = rootIdx;
         byte parentType = rootType;
-        int entryFace = 0;  // Start with face 0; traversal will check all children
+        // entryFace is kept for child-descent context but no longer drives child selection:
+        // the all-8 scan below iterates all Morton children regardless of entry face.
+        int entryFace = 0;
         float tMin = aabbResult.tEntry;
         float tMax = aabbResult.tExit;
         int scale = MAX_DEPTH - 1;
         int iterations = 0;
 
-        // Track position in the 8-child iteration
-        int siblingPos = 0;  // Position in CHILD_ORDER (0-3)
+        // Global best hit — preserved across the entire DFS including pop/resume.
+        // Only updated when a leaf's refined t is strictly less than bestT.
+        // Returned after stack exhaustion (mirrors .cl bestT semantics).
+        var bestResult = new ESVTResult();
+        float bestT = Float.MAX_VALUE;
+
+        // Track position in the all-8 Morton child iteration (0-7)
+        int siblingPos = 0;
 
         while (scale < MAX_DEPTH && iterations < MAX_ITERATIONS) {
             iterations++;
@@ -196,32 +204,20 @@ public final class ESVTTraversal {
                 continue;
             }
 
-            // Get children at the entry face in front-to-back order: the PER-TYPE children-at-face values
-            // (TetreeConnectivity.CHILDREN_AT_FACE[parentType][entryFace], t8code t8_dtet_face_child_id_by_type),
-            // sorted by face-center distance in ESVTChildOrder (Luciferase-d5o9: not the old type-invariant
-            // ESVTTopology.CHILDREN_AT_FACE; the GPU shader's CHILD_ORDER literal mirrors this, pinned by
-            // ESVTChildOrderShaderParityTest). NOTE: the Bey-vs-Morton index convention these values carry, and
-            // the CPU BEY_NUMBER_TO_INDEX conversion applied below vs the GPU shader using them directly, is a
-            // pre-existing inconsistency under review in Luciferase-waft (not introduced by d5o9).
-            byte[] childOrder = ESVTChildOrder.getChildOrder(parentType, entryFace);
-
-            // Try each child starting from siblingPos
+            // All-8 Morton scan: iterate childIdx=siblingPos..7 directly as Morton index.
+            // No BEY_NUMBER_TO_INDEX conversion — childIdx IS the Morton bit in the
+            // childMask/leafMask (mirrors esvt_ray_traversal.cl:775-885).
             boolean descended = false;
-            for (int pos = siblingPos; pos < 4; pos++) {
-                int beyIdx = childOrder[pos];  // This is a BEY index!
+            for (int childIdx = siblingPos; childIdx < 8; childIdx++) {
 
-                // Convert Bey index to Morton index for tree operations
-                // ESVTNodeUnified stores children in Morton order, not Bey order
-                int mortonIdx = TetreeConnectivity.BEY_NUMBER_TO_INDEX[parentType][beyIdx];
-
-                // Check if child exists (using Morton index for tree storage)
-                if (!node.hasChild(mortonIdx)) {
+                // Check if child exists (Morton index directly into childMask)
+                if (!node.hasChild(childIdx)) {
                     continue;
                 }
 
                 // Get child vertices using Morton index
-                // getChildVerticesFromParent() converts Morton to Bey internally
-                getChildVerticesFromParent(currentVerts, mortonIdx, parentType, scratchVerts);
+                // getChildVerticesFromParent() converts Morton to Bey internally for geometry
+                getChildVerticesFromParent(currentVerts, childIdx, parentType, scratchVerts);
 
                 // Test ray-child intersection
                 if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
@@ -235,9 +231,9 @@ public final class ESVTTraversal {
                 int childEntryFace = tetResult.entryFace;
 
                 // Check if this is a leaf (using Morton index)
-                if (node.isChildLeaf(mortonIdx)) {
-                    // Get child node for contour data (relative pointer + current node index)
-                    int childNodeIdx = node.getChildIndex(mortonIdx, parentIdx, farPointers);
+                if (node.isChildLeaf(childIdx)) {
+                    // Get child node for contour data and type (relative pointer + current node index)
+                    int childNodeIdx = node.getChildIndex(childIdx, parentIdx, farPointers);
                     var childNode = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
                         ? nodes[childNodeIdx] : null;
 
@@ -268,7 +264,7 @@ public final class ESVTTraversal {
                                     contour, contourRayOrigin, contourRayDir, tetScale);
 
                                 if (contourHit == null) {
-                                    // Contour indicates no hit - continue searching
+                                    // Contour-invalid: continue to next child (do NOT abort subtree)
                                     continue;
                                 }
 
@@ -297,31 +293,40 @@ public final class ESVTTraversal {
                         }
                     }
 
-                    // Set hit result (using Morton index for tree operations)
-                    // Read child type from child node (types are propagated during build)
-                    byte childType = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
-                        ? nodes[childNodeIdx].getTetType()
-                        : 0;
-                    result.setHit(refinedT,
-                        rayOrigin.x + refinedT * rayDir.x,
-                        rayOrigin.y + refinedT * rayDir.y,
-                        rayOrigin.z + refinedT * rayDir.z,
-                        parentIdx, mortonIdx, childType,
-                        (byte) childEntryFace, scale);
-                    result.exitFace = (byte) tetResult.exitFace;
-                    result.iterations = iterations;
+                    // Global min-t: only update bestResult if this hit is closer.
+                    // Do NOT return here — continue scanning all remaining children.
+                    if (refinedT < bestT) {
+                        bestT = refinedT;
 
-                    // Store contour normal if we have one
-                    if (refinedNormal != null) {
-                        result.normal = refinedNormal;
+                        // Read child type from child node (reuse childNodeIdx from above)
+                        byte childType = childNode != null ? childNode.getTetType() : 0;
+                        bestResult.setHit(refinedT,
+                            rayOrigin.x + refinedT * rayDir.x,
+                            rayOrigin.y + refinedT * rayDir.y,
+                            rayOrigin.z + refinedT * rayDir.z,
+                            parentIdx, childIdx, childType,
+                            (byte) childEntryFace, scale);
+                        bestResult.exitFace = (byte) tetResult.exitFace;
+                        if (refinedNormal != null) {
+                            bestResult.normal = refinedNormal;
+                        }
                     }
+                    // Continue to check other children at same level (may find closer hit)
+                    continue;
+                }
 
-                    return result;
+                // Fetch child index FIRST — fail loud if out of bounds (malformed tree)
+                int childNodeIdx = node.getChildIndex(childIdx, parentIdx, farPointers);
+                if (childNodeIdx < 0 || childNodeIdx >= nodes.length) {
+                    throw new IllegalStateException(
+                        "child pointer out of bounds: " + childNodeIdx
+                        + " (node " + parentIdx + ", child " + childIdx
+                        + ", nodes.length " + nodes.length + ")");
                 }
 
                 // Non-leaf - push current state including vertices and sibling position
                 stack.write(scale, parentIdx, tMax, parentType, (byte) entryFace);
-                stack.writeSiblingPos(scale, (byte) (pos + 1)); // Resume from next sibling after pop
+                stack.writeSiblingPos(scale, (byte) (childIdx + 1)); // Resume from next sibling after pop
                 stack.writeVerts(scale,
                     currentVerts[0], currentVerts[1], currentVerts[2],
                     currentVerts[3], currentVerts[4], currentVerts[5],
@@ -334,13 +339,9 @@ public final class ESVTTraversal {
                 currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
                 currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
 
-                // Move to child (using Morton index for tree operations, relative pointer)
-                int childNodeIdx = node.getChildIndex(mortonIdx, parentIdx, farPointers);
                 parentIdx = childNodeIdx;
                 // Read child type directly from the child node (types are propagated during build)
-                parentType = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
-                    ? nodes[childNodeIdx].getTetType()
-                    : 0;
+                parentType = nodes[childNodeIdx].getTetType();
                 entryFace = childEntryFace >= 0 ? childEntryFace : 0;
                 tMin = childTEntry;
                 tMax = tetResult.tExit;
@@ -351,7 +352,7 @@ public final class ESVTTraversal {
             }
 
             if (!descended) {
-                // No valid child found - pop to parent
+                // No valid non-leaf child descended into — pop to parent
                 if (scale >= MAX_DEPTH - 1) {
                     // At root level, traversal complete
                     break;
@@ -378,8 +379,9 @@ public final class ESVTTraversal {
             }
         }
 
-        result.iterations = iterations;
-        return result;
+        // Return global best hit after stack exhaustion (bestT preserved across all pop/resume)
+        bestResult.iterations = iterations;
+        return bestResult;
     }
 
     /**

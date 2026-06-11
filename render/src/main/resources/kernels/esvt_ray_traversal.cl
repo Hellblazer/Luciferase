@@ -127,22 +127,6 @@ constant int INDEX_TO_BEY_NUMBER[48] = {
     0, 5, 4, 1, 6, 7, 2, 3   // Parent type 5
 };
 
-// CHILD_ORDER[6][4][4] - flattened to [96]
-// [tetType * 16 + entryFace * 4 + position]
-constant int CHILD_ORDER[96] = {
-    // Type 0
-    7, 6, 5, 4,  6, 7, 2, 3,  5, 1, 7, 3,  4, 5, 1, 2,
-    // Type 1
-    7, 5, 6, 4,  6, 3, 7, 2,  7, 5, 3, 1,  5, 4, 2, 1,
-    // Type 2
-    7, 6, 5, 4,  6, 7, 2, 3,  5, 1, 7, 3,  4, 5, 1, 2,
-    // Type 3
-    7, 5, 6, 4,  6, 3, 7, 2,  7, 5, 3, 1,  5, 4, 2, 1,
-    // Type 4
-    7, 6, 5, 4,  6, 7, 2, 3,  5, 1, 7, 3,  4, 5, 1, 2,
-    // Type 5
-    7, 5, 6, 4,  6, 3, 7, 2,  7, 5, 3, 1,  5, 4, 2, 1
-};
 
 // ============================================================================
 // NODE ACCESS FUNCTIONS
@@ -738,12 +722,6 @@ __kernel void traverseESVT(
         float3 bestHitPoint = (float3)(0.0f);
         float3 bestHitNormal = (float3)(0.0f, 1.0f, 0.0f);
         float foundLeafFlag = 0.0f;  // 0.0 = no leaf, 1.0 = found leaf
-        float bestHitScale = (float)CAST_STACK_DEPTH;  // Track depth of best hit
-
-        // DEBUG: track which children are hit at root (bitmask)
-        int debugChildrenChecked = 0;
-        int debugChildrenHit = 0;
-        int debugFirstHitChildIdx = -1;
 
         // Main traversal loop
         while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
@@ -778,9 +756,6 @@ __kernel void traverseESVT(
                     continue;
                 }
 
-                // DEBUG: count at first iteration only (root level)
-                if (iter == 1) debugChildrenChecked++;
-
                 // Get child vertices from ACTUAL parent vertices (not SIMPLEX_STANDARD)
                 // childIdx is in Morton order; getChildVerticesFromParent converts to Bey order
                 float3 cv0, cv1, cv2, cv3;
@@ -795,12 +770,6 @@ __kernel void traverseESVT(
                                             &childHit_entryFace, &childHit_exitFace);
                 if (!childHit_hit) {
                     continue;
-                }
-
-                // DEBUG: count hits at root level and record first hit child
-                if (iter == 1) {
-                    debugChildrenHit++;
-                    if (debugFirstHitChildIdx < 0) debugFirstHitChildIdx = childIdx;
                 }
 
                 // Check if leaf
@@ -847,7 +816,6 @@ __kernel void traverseESVT(
                             }
                         }
                         foundLeafFlag = 1.0f;
-                        bestHitScale = (float)scale;  // Record depth
                     }
                     // Continue to check other children at same level (may find closer hit)
                     continue;
@@ -909,48 +877,16 @@ __kernel void traverseESVT(
             }
         }
 
-        // ARITHMETIC OUTPUT: Blend based on foundLeafFlag
-        // foundLeafFlag is already 0.0f or 1.0f - no conditional needed
-        float leafHitFlag = foundLeafFlag;
-        float noLeafFlag = 1.0f - leafHitFlag;
-
-        // If leaf found: output hit data
-        // If no leaf but root hit: output root hit (green tint)
-        // The missFlag was computed above for root miss case
-        float rootOnlyFlag = noLeafFlag;
-
-        // Output using arithmetic blending
-        // Leaf hit: bestHitPoint, bestT
-        // Root hit only: show green tint at root intersection
-        // Root miss: show ray direction as background
-
-        float4 leafResult = (float4)(bestHitPoint.x, bestHitPoint.y, bestHitPoint.z, bestT);
-        // DEBUG: Output depth as color gradient
-        // depth 0 = red, depth 3 = yellow, depth 6 = green, depth 9 = cyan
-        float hitDepth = (float)(CAST_STACK_DEPTH - 1) - bestHitScale;
-        float normalizedDepth = hitDepth / 10.0f;  // 0-1 for depths 0-10
-        float4 leafNormal = (float4)(
-            1.0f - normalizedDepth,     // R decreases with depth
-            normalizedDepth,             // G increases with depth
-            0.3f,                        // B constant to identify leaf hits
-            1.0f
-        );
-
-        float4 rootOnlyResult = (float4)(0.0f, 0.5f, 0.0f, tMinLocal);
-        // DEBUG: show which child was hit
-        // R = first hit child index / 8 (0-7 maps to 0-0.875)
-        // G = number of hits / 8
-        // B = 0.5 to identify root-only
-        float4 rootOnlyNormal = (float4)(
-            (debugFirstHitChildIdx >= 0) ? ((float)debugFirstHitChildIdx + 1.0f) / 8.0f : 0.0f,
-            (float)debugChildrenHit / 8.0f,
-            0.5f,
-            1.0f
-        );
-
-        // Blend: prefer leaf hit, then root hit
-        hitResults[gid] = leafHitFlag * leafResult + rootOnlyFlag * rootOnlyResult;
-        hitNormals[gid] = leafHitFlag * leafNormal + rootOnlyFlag * rootOnlyNormal;
+        // Output: leaf hit wins; root-without-leaf is a MISS (w=0, not a hit)
+        if (foundLeafFlag > 0.5f) {
+            // Leaf hit: output hit point, distance, and the real geometric normal
+            hitResults[gid] = (float4)(bestHitPoint.x, bestHitPoint.y, bestHitPoint.z, bestT);
+            hitNormals[gid] = (float4)(bestHitNormal.x, bestHitNormal.y, bestHitNormal.z, 1.0f);
+        } else {
+            // root-without-leaf is a MISS — same shape as the root-miss branch below
+            hitResults[gid] = (float4)(0.0f, 0.0f, 0.0f, -1.0f);
+            hitNormals[gid] = (float4)(0.0f, 0.0f, 0.0f, 0.0f); // w=0: no hit
+        }
     } else {
         // Root miss case - output background using arithmetic
         float absRayDirX = (rayDir.x >= 0.0f) ? rayDir.x : -rayDir.x;

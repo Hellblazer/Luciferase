@@ -43,7 +43,7 @@ public final class ESVTStack {
     private final float[] tMaxStack;    // tMax values for each level
     private final byte[] typeStack;     // Tet types (0-5) at each level
     private final byte[] entryFaceStack; // Entry face (0-3) at each level
-    private final byte[] siblingPosStack; // Sibling position (0-3) for resuming after pop
+    private final byte[] siblingPosStack; // Sibling position (0-8) for resuming after pop (stores childIdx+1)
     // Parent vertices at each level (4 vertices * 3 coords = 12 floats per level)
     private final float[][] vertsStack; // [level][12] for v0.xyz, v1.xyz, v2.xyz, v3.xyz
 
@@ -144,7 +144,7 @@ public final class ESVTStack {
      * Write sibling position to stack at given scale level.
      *
      * @param scale Scale level
-     * @param siblingPos Sibling position (0-3) to resume from after pop
+     * @param siblingPos Sibling position (0-8) to resume from after pop (stores childIdx+1 for children 0-7)
      */
     public void writeSiblingPos(int scale, byte siblingPos) {
         if (scale >= 0 && scale < STACK_SIZE) {
@@ -156,7 +156,7 @@ public final class ESVTStack {
      * Read sibling position from stack at given scale level.
      *
      * @param scale Scale level
-     * @return Sibling position (0-3), or 0 if invalid
+     * @return Sibling position (0-8), or 0 if invalid
      */
     public byte readSiblingPos(int scale) {
         if (scale >= 0 && scale < STACK_SIZE) {

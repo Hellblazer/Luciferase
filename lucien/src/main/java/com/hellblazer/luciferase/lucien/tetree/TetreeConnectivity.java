@@ -465,8 +465,12 @@ public final class TetreeConnectivity {
      * Bey number to Morton index mapping - inverse of INDEX_TO_BEY_NUMBER.
      * Maps from Bey child ID (0-7) to Morton child index used for tree storage.
      *
-     * This is essential for ray traversal where CHILDREN_AT_FACE provides Bey indices,
-     * but ESVTNodeUnified stores children indexed by Morton order.
+     * <p>NOTE: CHILDREN_AT_FACE (see :302) provides MORTON indices directly (per t8code
+     * {@code t8_dtet_face_child_id_by_type}, corrected by Luciferase-koaw). Do NOT apply
+     * BEY_NUMBER_TO_INDEX to CHILDREN_AT_FACE values — they are already Morton.
+     * BEY_NUMBER_TO_INDEX is for Bey-numbered tables such as PARENT_TYPE_TO_CHILD_TYPE
+     * and CHILD_CENTROIDS, where child IDs are Bey-ordered and a Morton conversion is needed
+     * for tree storage (Luciferase-jk5tk/waft).
      *
      * [parent_type][bey_number] -> morton_index
      */
