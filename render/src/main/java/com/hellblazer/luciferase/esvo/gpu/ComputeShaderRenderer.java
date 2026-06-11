@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.esvo.gpu;
 
+import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.resource.UnifiedResourceManager;
 import com.hellblazer.luciferase.resource.opengl.BufferResource;
 import com.hellblazer.luciferase.resource.opengl.ShaderProgramResource;
@@ -14,6 +15,8 @@ import javax.vecmath.Matrix4f;
 import javax.vecmath.Vector3f;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.charset.StandardCharsets;
 
@@ -41,10 +44,13 @@ public final class ComputeShaderRenderer {
     public static final int WORKGROUP_SIZE_Y = 8;
     public static final int WORKGROUP_SIZE_Z = 1;
     
-    // Binding points for shader resources
-    public static final int OCTREE_BUFFER_BINDING = 0;
-    public static final int OUTPUT_IMAGE_BINDING = 1;
-    public static final int CAMERA_UBO_BINDING = 2;
+    // Binding points for shader resources (must match raycast.comp layout declarations)
+    public static final int OCTREE_BUFFER_BINDING   = 0;
+    public static final int OUTPUT_IMAGE_BINDING    = 1;
+    public static final int CAMERA_UBO_BINDING      = 2;
+    // FAR_POINTER_BUFFER_BINDING must not conflict with bindings 0-2 above.
+    // Matches the layout(std430, binding = 3) declaration in raycast.comp.
+    public static final int FAR_POINTER_BUFFER_BINDING = 3;
     
     // Resource manager for GPU resources
     private final UnifiedResourceManager resourceManager = UnifiedResourceManager.getInstance();
@@ -54,12 +60,17 @@ public final class ComputeShaderRenderer {
     private ShaderProgramResource raycastProgram;
     private BufferResource cameraUBO;
     private TextureResource outputTexture;
-    
+
+    // Far-pointer SSBO (binding 3). Always bound — contains a 4-byte placeholder
+    // when no far pointers are present so the shader binding slot is always valid.
+    // Mirrors ESVTComputeRenderer.farPointerSSBO (PR #232).
+    private BufferResource farPointerSSBO;
+
     private static final int CAMERA_UBO_SIZE = 64 * 4 + 16 * 4; // 4x4 matrices + vectors
-    
+
     private int frameWidth;
     private int frameHeight;
-    
+
     private boolean initialized = false;
     private boolean disposed = false;
     
@@ -100,11 +111,55 @@ public final class ComputeShaderRenderer {
     }
     
     /**
+     * Upload far-pointer data from an {@link ESVOOctreeData} to the GPU SSBO at binding 3.
+     *
+     * <p>When the data has no far pointers (empty or null array) a minimal 4-byte
+     * placeholder buffer is uploaded so the shader binding slot is always valid —
+     * matching the convention in ESVTComputeRenderer (PR #232).
+     *
+     * <p>Must be called from the OpenGL context thread, after {@link #initialize()}.
+     *
+     * @param data the octree data whose far-pointer table to upload
+     */
+    public void uploadData(ESVOOctreeData data) {
+        if (!initialized) {
+            throw new IllegalStateException("Renderer not initialized");
+        }
+        if (disposed) {
+            throw new IllegalStateException("Renderer has been disposed");
+        }
+
+        int[] fps = data.getFarPointers();
+        int byteCount = (fps != null && fps.length > 0) ? fps.length * Integer.BYTES : Integer.BYTES;
+
+        if (farPointerSSBO == null) {
+            farPointerSSBO = resourceManager.createStorageBuffer(byteCount, "ESVOFarPointerSSBO");
+        }
+
+        ByteBuffer buf = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder());
+        if (fps != null && fps.length > 0) {
+            for (int fp : fps) {
+                buf.putInt(fp);
+            }
+        } else {
+            buf.putInt(0);  // 4-byte placeholder so binding 3 is always valid
+        }
+        buf.flip();
+
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, farPointerSSBO.getOpenGLId());
+        glBufferData(GL_SHADER_STORAGE_BUFFER, buf, GL_STATIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, FAR_POINTER_BUFFER_BINDING, farPointerSSBO.getOpenGLId());
+
+        log.debug("Uploaded {} far-pointer entries ({} bytes) to SSBO binding {}",
+                  fps != null ? fps.length : 0, byteCount, FAR_POINTER_BUFFER_BINDING);
+    }
+
+    /**
      * Render a frame using the octree data
-     * 
+     *
      * @param octreeMemory GPU memory containing octree node data
      * @param viewMatrix Camera view matrix
-     * @param projMatrix Camera projection matrix  
+     * @param projMatrix Camera projection matrix
      * @param objectToWorld Transform from object to world space
      * @param octreeToObject Transform from octree [0,1] to object space
      */
@@ -114,21 +169,33 @@ public final class ComputeShaderRenderer {
         if (!initialized) {
             throw new IllegalStateException("Renderer not initialized");
         }
-        
+
         if (disposed) {
             throw new IllegalStateException("Renderer has been disposed");
         }
-        
+
         // Bind octree data
         octreeMemory.bindToShader(OCTREE_BUFFER_BINDING);
-        
+
+        // Bind far-pointer SSBO (binding 3) — always required by the shader.
+        // If uploadData() was not called, bind a minimal placeholder so the binding slot is valid.
+        if (farPointerSSBO == null) {
+            farPointerSSBO = resourceManager.createStorageBuffer(Integer.BYTES, "ESVOFarPointerSSBOPlaceholder");
+            ByteBuffer placeholder = ByteBuffer.allocateDirect(Integer.BYTES).order(ByteOrder.nativeOrder());
+            placeholder.putInt(0);
+            placeholder.flip();
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, farPointerSSBO.getOpenGLId());
+            glBufferData(GL_SHADER_STORAGE_BUFFER, placeholder, GL_STATIC_DRAW);
+        }
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, FAR_POINTER_BUFFER_BINDING, farPointerSSBO.getOpenGLId());
+
         // Update camera uniforms
         updateCameraUniforms(viewMatrix, projMatrix, objectToWorld, octreeToObject);
-        
+
         // Bind output texture
-        glBindImageTexture(OUTPUT_IMAGE_BINDING, outputTexture.getOpenGLId(), 0, false, 0, 
+        glBindImageTexture(OUTPUT_IMAGE_BINDING, outputTexture.getOpenGLId(), 0, false, 0,
                           GL_WRITE_ONLY, GL_RGBA8);
-        
+
         // Use compute shader program
         glUseProgram(raycastProgram.getOpenGLId());
 
@@ -146,7 +213,7 @@ public final class ComputeShaderRenderer {
 
         // Ensure all image writes are visible to subsequent samplers / readback.
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-        
+
         // Check for errors
         int error = glGetError();
         if (error != GL_NO_ERROR) {
@@ -217,13 +284,18 @@ public final class ComputeShaderRenderer {
                 outputTexture.close();
                 outputTexture = null;
             }
+
+            if (farPointerSSBO != null) {
+                farPointerSSBO.close();
+                farPointerSSBO = null;
+            }
         } catch (Exception e) {
             log.error("Error disposing GPU resources", e);
         }
-        
+
         disposed = true;
         initialized = false;
-        
+
         log.info("Disposed ComputeShaderRenderer");
     }
     

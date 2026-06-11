@@ -11,12 +11,35 @@
 #define MAX_TRAVERSAL_DEPTH 16    // Default: Stream A optimized for occupancy
 #endif
 
+// Ray data is read from a raw float buffer, NOT a struct pointer.
+// The host (AbstractOpenCLRenderer) packs rays tightly at 8 floats / 32 bytes
+// (RAY_SIZE_FLOATS = 8); an OpenCL struct with float3 members would have
+// 16-byte member alignment (48-byte stride) and read garbage for gid >= 1.
+// Same pattern as esvt_ray_traversal.cl. Fix: Luciferase-gva5z (Luciferase-0bn1q).
+//
+// Layout per ray (8 floats = 32 bytes):
+//   [0] origin.x, [1] origin.y, [2] origin.z
+//   [3] direction.x, [4] direction.y, [5] direction.z
+//   [6] tmin, [7] tmax
+#define RAY_STRIDE 8
+
 typedef struct {
     float3 origin;
     float3 direction;
     float tMin;
     float tMax;
 } Ray;
+
+// Helper to extract ray data from the raw float buffer
+inline Ray loadRayFromBuffer(__global const float* rays, int rayIdx) {
+    int base = rayIdx * RAY_STRIDE;
+    Ray ray;
+    ray.origin    = (float3)(rays[base + 0], rays[base + 1], rays[base + 2]);
+    ray.direction = (float3)(rays[base + 3], rays[base + 4], rays[base + 5]);
+    ray.tMin = rays[base + 6];
+    ray.tMax = rays[base + 7];
+    return ray;
+}
 
 // UNIFIED ESVO Node Structure - Matches CUDA Reference Implementation
 // This structure MUST be identical to ESVONodeUnified.java
@@ -76,7 +99,7 @@ uint getChildIndex(float3 pos, float3 center) {
 
 // Main ray traversal kernel
 __kernel void traverseOctree(
-    __global const Ray* rays,
+    __global const float* rays,   // tightly packed, RAY_STRIDE floats per ray
     __global const OctreeNode* octree,
     __global const int* farPointers,  // far-pointer indirection table (may be empty)
     __global float4* hitResults,  // xyz = hit point, w = distance
@@ -85,7 +108,7 @@ __kernel void traverseOctree(
     const float3 sceneMax)
 {
     int gid = get_global_id(0);
-    Ray ray = rays[gid];
+    Ray ray = loadRayFromBuffer(rays, gid);
 
     // Initialize result (distance < 0 means no hit)
     hitResults[gid] = (float4)(0.0f, 0.0f, 0.0f, -1.0f);
@@ -99,7 +122,11 @@ __kernel void traverseOctree(
 
     // Stack for traversal - size configurable via MAX_TRAVERSAL_DEPTH
     // Reduced from hardcoded 32 for occupancy optimization (Stream A Phase 5)
-    __local StackEntry stack[MAX_TRAVERSAL_DEPTH];
+    // PRIVATE (per work-item), NOT __local: a __local array here is shared by the
+    // whole workgroup (LOCAL_WORK_SIZE=64) with no per-thread offset — a data race
+    // that corrupts every traversal. Same as esvt_ray_traversal.cl's private stack.
+    // Fix: Luciferase-gva5z (Luciferase-0bn1q).
+    StackEntry stack[MAX_TRAVERSAL_DEPTH];
     int stackPtr = 0;
 
     // Track stack overflow (graceful termination on overflow)
@@ -161,10 +188,9 @@ __kernel void traverseOctree(
         //     is likewise a RELATIVE offset from the current node index.
         //     Correct child index = current.nodeIdx + farPointers[childPtr] + popcount(sparse-offset)
         //
-        // NOTE: The near path below does NOT add current.nodeIdx — this is a pre-existing
-        // bug that is accidentally correct for root-only traversal (index 0) but wrong for
-        // any non-root interior node. Fixing the near path is tracked separately; this
-        // change only corrects the FAR path to match the CPU reference (ESVONodeUnified.getChildIndex).
+        // Both paths add current.nodeIdx to convert the stored relative offset to an absolute
+        // array index — matching the CPU reference ESVONodeUnified.getChildIndex.
+        // Fix: Luciferase-04ubq (Luciferase-0bn1q).
         uint rawChildPtr = (node.childDescriptor >> 17) & 0x3FFF;
         uint childPtr;
         if (node.childDescriptor & FAR_FLAG_BIT) {
@@ -173,8 +199,9 @@ __kernel void traverseOctree(
             // This matches CPU: currentNodeIdx + farPointers[childPtr] + getChildOffset(childIdx)
             childPtr = current.nodeIdx + (uint) farPointers[rawChildPtr];
         } else {
-            // Near case (pre-existing behaviour — see note above).
-            childPtr = rawChildPtr;
+            // Near case: add current.nodeIdx to convert relative offset to absolute index.
+            // This matches CPU: currentNodeIdx + rawChildPtr + getChildOffset(childIdx)
+            childPtr = current.nodeIdx + rawChildPtr;
         }
 
         // Add children to stack in reverse order for correct traversal
@@ -227,7 +254,7 @@ __kernel void traverseOctree(
 
 // Optimized beam traversal for coherent rays
 __kernel void traverseBeam(
-    __global const Ray* rays,
+    __global const float* rays,   // tightly packed, RAY_STRIDE floats per ray
     __global const OctreeNode* octree,
     __global float4* hitResults,
     const uint raysPerBeam,
@@ -237,13 +264,13 @@ __kernel void traverseBeam(
 {
     int beamId = get_global_id(0);
     int firstRay = beamId * raysPerBeam;
-    
+
     // Compute beam frustum from ray bundle
     float3 frustumMin = (float3)(INFINITY);
     float3 frustumMax = (float3)(-INFINITY);
-    
+
     for (uint i = 0; i < raysPerBeam; i++) {
-        Ray ray = rays[firstRay + i];
+        Ray ray = loadRayFromBuffer(rays, firstRay + (int) i);
         float3 nearPoint = ray.origin + ray.direction * ray.tMin;
         float3 farPoint = ray.origin + ray.direction * ray.tMax;
         
