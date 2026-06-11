@@ -47,7 +47,8 @@ const vec3 SIMPLEX_STANDARD[6][4] = {
     { vec3(0,0,0), vec3(1,1,1), vec3(1,0,1), vec3(0,0,1) }
 };
 
-// PARENT_TYPE_TO_CHILD_TYPE[6][8] - child type from parent type
+// PARENT_TYPE_TO_CHILD_TYPE[6][8] - child type from parent type (Bey-indexed)
+// [parentType][beyIdx] -> childType. Matches esvt_ray_traversal.cl PARENT_TYPE_TO_CHILD_TYPE.
 const int PARENT_TYPE_TO_CHILD_TYPE[6][8] = {
     { 0, 0, 0, 0, 4, 5, 2, 1 },  // Parent type 0
     { 1, 1, 1, 1, 3, 2, 5, 0 },  // Parent type 1
@@ -57,37 +58,25 @@ const int PARENT_TYPE_TO_CHILD_TYPE[6][8] = {
     { 5, 5, 5, 5, 1, 0, 3, 4 }   // Parent type 5
 };
 
-// Children-at-face is PER-TYPE (Luciferase-d5o9 / koaw): the real table is
-// TetreeConnectivity.CHILDREN_AT_FACE[type][face] (t8code t8_dtet_face_child_id_by_type). This shader does
-// NOT carry a standalone children-at-face constant: front-to-back traversal reads the precomputed PER-TYPE
-// CHILD_ORDER[tetType][entryFace][position] table below (derived from ESVTChildOrder, which consumes the
-// per-type lucien table). An earlier type-INVARIANT "same for all types" CHILDREN_AT_FACE const lived here but
-// was unused (never referenced in the shader body) and silently diverged from the corrected per-type table, so
-// it was removed to avoid implying a single children-at-face set exists for all six tet types.
-
-// CHILD_ORDER[6][4][4] - children sorted by centroid distance from face center
-// [tetType][entryFace][position] -> childIndex. Precomputed from ESVTChildOrder.java, which sorts the PER-TYPE
-// children-at-face (TetreeConnectivity.CHILDREN_AT_FACE[type][face], t8code t8_dtet_face_child_id_by_type) by
-// face-center distance for front-to-back GPU traversal. Regenerated for the per-type table (Luciferase-d5o9):
-// the prior literal carried only two distinct patterns (type parity) and silently diverged from the corrected
-// CPU order after Luciferase-koaw. Kept in sync by ESVTChildOrderShaderParityTest; if that test fails,
-// regenerate these values from ESVTChildOrder.getChildOrder(type, face).
-// Regenerated after Luciferase-7wzml.171 fix: CHILD_CENTROIDS now uses INDEX_TO_BEY_NUMBER for correct
-// Morton→Bey mapping instead of treating Morton indices as Bey indices.
-const int CHILD_ORDER[6][4][4] = {
-    // Type 0
-    { { 5, 4, 7, 1 }, { 6, 4, 7, 0 }, { 2, 1, 0, 7 }, { 3, 1, 0, 4 } },
-    // Type 1
-    { { 4, 5, 1, 7 }, { 6, 7, 0, 5 }, { 3, 7, 0, 1 }, { 2, 5, 1, 0 } },
-    // Type 2
-    { { 5, 4, 7, 3 }, { 6, 4, 7, 0 }, { 1, 3, 0, 7 }, { 2, 3, 0, 4 } },
-    // Type 3
-    { { 5, 6, 1, 7 }, { 4, 7, 0, 6 }, { 3, 7, 0, 1 }, { 2, 6, 1, 0 } },
-    // Type 4
-    { { 6, 5, 7, 3 }, { 4, 5, 7, 0 }, { 1, 3, 0, 7 }, { 2, 3, 0, 5 } },
-    // Type 5
-    { { 5, 6, 3, 7 }, { 4, 7, 0, 6 }, { 2, 7, 0, 3 }, { 1, 6, 3, 0 } }
+// INDEX_TO_BEY_NUMBER[6][8] - converts Morton child index to Bey child ID (Luciferase-g51tc P3 fix)
+// ESVT stores children in Morton order; Bey subdivision uses a different ordering.
+// getChildVertices and PARENT_TYPE_TO_CHILD_TYPE are both Bey-indexed.
+// hasChild/isChildLeaf/getChildIndex read Morton-ordered bitsets — use raw childIdx there.
+// Copied verbatim from esvt_ray_traversal.cl INDEX_TO_BEY_NUMBER (lines 121-128).
+// [parentType][mortonIdx] -> beyIdx
+const int INDEX_TO_BEY_NUMBER[6][8] = {
+    { 0, 1, 4, 5, 2, 7, 6, 3 },  // Parent type 0
+    { 0, 1, 5, 4, 7, 2, 6, 3 },  // Parent type 1
+    { 0, 4, 5, 1, 2, 7, 6, 3 },  // Parent type 2
+    { 0, 1, 5, 4, 6, 7, 2, 3 },  // Parent type 3
+    { 0, 4, 5, 1, 6, 2, 7, 3 },  // Parent type 4
+    { 0, 5, 4, 1, 6, 7, 2, 3 }   // Parent type 5
 };
+
+// All-8 Morton scan (Luciferase-g51tc / jk5tk P3): traversal iterates childIdx=0..7 in Morton order,
+// tracking a global bestT across all DFS branches. The old 4-child per-type entry-face
+// table has been removed: it only scanned 4 of 8 children and returned on the first hit rather than
+// the globally closest one. The .cl kernel reference always used all-8 Morton order; this shader now matches.
 
 // ============================================================================
 // BUFFER BINDINGS
@@ -98,6 +87,8 @@ shared uint stack_nodes[64 * CAST_STACK_DEPTH];
 shared float stack_tmax[64 * CAST_STACK_DEPTH];
 shared int stack_type[64 * CAST_STACK_DEPTH];
 shared int stack_entryFace[64 * CAST_STACK_DEPTH];
+// siblingPos stores childIdx+1 (range 1-8, 0 = empty slot) so pop resumes after the child that triggered descent
+shared int stack_siblingPos[64 * CAST_STACK_DEPTH];
 
 // SSBO for ESVT nodes (8 bytes per node = 2 x uint)
 // childDescriptor: [childptr(15)|far(1)|childmask(8)|leafmask(8)]
@@ -530,7 +521,7 @@ TetrahedronHit intersectTetrahedron(vec3 rayOrigin, vec3 rayDir, vec3 v0, vec3 v
 // GET CHILD VERTICES (BEY SUBDIVISION)
 // ============================================================================
 
-void getChildVertices(int parentType, int childIdx, float scale, out vec3 cv0, out vec3 cv1, out vec3 cv2, out vec3 cv3) {
+void getChildVertices(int parentType, int beyIdx, float scale, out vec3 cv0, out vec3 cv1, out vec3 cv2, out vec3 cv3) {
     // Get parent vertices
     vec3 pv0 = SIMPLEX_STANDARD[parentType][0];
     vec3 pv1 = SIMPLEX_STANDARD[parentType][1];
@@ -546,7 +537,7 @@ void getChildVertices(int parentType, int childIdx, float scale, out vec3 cv0, o
     vec3 m23 = (pv2 + pv3) * 0.5;
 
     // Bey children vertices
-    switch (childIdx) {
+    switch (beyIdx) {
         case 0: // Corner at v0
             cv0 = pv0 * scale; cv1 = m01 * scale; cv2 = m02 * scale; cv3 = m03 * scale;
             break;
@@ -720,6 +711,12 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
     int siblingPos = 0;
     int iter = 0;
 
+    // Global min-t accumulators — updated at every LOD/leaf hit, returned after stack exhaustion
+    float bestT = 1e30;
+    vec3 bestHitPoint = vec3(0.0);
+    vec3 bestHitNormal = vec3(0.0, 1.0, 0.0);
+    bool bestDidHit = false;
+
     // Main traversal loop
     while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
         iter++;
@@ -735,27 +732,27 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
             tMax = stack_tmax[stackBase + scale];
             parentType = stack_type[stackBase + scale];
             entryFace = stack_entryFace[stackBase + scale];
-            siblingPos = 0;
+            siblingPos = stack_siblingPos[stackBase + scale];
             scaleExp2 *= 2.0;
             continue;
         }
 
-        // Get child order for entry face
-        int childOrder[4] = CHILD_ORDER[parentType][max(0, entryFace)];
-
-        // Try each child starting from siblingPos
+        // All-8 Morton scan: iterate childIdx=0..7, tracking global bestT (Luciferase-g51tc P3)
         bool descended = false;
-        for (int pos = siblingPos; pos < 4; pos++) {
-            int childIdx = childOrder[pos];
+        for (int childIdx = siblingPos; childIdx < 8; childIdx++) {
 
-            // Check if child exists
+            // Check if child exists (childmask is Morton-ordered — use raw childIdx)
             if (!hasChild(node, childIdx)) {
                 continue;
             }
 
-            // Get child vertices
+            // Convert Morton child index to Bey child index for geometry/type lookups.
+            // hasChild/isChildLeaf/getChildIndex use the Morton-ordered bitset — keep childIdx there.
+            int beyIdx = INDEX_TO_BEY_NUMBER[parentType][childIdx];
+
+            // Get child vertices (Bey-indexed switch — must pass beyIdx)
             vec3 cv0, cv1, cv2, cv3;
-            getChildVertices(parentType, childIdx, scaleExp2 * 0.5, cv0, cv1, cv2, cv3);
+            getChildVertices(parentType, beyIdx, scaleExp2 * 0.5, cv0, cv1, cv2, cv3);
 
             // Test ray-child intersection
             TetrahedronHit childHit = intersectTetrahedron(ray.origin, ray.direction, cv0, cv1, cv2, cv3);
@@ -787,29 +784,32 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
                     continue;
                 }
 
-                didHit = true;
-                hitPoint = ray.origin + ray.direction * contourRef.t;
+                // Update global min-t rather than returning immediately — closer hits may follow
+                if (contourRef.t < bestT) {
+                    bestT = contourRef.t;
+                    bestDidHit = true;
+                    bestHitPoint = ray.origin + ray.direction * contourRef.t;
 
-                // Use contour normal if available, otherwise calculate from face
-                if (length(contourRef.normal) > 0.5) {
-                    hitNormal = contourRef.normal;
-                } else {
-                    // Calculate normal from entry face
-                    vec3 fv0, fv1, fv2;
-                    int entryF = childHit.entryFace;
+                    // Use contour normal if available, otherwise calculate from face
+                    if (length(contourRef.normal) > 0.5) {
+                        bestHitNormal = contourRef.normal;
+                    } else {
+                        // Calculate normal from entry face
+                        vec3 fv0, fv1, fv2;
+                        int entryF = childHit.entryFace;
 
-                    if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                    else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                    else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                    else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+                        if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                        else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                        else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                        else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
 
-                    hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-                    if (dot(hitNormal, ray.direction) > 0) {
-                        hitNormal = -hitNormal;
+                        bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                        if (dot(bestHitNormal, ray.direction) > 0) {
+                            bestHitNormal = -bestHitNormal;
+                        }
                     }
                 }
-
-                return;
+                continue; // Keep scanning for closer hits
             }
 
             // Check if this is a leaf
@@ -829,29 +829,32 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
                     continue;
                 }
 
-                didHit = true;
-                hitPoint = ray.origin + ray.direction * contourRef.t;
+                // Update global min-t rather than returning immediately — closer hits may follow
+                if (contourRef.t < bestT) {
+                    bestT = contourRef.t;
+                    bestDidHit = true;
+                    bestHitPoint = ray.origin + ray.direction * contourRef.t;
 
-                // Use contour normal if available, otherwise calculate from face
-                if (length(contourRef.normal) > 0.5) {
-                    hitNormal = contourRef.normal;
-                } else {
-                    // Calculate normal from entry face
-                    vec3 fv0, fv1, fv2;
-                    int entryF = childHit.entryFace;
+                    // Use contour normal if available, otherwise calculate from face
+                    if (length(contourRef.normal) > 0.5) {
+                        bestHitNormal = contourRef.normal;
+                    } else {
+                        // Calculate normal from entry face
+                        vec3 fv0, fv1, fv2;
+                        int entryF = childHit.entryFace;
 
-                    if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                    else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                    else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                    else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+                        if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                        else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                        else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                        else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
 
-                    hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-                    if (dot(hitNormal, ray.direction) > 0) {
-                        hitNormal = -hitNormal;
+                        bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                        if (dot(bestHitNormal, ray.direction) > 0) {
+                            bestHitNormal = -bestHitNormal;
+                        }
                     }
                 }
-
-                return;
+                continue; // Keep scanning for closer hits
             }
 
             // Non-leaf - push and descend
@@ -859,10 +862,12 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
             stack_tmax[stackBase + scale] = tMax;
             stack_type[stackBase + scale] = parentType;
             stack_entryFace[stackBase + scale] = entryFace;
+            stack_siblingPos[stackBase + scale] = childIdx + 1; // resume AFTER this child on pop
 
-            // Move to child
+            // Move to child (getChildIndex uses Morton-ordered bitset — use childIdx)
             parentIdx = getChildIndex(node, childIdx, parentIdx);
-            parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType][childIdx];
+            // PARENT_TYPE_TO_CHILD_TYPE is Bey-indexed — use beyIdx, not childIdx
+            parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType][beyIdx];
             entryFace = childHit.entryFace >= 0 ? childHit.entryFace : 0;
             tMin = childHit.tEntry;
             tMax = childHit.tExit;
@@ -890,9 +895,14 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
             tMax = stack_tmax[stackBase + scale];
             parentType = stack_type[stackBase + scale];
             entryFace = stack_entryFace[stackBase + scale];
-            siblingPos = 0;
+            siblingPos = stack_siblingPos[stackBase + scale]; // resume after child that triggered descent
         }
     }
+
+    // Write best accumulated hit to output parameters
+    didHit = bestDidHit;
+    hitPoint = bestHitPoint;
+    hitNormal = bestHitNormal;
 }
 
 // ============================================================================
