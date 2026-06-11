@@ -12,9 +12,9 @@ const float EPSILON = exp2(-23.0);
 shared uint stack_nodes[64 * CAST_STACK_DEPTH];
 shared float stack_tmax[64 * CAST_STACK_DEPTH];
 
-// SSBO for octree nodes (8 bytes per node = 2 x uint)
+// SSBO for octree nodes (8 bytes per node = 1 x uvec2; parentIdx is node-unit indexed)
 layout(std430, binding = 0) readonly buffer OctreeBuffer {
-    uvec2 nodes[];  // First uint = childDescriptor, Second uint = contourDescriptor  
+    uvec2 nodes[];  // First uint = childDescriptor, Second uint = contourDescriptor
 } octree;
 
 // Output image
@@ -31,6 +31,14 @@ layout(std140, binding = 2) uniform CameraData {
     vec3 cameraDir;
     float farPlane;
 } camera;
+
+// Far-pointer side table (binding = 3). Always bound — 4-byte placeholder when no far pointers.
+// Far nodes store childPtr as an index into this table; farPointers[childPtr] is the RELATIVE
+// offset from parentIdx to the children block. Matches CPU: ESVONodeUnified.getChildIndex.
+// Fix: Luciferase-04ubq (Luciferase-0bn1q).
+layout(std430, binding = 3) readonly buffer FarPointerBuffer {
+    int farPointers[];
+};
 
 // Ray structure with screen-space size tracking for LOD
 struct Ray {
@@ -165,11 +173,20 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
         uint childDesc = child_descriptor.x;
         uint contourDesc = child_descriptor.y;
         
-        // Extract node data (bit layout must match Java OctreeNode exactly)
-        uint nonLeafMask = childDesc & 0xFFu;
-        uint validMask = (childDesc >> 8) & 0xFFu;
+        // Extract node data (bit layout must match Java ESVONodeUnified exactly):
+        //   bits 0-7  = leafmask  (1 = child IS a leaf)  — Java getLeafMask()
+        //   bits 8-15 = childmask (1 = child exists)     — Java getChildMask()
+        // VERIFIED (Luciferase-7stji / Luciferase-0bn1q): the Laine-Karras CUDA
+        // reference stores a NON-leaf mask in bits 0-7 (1 = descend) and packs child
+        // descriptors for non-leaf children only; the Java encoder (OctreeBuilder /
+        // ESVONodeUnified) stores leaf=1 and packs ALL existing children. The shifted-
+        // mask tests below are polarity-adjusted and the sparse offset counts
+        // childmask bits accordingly.
+        uint childMask8 = (childDesc >> 8) & 0xFFu;
         bool isFar = (childDesc & 0x10000u) != 0u;
-        uint childPtr = childDesc >> 17;
+        // Mask to 14 bits (bits 17-30): ESVO childPtr is 14 bits; bit 31 is the valid flag.
+        // Without the mask, valid=1 leaks +0x4000 into childPtr. Fix: Luciferase-04ubq.
+        uint childPtr = (childDesc >> 17) & 0x3FFFu;
         
         // Calculate corner t-values
         float tx_corner = pos.x * tx_coef - tx_bias;
@@ -179,10 +196,12 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
         
         // Apply mirroring to child index
         int childShift = idx ^ octantMask;
-        // CRITICAL: Shift the ENTIRE child descriptor for mask testing
+        // CRITICAL: Shift the ENTIRE child descriptor for mask testing.
+        // The shifted-mask trick maps child slot = 7 - childShift: bit 15 of the
+        // shifted value is childmask bit (8 + slot), bit 7 is leafmask bit (slot).
         uint childMasks = childDesc << childShift;
-        
-        // Check if child exists (test bit 15 of shifted descriptor) and t-span valid
+
+        // Check if child exists (childmask bit for this slot — Java getChildMask)
         if ((childMasks & 0x8000u) != 0u && t_min <= t_max) {
             // INTERSECT
             float tv_max = min(t_max, tc_max);
@@ -200,6 +219,11 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
             float tz_center = halfScale * tz_coef + tz_corner;
             
             // CONTOUR INTERSECTION for sub-voxel surface refinement
+            // VERIFIED (Luciferase-7stji): units/source mismatch vs the CUDA reference —
+            // the reference reads contour values PARENT-RELATIVE from the raw int stream;
+            // this reads node-absolute from nodes[]. No current Java producer uploads
+            // contour data for this renderer (OctreeBuilder emits contourMask=0), so this
+            // branch is unreachable today. Tracked: Luciferase-yyx35.
             uint contourMask = (contourDesc & 0xFFu) << childShift;
             if ((contourMask & 0x80u) != 0u) {
                 // Extract contour data pointer
@@ -227,8 +251,15 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
                 }
             }
             
-            // Check if child is non-leaf (test bit 7 of shifted descriptor)
-            if ((childMasks & 0x0080u) != 0u && t_min <= tv_max) {
+            if (t_min <= tv_max) {
+                // Java leafmask polarity (bit 7 of shifted descriptor = leafmask bit for
+                // this slot, 1 = leaf): a set bit means the child is a LEAF voxel — hit.
+                // The CUDA reference stores non-leaf=1 and descends on set; with the Java
+                // encoder we terminate on set instead. Fix: Luciferase-7stji (Luciferase-0bn1q).
+                if ((childMasks & 0x0080u) != 0u) {
+                    break; // leaf voxel hit at t_min
+                }
+
                 // PUSH - Save parent on stack (with optimization to avoid redundant pushes)
                 if (tc_max < h && stackPtr < CAST_STACK_DEPTH - 1) {
                     stack_nodes[stackBase + stackPtr] = parentIdx;
@@ -237,17 +268,30 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
                 }
                 h = tc_max;
                 
-                // DESCEND to child
+                // DESCEND to child.
+                // nodes[] is uvec2[] — one element per node, so parentIdx is already node-unit.
+                // Pointers (near childPtr and farPointers[] entries) are RELATIVE offsets in
+                // node-units from parentIdx.  Do NOT multiply by 2 — that was a 2x over-step bug.
+                // Fix: Luciferase-04ubq (Luciferase-0bn1q).
                 uint ofs = childPtr;
-                
-                // Handle far pointer
+
+                // Far pointer: dereference side table to get relative offset.
+                // farPointers[ofs] is the relative offset from parentIdx to the children block.
+                // The pre-fix code read the far offset inline from the node buffer (wrong);
+                // the corrected path uses the dedicated farPointers[] side table.
                 if (isFar) {
-                    ofs = uint(octree.nodes[parentIdx + ofs * 2u].x);
+                    ofs = uint(farPointers[ofs]);
                 }
-                
-                // Add offset for specific child using shifted masks
-                ofs += popc8(childMasks & 0x7Fu);
-                parentIdx = parentIdx + ofs * 2u;
+
+                // Add per-child sparse offset: count existing children BEFORE this slot.
+                // Java packs ALL existing children consecutively (ESVONodeUnified.getChildOffset
+                // counts childmask bits below the slot). The CUDA reference instead packs only
+                // non-leaf children and counts its non-leaf mask — do NOT use the shifted-mask
+                // popc8 idiom here. Fix: Luciferase-7stji (Luciferase-0bn1q).
+                uint childSlot = 7u - uint(childShift);
+                ofs += uint(bitCount(childMask8 & ((1u << childSlot) - 1u)));
+                // parentIdx is node-unit: add ofs directly (no *2u stride).
+                parentIdx = parentIdx + ofs;
                 
                 // Update position for child octant
                 scale--;
