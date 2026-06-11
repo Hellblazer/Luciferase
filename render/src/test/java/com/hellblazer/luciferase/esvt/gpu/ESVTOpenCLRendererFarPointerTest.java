@@ -144,33 +144,34 @@ class ESVTOpenCLRendererFarPointerTest {
      */
     @Test
     void farNodeAtNonZeroIndex_cpuResolutionCorrect() {
+        // leafMask convention: bits live in the PARENT. node[2].leafMask=0x01 marks
+        // Morton slot 0 (node[5]) as a leaf. Filler nodes carry no leafMask.
         var nodes = new ESVTNodeUnified[6];
 
-        // Root: near, childMask=0x01, childPtr=2 (relative: first child at index 2)
+        // Root: near, childMask=0x01, childPtr=2 (child node[2] is interior)
         nodes[0] = new ESVTNodeUnified();
         nodes[0].setChildMask(0x01);
         nodes[0].setChildPtr(2);
+        // leafMask=0x00 (default): child node[2] is interior
 
-        // Index 1: filler leaf
+        // Index 1: unreachable filler
         nodes[1] = new ESVTNodeUnified();
-        nodes[1].setLeafMask(0xFF);
 
         // Index 2: far interior node — childMask=0x01 (one child), far=true, childPtr=0 (farPointers[0])
         // farPointers[0] = 3 (relative: firstChildIndex=5, currentIndex=2, diff=3)
+        // leafMask=0x01: parent marks Morton slot 0 (node[5]) as a leaf
         nodes[2] = new ESVTNodeUnified();
         nodes[2].setChildMask(0x01);
+        nodes[2].setLeafMask(0x01); // bit 0: Morton child 0 (node[5]) is a leaf
         nodes[2].setFar(true);
         nodes[2].setChildPtr(0);
 
-        // Indices 3, 4: filler leaves
+        // Indices 3, 4: unreachable fillers
         nodes[3] = new ESVTNodeUnified();
-        nodes[3].setLeafMask(0xFF);
         nodes[4] = new ESVTNodeUnified();
-        nodes[4].setLeafMask(0xFF);
 
-        // Index 5: first child of the far node
+        // Index 5: leaf content node (parent node[2] marks it via leafMask bit 0)
         nodes[5] = new ESVTNodeUnified();
-        nodes[5].setLeafMask(0xFF);
 
         int relativeOffset = 5 - 2; // = 3
         var data = ESVTData.builder()
@@ -277,10 +278,14 @@ class ESVTOpenCLRendererFarPointerTest {
     // -------------------------------------------------------------------------
 
     /**
-     * GPU renders a far-pointer tree without throwing.
+     * GPU renders a far-pointer tree and actually HITS the leaf reached through the far pointer.
      *
-     * <p>Asserts: render completes without exception; output buffer is non-null and
-     * has the expected byte count (64 × 64 × 4 bytes).
+     * <p>Asserts: render completes without exception; output buffer is non-null with the
+     * expected byte count; and at least one ray reports a real leaf hit via the normal
+     * buffer's hit flag (w > 0.5). The hit-count assertion distinguishes a genuine
+     * far-pointer-resolved leaf hit from the pre-fix silhouette defect where the kernel
+     * flagged every root-cube-intersecting ray as a hit regardless of tree content
+     * (Luciferase-6fui1 defect A) — a render-without-throwing check cannot tell those apart.
      *
      * <p>Run with: {@code RUN_GPU_TESTS=true mvn test -pl render
      * -Dtest=ESVTOpenCLRendererFarPointerTest#farPointerTree_gpuRendersWithoutThrowing}
@@ -312,7 +317,22 @@ class ESVTOpenCLRendererFarPointerTest {
             assertEquals(64 * 64 * 4, outputImage.limit(),
                     "Output image must be 64×64 RGBA = 16384 bytes");
 
-            System.out.println("GPU far-pointer render test: completed without throwing ("
+            // Real-hit assertion: the leaf at node 5 (root -> node 2 via near ptr -> node 5 via
+            // farPointers[0]) occupies the Bey-0-of-Bey-0 region near the origin corner; from
+            // this camera some rays must reach it. The hit flag is hitNormals.w > 0.5 — only
+            // written on a genuine leaf hit (root-without-leaf is a MISS per the kernel pin).
+            var normalBuffer = renderer.getNormalBufferForTesting();
+            int hitCount = 0;
+            for (int i = 0; i < 64 * 64; i++) {
+                if (normalBuffer.get(i * 4 + 3) > 0.5f) {
+                    hitCount++;
+                }
+            }
+            assertTrue(hitCount > 0,
+                    "At least one ray must report a real leaf hit through the far pointer "
+                    + "(hitNormals.w > 0.5); zero hits means far resolution or leaf detection broke");
+
+            System.out.println("GPU far-pointer render test: completed, " + hitCount + " leaf-hit rays ("
                                + data.nodeCount() + " nodes, "
                                + data.farPointerCount() + " far pointer(s)).");
         }
@@ -324,18 +344,20 @@ class ESVTOpenCLRendererFarPointerTest {
 
     /**
      * Minimal 2-node near-only tree: root (childPtr=1, near) + leaf child.
+     * leafMask convention: bit lives in the PARENT. Root's leafMask=0x01 marks
+     * Morton slot 0 (node[1]) as a leaf. node[1] itself carries no leafMask.
      */
     private ESVTData buildNearOnlyTree() {
         var nodes = new ESVTNodeUnified[2];
 
-        // Root: near, single child at relative offset 1
+        // Root: near, childMask=0x01 (Morton slot 0 exists), childPtr=1, leafMask=0x01 (slot 0 is leaf)
         nodes[0] = new ESVTNodeUnified();
         nodes[0].setChildMask(0x01);
         nodes[0].setChildPtr(1);
+        nodes[0].setLeafMask(0x01); // parent marks Morton child 0 (node[1]) as a leaf
 
-        // Child: leaf
+        // Child: leaf content node (parent marks it — no leafMask here)
         nodes[1] = new ESVTNodeUnified();
-        nodes[1].setLeafMask(0x01);
 
         return ESVTData.builder()
                        .nodes(nodes)
@@ -350,19 +372,20 @@ class ESVTOpenCLRendererFarPointerTest {
      * 2-node far-pointer tree: root (far=true, childPtr=0) + leaf child at index 1.
      * farPointers[0] = 1 (relative: firstChildIndex=1, currentIndex=0, diff=1).
      * For root at index 0, relative == absolute — so this is the simple root-only case.
+     * leafMask convention: root's leafMask=0x01 marks Morton slot 0 (node[1]) as a leaf.
      */
     private ESVTData buildFarPointerTree() {
         var nodes = new ESVTNodeUnified[2];
 
-        // Root: far=true, childMask=0x01, childPtr=0 (index into farPointers[])
+        // Root: far=true, childMask=0x01, childPtr=0 (index into farPointers[]), leafMask=0x01
         nodes[0] = new ESVTNodeUnified();
         nodes[0].setChildMask(0x01);
+        nodes[0].setLeafMask(0x01); // parent marks Morton child 0 (node[1]) as a leaf
         nodes[0].setFar(true);
         nodes[0].setChildPtr(0);
 
-        // Child: leaf
+        // Child: leaf content node (parent marks it — no leafMask here)
         nodes[1] = new ESVTNodeUnified();
-        nodes[1].setLeafMask(0x01);
 
         return ESVTData.builder()
                        .nodes(nodes)
@@ -391,33 +414,34 @@ class ESVTOpenCLRendererFarPointerTest {
      * would silently hide.
      */
     private ESVTData buildNonDegenerateFarPointerTree() {
+        // leafMask convention: bit lives in the PARENT. node[2].leafMask=0x01 marks
+        // Morton slot 0 (node[5]) as a leaf. Filler nodes carry no leafMask.
         var nodes = new ESVTNodeUnified[6];
 
         // Index 0: root — near, childMask=0x01, children start at index 2 (relative = 2)
+        // leafMask=0x00: child node[2] is interior
         nodes[0] = new ESVTNodeUnified();
         nodes[0].setChildMask(0x01);
         nodes[0].setChildPtr(2);
 
-        // Index 1: filler leaf
+        // Index 1: unreachable filler (no parent claims this slot)
         nodes[1] = new ESVTNodeUnified();
-        nodes[1].setLeafMask(0xFF);
 
         // Index 2: far interior node — far=true, childPtr=0 (index into farPointers[])
         // farPointers[0] = 3 (relative: firstChildIndex=5, currentIndex=2, diff=3)
+        // leafMask=0x01: parent marks Morton slot 0 (node[5]) as a leaf
         nodes[2] = new ESVTNodeUnified();
         nodes[2].setChildMask(0x01);
+        nodes[2].setLeafMask(0x01); // bit 0: Morton child 0 (node[5]) is a leaf
         nodes[2].setFar(true);
         nodes[2].setChildPtr(0);
 
-        // Index 3, 4: filler leaves
+        // Indices 3, 4: unreachable fillers
         nodes[3] = new ESVTNodeUnified();
-        nodes[3].setLeafMask(0xFF);
         nodes[4] = new ESVTNodeUnified();
-        nodes[4].setLeafMask(0xFF);
 
-        // Index 5: child of the far node (leaf)
+        // Index 5: leaf content node (parent node[2] marks it via leafMask bit 0)
         nodes[5] = new ESVTNodeUnified();
-        nodes[5].setLeafMask(0xFF);
 
         return ESVTData.builder()
                        .nodes(nodes)

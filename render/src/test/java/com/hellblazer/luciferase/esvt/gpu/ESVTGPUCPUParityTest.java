@@ -105,8 +105,6 @@ class ESVTGPUCPUParityTest {
         float fov = 60.0f;
 
         // Test from 4 different camera positions
-        // Note: Off-axis views have lower parity due to coordinate system differences
-        // The corner view is the primary use case and has highest parity
         Vector3f[] cameraPositions = {
                 new Vector3f(2.0f, 2.0f, 2.0f),   // Corner view (primary)
                 new Vector3f(2.0f, 0.5f, 0.5f),   // Side view (+X)
@@ -140,11 +138,14 @@ class ESVTGPUCPUParityTest {
         System.out.printf("\nOverall: %d/%d rays matched (%.2f%% average, %.2f%% minimum)%n",
                 totalMatches, totalRays, avgAccuracy * 100, minAccuracy * 100);
 
-        // Use a lower threshold for multi-angle test (60%) since off-axis views
-        // have known coordinate system differences. The primary corner view
-        // validated in testBasicParity has stricter requirements.
-        assertTrue(minAccuracy >= 0.60,
-                String.format("Minimum accuracy %.2f%% below threshold 60%%", minAccuracy * 100));
+        // The historical 60% threshold dated from the broken-harness era (the kernel
+        // flagged the tree-independent root-cube silhouette as hits, Luciferase-6fui1
+        // defect A; worst angle measured 26.15%). With real parity the hardware
+        // baseline is 99.68% minimum (Apple M4 Max, 2026-06-11); 95% matches the
+        // basic-parity threshold, leaves headroom for cross-GPU FP jitter on
+        // boundary-grazing rays, and still catches any silhouette-class regression.
+        assertTrue(minAccuracy >= 0.95,
+                String.format("Minimum accuracy %.2f%% below threshold 95%%", minAccuracy * 100));
     }
 
     @Test
@@ -504,28 +505,33 @@ class ESVTGPUCPUParityTest {
         //   3: filler leaf
         //   4: filler leaf
         //   5: leaf child of node 2
+        // CONVENTION: leafMask bits live in the PARENT node, not the leaf node itself.
+        // ESVTBuilder.createNodes and both traversals' isChildLeaf() read the parent's leafMask.
         var nodes = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified[6];
 
+        // Root: near interior — Morton child 0 (slot bit 0x01) at relative offset 2 → node[2] (interior)
         nodes[0] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
         nodes[0].setChildMask(0x01);
         nodes[0].setChildPtr(2);
+        // leafMask=0x00 (default): child node[2] is interior, not a leaf
 
+        // Index 1: unreachable filler (no parent claims this slot)
         nodes[1] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
-        nodes[1].setLeafMask(0xFF);
 
+        // Index 2: far interior — Morton child 0 resolves to node[5] via farPointers[0]=3
+        // leafMask=0x01: parent marks Morton slot 0 (abs index 5) as a leaf
         nodes[2] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
         nodes[2].setChildMask(0x01);
+        nodes[2].setLeafMask(0x01); // bit 0: Morton child 0 at index 5 is a leaf
         nodes[2].setFar(true);
-        nodes[2].setChildPtr(0); // farPointers[0] = 3
+        nodes[2].setChildPtr(0); // farPointers[0]=3 → abs = 2 + 3 + popcount(0x01 & 0x00) = 5
 
+        // Indices 3, 4: unreachable fillers (no parent marks these slots)
         nodes[3] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
-        nodes[3].setLeafMask(0xFF);
-
         nodes[4] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
-        nodes[4].setLeafMask(0xFF);
 
+        // Index 5: leaf content node (parent node[2] marks it via leafMask bit 0)
         nodes[5] = new com.hellblazer.luciferase.esvt.core.ESVTNodeUnified();
-        nodes[5].setLeafMask(0xFF);
 
         return ESVTData.builder()
                        .nodes(nodes)

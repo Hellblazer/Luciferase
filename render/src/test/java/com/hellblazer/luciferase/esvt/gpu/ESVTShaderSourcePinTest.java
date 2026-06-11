@@ -308,4 +308,56 @@ class ESVTShaderSourcePinTest {
                 + "the LOD-termination and leaf hit sites (found " + count + ") "
                 + "— a bare return; at either site is the pre-fix first-hit-only bug");
     }
+
+    // -------------------------------------------------------------------------
+    // esvt_ray_traversal.cl output blend pins (P4 fixes)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Pin 10: root-without-leaf path must be a MISS — hitNormals w component must not be set to 1.
+     *
+     * <p>The pre-fix kernel set {@code rootOnlyNormal.w = 1.0f} in the no-leaf-but-root-cube-hit
+     * path. The parity test reads {@code hitNormals.w > 0.5} as a hit flag, so every ray entering
+     * the [0,1]³ root cube was counted as a hit regardless of tree content — a tree-independent
+     * silhouette mask (3301/4096 hits for sphere and 6-node tree alike, byte-identical parity
+     * numbers across P1–P3 revisions). Post-fix: the root-without-leaf branch writes
+     * {@code w=0} (no hit) matching the root-miss branch, gated by a stable marker comment
+     * {@code // root-without-leaf is a MISS}.
+     *
+     * <p>This test is RED before the P4 output-blend fix.
+     */
+    @Test
+    void cl_rootWithoutLeaf_isMiss() {
+        assertTrue(clSource.contains("// root-without-leaf is a MISS"),
+                "esvt_ray_traversal.cl root-only output path must contain the marker comment "
+                + "'// root-without-leaf is a MISS' — pre-fix set hitNormals.w=1.0f there, "
+                + "flagging every root-cube-entering ray as a hit regardless of tree content");
+        // Also check the debug rootOnlyNormal w=1.0f literal is gone
+        assertFalse(clSource.contains("rootOnlyNormal"),
+                "esvt_ray_traversal.cl must not contain the debug 'rootOnlyNormal' variable — "
+                + "the arithmetic blend with w=1.0f is the parity-killing defect");
+    }
+
+    /**
+     * Pin 11: leaf normal output must reference bestHitNormal, not a debug depth gradient.
+     *
+     * <p>The pre-fix kernel discarded {@code bestHitNormal} and output a depth-based color
+     * gradient {@code (1-normalizedDepth, normalizedDepth, 0.3, 1.0)} as the leaf normal.
+     * This produces wrong normals for all leaf hits. Post-fix: the leaf output path references
+     * {@code bestHitNormal.x}, {@code bestHitNormal.y}, {@code bestHitNormal.z} directly.
+     *
+     * <p>This test is RED before the P4 output-blend fix.
+     */
+    @Test
+    void cl_leafNormal_usesBestHitNormal() {
+        assertTrue(clSource.contains("bestHitNormal.x"),
+                "esvt_ray_traversal.cl leaf normal output must reference 'bestHitNormal.x' — "
+                + "pre-fix discarded bestHitNormal and output a debug depth-gradient instead");
+        assertFalse(clSource.contains("normalizedDepth"),
+                "esvt_ray_traversal.cl must not contain the debug 'normalizedDepth' depth-gradient "
+                + "computation — the real bestHitNormal must be written to hitNormals instead");
+        assertFalse(clSource.contains("leafNormal"),
+                "esvt_ray_traversal.cl must not contain the debug 'leafNormal' variable — "
+                + "post-fix writes bestHitNormal directly to hitNormals[gid]");
+    }
 }
