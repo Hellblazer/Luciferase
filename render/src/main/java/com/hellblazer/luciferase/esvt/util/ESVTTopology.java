@@ -68,9 +68,10 @@ public final class ESVTTopology {
      * <p><b>Type-INVARIANT / illustrative only (Luciferase-d5o9).</b> This is the Bey type-0 children-at-face
      * set and is NOT the authoritative table. The real children-at-face is PER-TYPE:
      * {@code TetreeConnectivity.CHILDREN_AT_FACE[type][face]} (t8code {@code t8_dtet_face_child_id_by_type},
-     * corrected by Luciferase-koaw). The live ESVT traversal does not read this constant: the CPU path goes
-     * through {@link com.hellblazer.luciferase.esvt.traversal.ESVTChildOrder} (which reads the per-type lucien
-     * table) and the GPU path uses the precomputed per-type {@code CHILD_ORDER} in {@code raycast_esvt.comp}.
+     * corrected by Luciferase-koaw). The live ESVT traversal does not read this constant: both CPU and GPU
+     * paths use the all-8 Morton min-t scan (iterate Morton children 0..7 directly, track global bestT,
+     * return after stack exhaustion) — see {@link com.hellblazer.luciferase.esvt.traversal.ESVTTraversal}
+     * and {@code esvt_ray_traversal.cl} (Luciferase-jk5tk).
      * {@code ESVTTopology} has no production caller (test-only utility); this constant is retained for
      * illustration and its own tests. Do NOT use it as a children-at-face source of truth.
      */
