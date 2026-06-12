@@ -83,7 +83,13 @@ public class RenderService {
             holder = createESVO(spatialIndex, maxDepth, gridResolution);
         }
 
-        renders.put(sessionId, holder);
+        // Atomic claim: the containsKey check above is a cheap fast-fail only — a
+        // concurrent create for the same session can race past it during the build,
+        // so the loser must be rejected here rather than overwrite the winner.
+        if (renders.putIfAbsent(sessionId, holder) != null) {
+            log.debug("Concurrent create lost race for session {}; discarding build result", sessionId);
+            throw new IllegalStateException("Session already has a render structure. Delete it first.");
+        }
         log.info("Created {} render for session {} with maxDepth={}, gridRes={}",
                 type, sessionId, maxDepth, gridResolution);
 
