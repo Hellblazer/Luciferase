@@ -17,8 +17,10 @@ import java.nio.LongBuffer;
 import java.util.Base64;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 import static org.lwjgl.opencl.CL10.*;
 import static org.lwjgl.system.MemoryUtil.*;
@@ -26,6 +28,12 @@ import static org.lwjgl.system.MemoryUtil.*;
 /**
  * Service for GPU OpenCL operations via REST API.
  * Provides GPU info, rendering, and benchmarking capabilities.
+ *
+ * <p><b>Concurrency:</b> {@link #enableGpu} is safe against concurrent duplicate enables for
+ * the same session — the session slot is claimed atomically ({@code putIfAbsent}); exactly one
+ * caller wins and the loser's renderer (a live native OpenCL resource) is disposed before the
+ * loser is rejected with {@link IllegalStateException}. {@link #disableGpu} uses an atomic
+ * remove. Other per-session operations assume the REST layer's per-session serialization.
  */
 public class GpuService {
 
@@ -33,6 +41,17 @@ public class GpuService {
 
     // Session ID -> GPU session state
     private final Map<String, GpuSessionState> sessions = new ConcurrentHashMap<>();
+
+    /**
+     * Test seam: how a renderer is disposed when its enableGpu call loses the session-claim
+     * race. Production default is {@link #safeDispose}; headless tests substitute a recorder
+     * since a real ESVTOpenCLRenderer cannot be constructed without OpenCL natives (the
+     * enableGpu → claimSession routing itself is exercised by the RUN_GPU_TESTS-gated
+     * GpuEndpointTest integration suite, not headless tests — the availability probe exits
+     * enableGpu before the claim on headless hosts). Inject before any concurrent use;
+     * volatile so a setup-thread write is visible to claiming threads.
+     */
+    volatile Consumer<ESVTOpenCLRenderer> loserDisposer = GpuService::safeDispose;
 
     // Cached GPU info (device doesn't change during runtime)
     private volatile GpuInfo cachedGpuInfo;
@@ -107,16 +126,11 @@ public class GpuService {
         }
 
         var renderer = new ESVTOpenCLRenderer(width, height);
+        GpuSessionState state;
         try {
             renderer.initialize();
             renderer.uploadData(esvtData);
-
-            var state = new GpuSessionState(renderer, width, height);
-            sessions.put(sessionId, state);
-
-            log.info("Enabled GPU for session {} at {}x{}", sessionId, width, height);
-            return getStats(sessionId);
-
+            state = new GpuSessionState(renderer, width, height);
         } catch (Throwable t) {
             // Catch Throwable: native GPU init can fail with Error (UnsatisfiedLinkError etc.)
             // on runners where the OpenCL ICD reports available but no usable device exists.
@@ -124,13 +138,35 @@ public class GpuService {
             safeDispose(renderer);
             throw new IllegalStateException("GPU could not be initialized on this system: " + t.getMessage());
         }
+
+        claimSession(sessionId, state);
+
+        log.info("Enabled GPU for session {} at {}x{}", sessionId, width, height);
+        return getStats(sessionId);
+    }
+
+    /**
+     * Atomically claim the session slot. The containsKey fast-fail in {@link #enableGpu} is a
+     * cheap pre-init short-circuit only — a concurrent enable for the same session can race
+     * past it during native init. Exactly one caller wins; the loser's renderer is disposed
+     * before rejecting so a lost race cannot leak native CL objects (the map entry is the
+     * winner's renderer, never the loser's). Package-private for deterministic headless
+     * regression testing.
+     */
+    void claimSession(String sessionId, GpuSessionState state) {
+        Objects.requireNonNull(loserDisposer, "loserDisposer");
+        if (sessions.putIfAbsent(sessionId, state) != null) {
+            log.debug("Concurrent GPU enable lost race for session {}; disposing loser's renderer", sessionId);
+            loserDisposer.accept(state.renderer);
+            throw new IllegalStateException("GPU already enabled for session. Disable first.");
+        }
     }
 
     private static void safeDispose(ESVTOpenCLRenderer renderer) {
         try {
             renderer.dispose();
         } catch (Throwable t) {
-            log.debug("Renderer dispose during failed GPU enable threw: {}", t.toString());
+            log.warn("Renderer dispose threw: {}", t.toString());
         }
     }
 
@@ -143,7 +179,9 @@ public class GpuService {
             throw new NoSuchElementException("GPU not enabled for session: " + sessionId);
         }
 
-        state.renderer.dispose();
+        // Throwable-fenced like every other dispose path: a native Error escaping here would
+        // abort reaper/session-delete cleanup loops with the session already removed.
+        safeDispose(state.renderer);
         log.info("Disabled GPU for session {}", sessionId);
     }
 
@@ -403,8 +441,9 @@ public class GpuService {
 
     /**
      * Internal state for a GPU-enabled session.
+     * Package-private so headless tests can exercise {@link #claimSession} directly.
      */
-    private static class GpuSessionState {
+    static class GpuSessionState {
         final ESVTOpenCLRenderer renderer;
         final int width;
         final int height;

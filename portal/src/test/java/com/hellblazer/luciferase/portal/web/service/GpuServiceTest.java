@@ -75,4 +75,58 @@ class GpuServiceTest {
         assertEquals(700_000_000L, clock.nanoTime());
         assertEquals(700L, clock.currentTimeMillis());
     }
+
+    // ===== enableGpu session-claim TOCTOU (Luciferase-5nwqd) =====
+    //
+    // A real threaded enableGpu race cannot run headlessly (ESVTOpenCLRenderer is final and
+    // its construction requires OpenCL natives), so these tests pin claimSession — the atomic
+    // claim extracted from enableGpu — directly. The renderer in GpuSessionState is null here;
+    // the loserDisposer seam records disposal instead of touching native resources.
+
+    /**
+     * The claim must admit exactly one state per session: a second claim for the same session
+     * must throw IllegalStateException, dispose the LOSER's renderer exactly once, and leave
+     * the winner's state in place. Pins putIfAbsent — a regression to plain put would admit
+     * both (no throw), dispose nothing, and overwrite the winner.
+     */
+    @Test
+    void claimSessionAdmitsExactlyOneAndDisposesLoser() {
+        var service = new GpuService();
+        var disposals = new java.util.concurrent.atomic.AtomicInteger();
+        service.loserDisposer = renderer -> disposals.incrementAndGet();
+
+        var winner = new GpuService.GpuSessionState(null, 64, 64);
+        var loser = new GpuService.GpuSessionState(null, 128, 128);
+
+        service.claimSession("race-session", winner);
+        assertTrue(service.isGpuEnabled("race-session"));
+        assertEquals(0, disposals.get(), "winning claim must not dispose anything");
+
+        var ex = assertThrows(IllegalStateException.class,
+                              () -> service.claimSession("race-session", loser));
+        assertTrue(ex.getMessage().contains("already enabled"), ex.getMessage());
+        assertEquals(1, disposals.get(), "loser's renderer must be disposed exactly once");
+
+        // The winner's state must be untouched: stats reflect the winner's dimensions
+        var stats = service.getStats("race-session");
+        assertEquals(64, stats.frameWidth(), "losing claim must not replace the winner's state");
+        assertEquals(64, stats.frameHeight());
+    }
+
+    /**
+     * Distinct sessions must claim independently — the atomic claim is keyed per session,
+     * not global.
+     */
+    @Test
+    void claimSessionIsPerSession() {
+        var service = new GpuService();
+        var disposals = new java.util.concurrent.atomic.AtomicInteger();
+        service.loserDisposer = renderer -> disposals.incrementAndGet();
+
+        service.claimSession("s-a", new GpuService.GpuSessionState(null, 64, 64));
+        assertDoesNotThrow(() -> service.claimSession("s-b", new GpuService.GpuSessionState(null, 32, 32)));
+        assertTrue(service.isGpuEnabled("s-a"));
+        assertTrue(service.isGpuEnabled("s-b"));
+        assertEquals(0, disposals.get(), "independent sessions must not dispose anything");
+    }
 }
