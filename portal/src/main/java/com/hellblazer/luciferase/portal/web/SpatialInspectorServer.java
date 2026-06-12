@@ -5,6 +5,7 @@ import com.hellblazer.luciferase.esvo.io.VOLLoader;
 import com.hellblazer.luciferase.portal.web.dto.*;
 import com.hellblazer.luciferase.portal.web.service.EntityCapExceededException;
 import com.hellblazer.luciferase.portal.web.service.GpuService;
+import com.hellblazer.luciferase.portal.web.service.RenderBuildException;
 import com.hellblazer.luciferase.portal.web.service.RenderService;
 import com.hellblazer.luciferase.portal.web.service.SpatialIndexService;
 import io.javalin.Javalin;
@@ -164,6 +165,14 @@ public class SpatialInspectorServer {
             ctx.status(409).json(Map.of(
                 "error", e.getMessage(),
                 "type", "Conflict",
+                "timestamp", Instant.now().toString()
+            ));
+        });
+
+        javalin.exception(RenderBuildException.class, (e, ctx) -> {
+            ctx.status(422).json(Map.of(
+                "error", e.getMessage(),
+                "type", "BuildFailed",
                 "timestamp", Instant.now().toString()
             ));
         });

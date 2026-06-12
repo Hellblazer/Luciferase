@@ -1,8 +1,6 @@
 package com.hellblazer.luciferase.portal.web.service;
 
-import com.hellblazer.luciferase.esvo.core.OctreeBuilder;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvt.builder.ESVTBuilder;
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.traversal.ESVTRay;
 import com.hellblazer.luciferase.esvt.traversal.ESVTTraversal;
@@ -10,6 +8,9 @@ import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import com.hellblazer.luciferase.portal.esvo.bridge.ESVOBridge;
+import com.hellblazer.luciferase.portal.esvt.bridge.ESVTBridge;
+import com.hellblazer.luciferase.portal.inspector.SpatialBridge;
 import com.hellblazer.luciferase.portal.web.dto.*;
 import com.hellblazer.luciferase.portal.web.dto.CreateRenderRequest.RenderType;
 import org.slf4j.Logger;
@@ -19,6 +20,7 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * Service for managing ESVO/ESVT render structures via REST API.
@@ -32,6 +34,24 @@ public class RenderService {
 
     private final Map<String, RenderHolder> renders = new ConcurrentHashMap<>();
     private final Map<String, CameraState> cameras = new ConcurrentHashMap<>();
+
+    private final Supplier<SpatialBridge<ESVTData>> esvtBridgeFactory;
+    private final Supplier<SpatialBridge<ESVOOctreeData>> esvoBridgeFactory;
+
+    public RenderService() {
+        this(ESVTBridge::new, ESVOBridge::new);
+    }
+
+    /**
+     * Constructor-injected bridge factories. Builds go through the {@link SpatialBridge}
+     * wrappers so the {@code BuildResult.isSuccess()} guard is the single success signal
+     * (.220); a fresh bridge is created per build because bridges are stateful.
+     */
+    public RenderService(Supplier<SpatialBridge<ESVTData>> esvtBridgeFactory,
+                         Supplier<SpatialBridge<ESVOOctreeData>> esvoBridgeFactory) {
+        this.esvtBridgeFactory = esvtBridgeFactory;
+        this.esvoBridgeFactory = esvoBridgeFactory;
+    }
 
     /**
      * Create a render structure from the spatial index data.
@@ -220,8 +240,12 @@ public class RenderService {
             }
         }
 
-        var builder = new ESVTBuilder();
-        var data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
+        var result = esvtBridgeFactory.get().buildFromVoxels(voxels, maxDepth, gridResolution);
+        if (!result.isSuccess()) {
+            log.warn("createESVT: build failed: {}", result.message());
+            throw new RenderBuildException("ESVT: " + result.message());
+        }
+        var data = result.getData();
 
         log.info("createESVT: built ESVT with {} nodes, {} leaves, {} internal",
                 data.nodes().length, data.leafCount(), data.internalCount());
@@ -257,22 +281,25 @@ public class RenderService {
             voxels.add(new Point3i(x, y, z));
         }
 
-        try (var builder = new OctreeBuilder(maxDepth)) {
-            var octreeData = builder.buildFromVoxels(voxels, maxDepth);
-
-            return new RenderHolder(
-                    RenderType.ESVO,
-                    octreeData,
-                    null,
-                    octreeData.nodeCount(),
-                    octreeData.leafCount(),
-                    octreeData.internalCount(),
-                    octreeData.maxDepth(),
-                    gridResolution,
-                    octreeData.sizeInBytes(),
-                    octreeData.getFarPointers().length
-            );
+        var result = esvoBridgeFactory.get().buildFromVoxels(voxels, maxDepth, gridResolution);
+        if (!result.isSuccess()) {
+            log.warn("createESVO: build failed: {}", result.message());
+            throw new RenderBuildException("ESVO: " + result.message());
         }
+        var octreeData = result.getData();
+
+        return new RenderHolder(
+                RenderType.ESVO,
+                octreeData,
+                null,
+                octreeData.nodeCount(),
+                octreeData.leafCount(),
+                octreeData.internalCount(),
+                octreeData.maxDepth(),
+                gridResolution,
+                octreeData.sizeInBytes(),
+                octreeData.getFarPointers().length
+        );
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

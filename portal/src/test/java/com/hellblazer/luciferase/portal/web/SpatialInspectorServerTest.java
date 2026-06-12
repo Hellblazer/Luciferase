@@ -483,6 +483,63 @@ class SpatialInspectorServerTest {
         });
     }
 
+    // ========== x5zcl: Render Build Failure Tests ==========
+
+    /**
+     * A render build failure must map to a clean 422 BuildFailed response, not an
+     * uncaught builder exception surfacing as a generic 500. maxDepth=99 is rejected
+     * inside ESVOBridge's BuildResult guard (valid range 1..15), giving a deterministic
+     * failure trigger through the full HTTP path.
+     */
+    @Test
+    void renderBuildFailureReturns422BuildFailed() {
+        var server = new SpatialInspectorServer(0);
+        JavalinTest.test(server.app(), (javalin, client) -> {
+            var sessionId = extractSessionId(client.post("/api/session/create").body().string());
+            postJson(client, "/api/spatial/create?sessionId=" + sessionId, CREATE_OCTREE_BODY);
+
+            // Give the index an entity so the render path has positions to voxelize
+            postJson(client, "/api/spatial/entities/insert?sessionId=" + sessionId,
+                     "{\"x\":0.5,\"y\":0.5,\"z\":0.5}");
+
+            var resp = postJson(client, "/api/render/create?sessionId=" + sessionId,
+                                "{\"type\":\"ESVO\",\"maxDepth\":99,\"gridResolution\":16}");
+            assertEquals(422, resp.code(), "Build failure must return 422, not 500");
+            var body = resp.body().string();
+            assertTrue(body.contains("BuildFailed"), "Body must carry BuildFailed type: " + body);
+
+            // Failed build must not leave render state — a valid retry must succeed
+            assertFalse(server.renderService().hasRender(sessionId),
+                        "Failed build must not leave a render holder");
+            var retry = postJson(client, "/api/render/create?sessionId=" + sessionId,
+                                 "{\"type\":\"ESVO\",\"maxDepth\":10,\"gridResolution\":16}");
+            assertEquals(201, retry.code(), "Valid retry after failed build must succeed");
+        });
+    }
+
+    /**
+     * ESVT mirror of the 422 test: ESVTBridge validates maxDepth 1..21 inside its
+     * BuildResult guard, so maxDepth=99 on a TETREE index must surface as 422 BuildFailed
+     * through the live bridge — not just the stub-bridge unit tests.
+     */
+    @Test
+    void esvtRenderBuildFailureReturns422BuildFailed() {
+        var server = new SpatialInspectorServer(0);
+        JavalinTest.test(server.app(), (javalin, client) -> {
+            var sessionId = extractSessionId(client.post("/api/session/create").body().string());
+            postJson(client, "/api/spatial/create?sessionId=" + sessionId,
+                     "{\"indexType\":\"TETREE\",\"maxDepth\":10,\"maxEntitiesPerNode\":10}");
+            postJson(client, "/api/spatial/entities/insert?sessionId=" + sessionId,
+                     "{\"x\":0.5,\"y\":0.5,\"z\":0.5}");
+
+            var resp = postJson(client, "/api/render/create?sessionId=" + sessionId,
+                                "{\"type\":\"ESVT\",\"maxDepth\":99,\"gridResolution\":16}");
+            assertEquals(422, resp.code(), "ESVT build failure must return 422, not 500");
+            assertTrue(resp.body().string().contains("BuildFailed"));
+            assertFalse(server.renderService().hasRender(sessionId));
+        });
+    }
+
     /**
      * Build a JSON array of n minimal InsertEntityRequest objects with distinct positions.
      */
