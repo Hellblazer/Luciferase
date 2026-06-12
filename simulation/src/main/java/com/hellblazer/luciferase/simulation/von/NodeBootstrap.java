@@ -137,11 +137,35 @@ public final class NodeBootstrap {
     }
 
     /**
+     * Construct a {@link Manager} armed for the composed-node path (RDR-017 HIGH-2,
+     * Luciferase-n6jrh.1): {@code createBubble} fails loud until {@link #assemble} completes, so
+     * a bubble cannot silently register at Layer 0 in the window between Manager construction
+     * and assembly. The live {@link #main} wiring MUST construct its manager through this
+     * factory; the plain {@link Manager} constructors are the legacy/standalone path with no
+     * such guard.
+     *
+     * @param transportRegistry Transport registry for P2P communication
+     * @param spatialLevel      Tetree refinement level for bubbles
+     * @param targetFrameMs     Target frame time for simulation
+     * @param aoiRadius         Area of Interest radius for neighbor detection
+     * @param clock             Clock for timestamps (use TestClock for testing)
+     * @return a Manager that rejects {@code createBubble} until assembled
+     */
+    public static Manager armedManager(LocalServerTransport.Registry transportRegistry,
+                                       byte spatialLevel, long targetFrameMs, float aoiRadius,
+                                       Clock clock) {
+        return new Manager(transportRegistry, spatialLevel, targetFrameMs, aoiRadius, clock, true);
+    }
+
+    /**
      * Wire the node lifecycle graph: register the connection-manager and persistence adapters at Layer 0
      * and configure bubbles (created subsequently via {@link Manager#createBubble()}) to depend on
      * {@code PersistenceManager} (Layer 1).
      * <p>
-     * Must be called before any {@code createBubble} so the bubble dependency resolves.
+     * Must be called before any {@code createBubble} so the bubble dependency resolves. Composed
+     * production nodes should pass a manager constructed via {@link #armedManager} so creates in
+     * the pre-assembly window fail loud instead of landing at Layer 0; an unarmed manager is
+     * accepted (test/standalone paths) but logged.
      *
      * @param manager    the VON manager owning the lifecycle coordinator
      * @param scmAdapter the connection-manager adapter (Layer 0)
@@ -153,6 +177,11 @@ public final class NodeBootstrap {
         Objects.requireNonNull(scmAdapter, "scmAdapter cannot be null");
         Objects.requireNonNull(pmAdapter, "pmAdapter cannot be null");
 
+        if (!manager.requiresAssembly()) {
+            log.warn("assemble() called on an unarmed Manager: bubbles created before this point "
+                     + "registered at Layer 0 with no guard. Composed production nodes must construct "
+                     + "via NodeBootstrap.armedManager (Luciferase-n6jrh.1).");
+        }
         manager.registerInfrastructure(scmAdapter);
         manager.registerInfrastructure(pmAdapter);
         manager.setBubbleDependencies(List.of(pmAdapter.name()));

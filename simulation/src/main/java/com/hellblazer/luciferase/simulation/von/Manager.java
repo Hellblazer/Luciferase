@@ -76,6 +76,12 @@ public class Manager {
     // bootstrap sets this to List.of("PersistenceManager") after registering the persistence adapter,
     // so bubbles register at Layer 1 and start only after persistence is up.
     private volatile List<String> bubbleDependencies = List.of();
+    // RDR-017 HIGH-2 (Luciferase-n6jrh.1): when true, createBubble is rejected until
+    // setBubbleDependencies has been given a non-empty list (the final step of
+    // NodeBootstrap.assemble). Armed at construction — the only race-free point — so a
+    // composed node cannot create a Layer-0 bubble in the window between Manager
+    // construction and assembly. Legacy/standalone managers default to false.
+    private final boolean requireAssembly;
 
     /**
      * Create a Manager with default configuration.
@@ -126,6 +132,33 @@ public class Manager {
      */
     public Manager(LocalServerTransport.Registry transportRegistry,
                       byte spatialLevel, long targetFrameMs, float aoiRadius, Clock clock) {
+        this(transportRegistry, spatialLevel, targetFrameMs, aoiRadius, clock, false);
+    }
+
+    /**
+     * Create a Manager for the composed-node path (RDR-017, Luciferase-n6jrh.1).
+     * <p>
+     * With {@code requireAssembly = true}, {@link #createBubble()} fails loud with
+     * {@link IllegalStateException} until {@link #setBubbleDependencies(List)} has been given a
+     * non-empty list — the final step of
+     * {@link com.hellblazer.luciferase.simulation.von.NodeBootstrap#assemble}. This closes the
+     * window between Manager construction and assembly in which a bubble would otherwise
+     * silently register at Layer 0, starting before persistence and bypassing recovery ordering.
+     * The live node entry point must construct its Manager with this flag; standalone/test
+     * managers use the other constructors ({@code requireAssembly = false}, pre-RDR-017
+     * behavior unchanged).
+     *
+     * @param transportRegistry Transport registry for P2P communication
+     * @param spatialLevel      Tetree refinement level for bubbles
+     * @param targetFrameMs     Target frame time for simulation
+     * @param aoiRadius         Area of Interest radius for neighbor detection
+     * @param clock             Clock for timestamps (use TestClock for testing)
+     * @param requireAssembly   when true, createBubble is rejected until assembly completes
+     */
+    public Manager(LocalServerTransport.Registry transportRegistry,
+                      byte spatialLevel, long targetFrameMs, float aoiRadius, Clock clock,
+                      boolean requireAssembly) {
+        this.requireAssembly = requireAssembly;
         this.transportRegistry = Objects.requireNonNull(transportRegistry, "transportRegistry cannot be null");
         this.clock = Objects.requireNonNull(clock, "clock cannot be null");
         this.factory = new MessageFactory(clock);
@@ -186,10 +219,31 @@ public class Manager {
      * only after persistence. Each named dependency must already be registered (or be registered
      * before the next {@code createBubble}) or {@code createBubble} will fail to register the bubble.
      *
+     * <p>
+     * On a {@code requireAssembly} manager (Luciferase-n6jrh.1) a non-empty list also opens the
+     * {@code createBubble} gate — this is the assembly-completion signal. The gate is monotonic:
+     * an armed manager rejects an empty list outright, so the gate can never re-close (and a
+     * concurrent {@code createBubble} cannot observe the gate flapping).
+     *
      * @param dependencies component names new bubbles depend on (defensively copied)
      */
     public void setBubbleDependencies(List<String> dependencies) {
-        this.bubbleDependencies = List.copyOf(Objects.requireNonNull(dependencies, "dependencies cannot be null"));
+        Objects.requireNonNull(dependencies, "dependencies cannot be null");
+        if (requireAssembly && dependencies.isEmpty()) {
+            throw new IllegalStateException(
+                "Cannot set empty bubble dependencies on a requireAssembly manager: the "
+                + "createBubble gate is monotonic — once NodeBootstrap.assemble() opens it, "
+                + "clearing dependencies would silently re-route new bubbles to Layer 0");
+        }
+        this.bubbleDependencies = List.copyOf(dependencies);
+    }
+
+    /**
+     * @return whether this manager was constructed in {@code requireAssembly} mode
+     * (Luciferase-n6jrh.1); package-private for {@code NodeBootstrap} and tests
+     */
+    boolean requiresAssembly() {
+        return requireAssembly;
     }
 
     /**
@@ -218,6 +272,7 @@ public class Manager {
      * @return The newly created Bubble
      */
     public Bubble createBubble() {
+        checkAssembled();
         var id = UUID.randomUUID();
         var transport = transportRegistry.register(id);
         var bubble = new Bubble(id, spatialLevel, targetFrameMs, transport);
@@ -244,6 +299,7 @@ public class Manager {
      * @return The newly created Bubble
      */
     public Bubble createBubble(UUID id) {
+        checkAssembled();
         var transport = transportRegistry.register(id);
         var bubble = new Bubble(id, spatialLevel, targetFrameMs, transport);
 
@@ -253,8 +309,26 @@ public class Manager {
         // Forward events to manager listeners
         bubble.addEventListener(this::dispatchEvent);
 
+        // Track like the no-arg overload — pre-existing omission (caught in n6jrh.1 review):
+        // an untracked bubble is invisible to size()/getBubble()/getAllBubbles()/close().
+        bubbles.put(id, bubble);
+
         registerBubbleAdapter(id, bubble);
         return bubble;
+    }
+
+    /**
+     * RDR-017 HIGH-2 (Luciferase-n6jrh.1): on a {@code requireAssembly} manager, reject bubble
+     * creation until assembly has set non-empty bubble dependencies. Checked before the transport
+     * registration so a rejected create leaks nothing.
+     */
+    private void checkAssembled() {
+        if (requireAssembly && bubbleDependencies.isEmpty()) {
+            throw new IllegalStateException(
+                "Manager requires assembly: NodeBootstrap.assemble(...) must complete before "
+                + "createBubble() — a bubble created now would register at Layer 0 and bypass "
+                + "persistence lifecycle ordering (RDR-017 HIGH-2)");
+        }
     }
 
     /**
