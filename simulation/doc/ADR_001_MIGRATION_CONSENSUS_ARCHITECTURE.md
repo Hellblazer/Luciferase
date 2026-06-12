@@ -350,18 +350,18 @@ This architecture transforms "manual intervention required" from an operational 
   - VON-based P2P neighbor synchronization
   - Cross-process ghost delivery
 
-#### 4. DelosSocketTransport (DEPRECATED)
-- **Location**: `simulation/src/main/java/.../ghost/DelosSocketTransport.java`
-- **Status**: ⚠️ DEPRECATED (incomplete prototype)
-- **Issues**:
+#### 4. DelosSocketTransport (REMOVED)
+- **Location**: was `simulation/src/main/java/.../ghost/DelosSocketTransport.java`
+- **Status**: ❌ REMOVED 2026-06-12 (Luciferase-j877j) — class and test deleted; use P2PGhostChannel
+- **Issues** (why it was deprecated):
   - 7+ "TODO Phase 7B.2" comments throughout implementation
   - Uses simulated network via `connectTo()` method (not real Delos)
   - EntityUpdateEvent serialization incomplete
   - Superseded by P2PGhostChannel's VonTransport integration
-- **Deprecation Plan**:
-  - Mark `@Deprecated(forRemoval = true)` immediately
-  - Remove in Month 2 (after verification P2PGhostChannel covers all use cases)
-  - Tests remain for reference but skip via `@Disabled`
+- **Deprecation Plan** (completed):
+  - Marked `@Deprecated(forRemoval = true)` — done
+  - Silent-drop hardening tracked separately (Luciferase-7wzml.203, wave16)
+  - Removed along with DelosSocketTransportTest (Luciferase-j877j)
 
 ### Decision Rationale
 

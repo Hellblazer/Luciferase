@@ -113,14 +113,13 @@ public class EnhancedBubble implements AutoCloseable {
      * <p>
      * This constructor allows injection of different GhostChannel implementations:
      * - InMemoryGhostChannel: For testing and single-bubble scenarios (default)
-     * - DelosSocketTransport: For distributed multi-bubble simulation (Phase 7B.2)
+     * - P2PGhostChannel: For production distributed multi-bubble simulation (VON-based P2P)
      * <p>
-     * <strong>Phase 7B.2 Integration:</strong>
-     * <pre>
-     * // Use Delos-based network transport
-     * var transport = new DelosSocketTransport(bubbleId);
-     * var bubble = new EnhancedBubble(id, level, frameMs, controller, transport);
-     * </pre>
+     * <strong>Distributed Integration:</strong> for distributed operation, prefer
+     * {@link com.hellblazer.luciferase.simulation.von.Bubble} (which extends EnhancedBubble)
+     * rather than injecting a channel here: P2PGhostChannel is constructed <em>from</em> a von
+     * Bubble, not the other way around. See P2PGhostChannelTest and
+     * BubbleGhostManagerP2PIntegrationTest for canonical usage.
      *
      * @param id                   Unique bubble identifier
      * @param spatialLevel         Tetree refinement level for spatial index
