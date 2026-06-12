@@ -28,6 +28,22 @@ package com.hellblazer.luciferase.esvt.traversal;
  *
  * <p><b>Stack Size:</b> 22 entries for 21-level Tetree depth (root + 21 refinements)
  *
+ * <p><b>Front-to-back sorted order (2s3jc P2):</b> Each level stores a packed visit order
+ * word in {@code sortedOrderStack}. Layout:
+ * <ul>
+ *   <li>Bits 27–24: count of intersecting children (0–8, 4 bits)</li>
+ *   <li>Bits 23–21: sorted child index 0 (3 bits)</li>
+ *   <li>Bits 20–18: sorted child index 1 (3 bits)</li>
+ *   <li>Bits 17–15: sorted child index 2 (3 bits)</li>
+ *   <li>Bits 14–12: sorted child index 3 (3 bits)</li>
+ *   <li>Bits 11– 9: sorted child index 4 (3 bits)</li>
+ *   <li>Bits  8– 6: sorted child index 5 (3 bits)</li>
+ *   <li>Bits  5– 3: sorted child index 6 (3 bits)</li>
+ *   <li>Bits  2– 0: sorted child index 7 (3 bits)</li>
+ * </ul>
+ * The resume position ({@code sortedPos}) is stored in {@code siblingPosStack} (repurposed from
+ * its old "childIdx+1" semantics to "index into sorted order to resume from").
+ *
  * @author hal.hildebrand
  */
 public final class ESVTStack {
@@ -39,11 +55,17 @@ public final class ESVTStack {
     public static final int STACK_SIZE = 24;
 
     // Stack storage arrays - indexed by scale level
-    private final int[] nodeStack;      // Node indices
-    private final float[] tMaxStack;    // tMax values for each level
-    private final byte[] typeStack;     // Tet types (0-5) at each level
-    private final byte[] entryFaceStack; // Entry face (0-3) at each level
-    private final byte[] siblingPosStack; // Sibling position (0-8) for resuming after pop (stores childIdx+1)
+    private final int[] nodeStack;        // Node indices
+    private final float[] tMaxStack;      // tMax values for each level
+    private final byte[] typeStack;       // Tet types (0-5) at each level
+    private final byte[] entryFaceStack;  // Entry face (0-3) at each level
+    /** Sorted position (index into sorted order) for resuming after pop. Repurposed from siblingPos. */
+    private final byte[] siblingPosStack;
+    /**
+     * Packed sorted visit order per level. Bits 27–24: count (4 bits); bits 23–0: 8 × 3-bit childIdx slots
+     * (slot 0 in bits 23–21, slot 7 in bits 2–0). See class javadoc for the full layout.
+     */
+    private final int[] sortedOrderStack;
     // Parent vertices at each level (4 vertices * 3 coords = 12 floats per level)
     private final float[][] vertsStack; // [level][12] for v0.xyz, v1.xyz, v2.xyz, v3.xyz
 
@@ -56,6 +78,7 @@ public final class ESVTStack {
         this.typeStack = new byte[STACK_SIZE];
         this.entryFaceStack = new byte[STACK_SIZE];
         this.siblingPosStack = new byte[STACK_SIZE];
+        this.sortedOrderStack = new int[STACK_SIZE];
         this.vertsStack = new float[STACK_SIZE][12];
         reset();
     }
@@ -70,6 +93,7 @@ public final class ESVTStack {
             typeStack[i] = -1;
             entryFaceStack[i] = -1;
             siblingPosStack[i] = 0;
+            sortedOrderStack[i] = 0;
             java.util.Arrays.fill(vertsStack[i], 0.0f);
         }
     }
@@ -141,28 +165,97 @@ public final class ESVTStack {
     }
 
     /**
-     * Write sibling position to stack at given scale level.
+     * Write sorted position (resume index into sorted order) to stack at given scale level.
+     * Repurposed from the old "siblingPos = childIdx+1" semantics to "index in sorted order".
      *
-     * @param scale Scale level
-     * @param siblingPos Sibling position (0-8) to resume from after pop (stores childIdx+1 for children 0-7)
+     * @param scale      Scale level
+     * @param sortedPos  Position in sorted order to resume from (0-based)
      */
-    public void writeSiblingPos(int scale, byte siblingPos) {
+    public void writeSiblingPos(int scale, byte sortedPos) {
         if (scale >= 0 && scale < STACK_SIZE) {
-            siblingPosStack[scale] = siblingPos;
+            siblingPosStack[scale] = sortedPos;
         }
     }
 
     /**
-     * Read sibling position from stack at given scale level.
+     * Read sorted position (resume index into sorted order) from stack at given scale level.
      *
      * @param scale Scale level
-     * @return Sibling position (0-8), or 0 if invalid
+     * @return Sorted position, or 0 if invalid
      */
     public byte readSiblingPos(int scale) {
         if (scale >= 0 && scale < STACK_SIZE) {
             return siblingPosStack[scale];
         }
         return 0;
+    }
+
+    /**
+     * Write the packed sorted visit order for the given scale level.
+     *
+     * <p>Packing: bits 27–24 = count (4 bits, value 0–8); each of slots 0–7 occupies
+     * 3 bits starting from bit 23 downward (slot 0 at bits 23–21, slot 7 at bits 2–0).
+     *
+     * @param scale        Scale level
+     * @param packedOrder  Packed word encoding count + 8 sorted child indices
+     */
+    public void writeSortedOrder(int scale, int packedOrder) {
+        if (scale >= 0 && scale < STACK_SIZE) {
+            sortedOrderStack[scale] = packedOrder;
+        }
+    }
+
+    /**
+     * Read the packed sorted visit order from the given scale level.
+     *
+     * @param scale Scale level
+     * @return Packed sorted-order word, or 0 if invalid
+     */
+    public int readSortedOrder(int scale) {
+        if (scale >= 0 && scale < STACK_SIZE) {
+            return sortedOrderStack[scale];
+        }
+        return 0;
+    }
+
+    /**
+     * Extract the count of intersecting children from a packed sorted-order word.
+     * Count is stored in bits 27–24.
+     *
+     * @param packedOrder Packed sorted-order word
+     * @return Number of intersecting children (0–8)
+     */
+    public static int sortedCount(int packedOrder) {
+        return (packedOrder >> 24) & 0xF;
+    }
+
+    /**
+     * Extract the child index at position {@code pos} in the sorted order.
+     * Slot 0 is in bits 23–21, slot 1 in bits 20–18, …, slot 7 in bits 2–0.
+     *
+     * @param packedOrder Packed sorted-order word
+     * @param pos         Slot index (0–7)
+     * @return Child index (0–7) at that slot
+     */
+    public static int sortedChildAt(int packedOrder, int pos) {
+        int shift = 21 - pos * 3;
+        return (packedOrder >> shift) & 0x7;
+    }
+
+    /**
+     * Build a packed sorted-order word from a count and an array of sorted child indices.
+     *
+     * @param count        Number of valid entries in {@code sortedChildren}
+     * @param sortedChildren Array of child indices in sorted visit order (only first {@code count} used)
+     * @return Packed word
+     */
+    public static int packSortedOrder(int count, int[] sortedChildren) {
+        int packed = (count & 0xF) << 24;
+        for (int i = 0; i < count; i++) {
+            int shift = 21 - i * 3;
+            packed |= (sortedChildren[i] & 0x7) << shift;
+        }
+        return packed;
     }
 
     /**
@@ -233,6 +326,8 @@ public final class ESVTStack {
             tMaxStack[scale] = 0.0f;
             typeStack[scale] = -1;
             entryFaceStack[scale] = -1;
+            siblingPosStack[scale] = 0;
+            sortedOrderStack[scale] = 0;
         }
     }
 
@@ -250,12 +345,18 @@ public final class ESVTStack {
 
     /**
      * Copy stack state from another stack.
+     * Deep-copies all arrays including per-level vertex data (vertsStack).
      */
     public void copyFrom(ESVTStack other) {
         System.arraycopy(other.nodeStack, 0, this.nodeStack, 0, STACK_SIZE);
         System.arraycopy(other.tMaxStack, 0, this.tMaxStack, 0, STACK_SIZE);
         System.arraycopy(other.typeStack, 0, this.typeStack, 0, STACK_SIZE);
         System.arraycopy(other.entryFaceStack, 0, this.entryFaceStack, 0, STACK_SIZE);
+        System.arraycopy(other.siblingPosStack, 0, this.siblingPosStack, 0, STACK_SIZE);
+        System.arraycopy(other.sortedOrderStack, 0, this.sortedOrderStack, 0, STACK_SIZE);
+        for (int i = 0; i < STACK_SIZE; i++) {
+            System.arraycopy(other.vertsStack[i], 0, this.vertsStack[i], 0, 12);
+        }
     }
 
     @Override

@@ -328,9 +328,14 @@ class ESVTOpenCLRendererFarPointerTest {
                     hitCount++;
                 }
             }
-            assertTrue(hitCount > 0,
-                    "At least one ray must report a real leaf hit through the far pointer "
-                    + "(hitNormals.w > 0.5); zero hits means far resolution or leaf detection broke");
+            // Exact pin (Luciferase-ypbk9): 24 leaf-hit rays observed on hardware for this fixed
+            // 64x64 camera/tree, unchanged across the exhaustive-scan -> front-to-back rewrite
+            // (result invariance). A drift in either direction means traversal results changed:
+            // 0 = far resolution or leaf detection broke; other values = hit-set divergence.
+            assertEquals(24, hitCount,
+                    "Exactly 24 rays must report a real leaf hit through the far pointer "
+                    + "(hitNormals.w > 0.5) — measured on hardware pre- and post-front-to-back; "
+                    + "any drift means the traversal hit-set changed");
 
             System.out.println("GPU far-pointer render test: completed, " + hitCount + " leaf-hit rays ("
                                + data.nodeCount() + " nodes, "

@@ -172,7 +172,6 @@ public final class ESVTTraversal {
         // entryFace is kept for child-descent context but no longer drives child selection:
         // the all-8 scan below iterates all Morton children regardless of entry face.
         int entryFace = 0;
-        float tMin = aabbResult.tEntry;
         float tMax = aabbResult.tExit;
         int scale = MAX_DEPTH - 1;
         int iterations = 0;
@@ -183,178 +182,347 @@ public final class ESVTTraversal {
         var bestResult = new ESVTResult();
         float bestT = Float.MAX_VALUE;
 
-        // Track position in the all-8 Morton child iteration (0-7)
-        int siblingPos = 0;
+        // front-to-back: sorted position (index into sorted order per level)
+        int sortedPos = 0;
+
+        // Scratch arrays for front-to-back child collection and insertion sort (max 8 children).
+        // Sorted in tandem: after the sort, slot i holds the i-th nearest child's (tEntry, childIdx).
+        final float[] candidateTEntry = new float[8];
+        final int[] candidateIdx = new int[8];
 
         while (scale < MAX_DEPTH && iterations < MAX_ITERATIONS) {
             iterations++;
 
-            var node = nodes[parentIdx];
-            if (!node.isValid()) {
-                // Invalid node - pop
-                if (!popStack(scale, result)) {
-                    break;
-                }
-                parentIdx = result.nodeIndex;
-                parentType = result.tetType;
-                entryFace = result.entryFace;
-                tMax = result.t;
+            // -----------------------------------------------------------------------
+            // Front-to-back: collect intersecting children, insertion-sort by tEntry,
+            // visit in sorted order, prune when next tEntry >= bestT.
+            //
+            // On first entry to this node: sortedPos == 0, collect all candidates.
+            // On resume (after pop): sortedPos > 0, re-derive the next child in order.
+            // -----------------------------------------------------------------------
+            var currentNode = nodes[parentIdx];
+            if (!currentNode.isValid()) {
+                // Invalid node — pop
+                if (scale >= MAX_DEPTH - 1) break;
                 scale++;
-                siblingPos = stack.readSiblingPos(scale); // Resume from next untested sibling
+                if (!stack.hasEntry(scale)) break;
+                parentIdx = stack.readNode(scale);
+                parentType = stack.readType(scale);
+                entryFace = stack.readEntryFace(scale);
+                tMax = stack.readTmax(scale);
+                sortedPos = stack.readSiblingPos(scale);
+                float[] restoredVerts = stack.readVerts(scale);
+                if (restoredVerts != null) {
+                    System.arraycopy(restoredVerts, 0, currentVerts, 0, 12);
+                }
                 continue;
             }
 
-            // All-8 Morton scan: iterate childIdx=siblingPos..7 directly as Morton index.
-            // No BEY_NUMBER_TO_INDEX conversion — childIdx IS the Morton bit in the
-            // childMask/leafMask (mirrors esvt_ray_traversal.cl:775-885).
             boolean descended = false;
-            for (int childIdx = siblingPos; childIdx < 8; childIdx++) {
 
-                // Check if child exists (Morton index directly into childMask)
-                if (!node.hasChild(childIdx)) {
-                    continue;
+            // Determine the packed sorted order for this level.
+            // If sortedPos == 0 we are entering this node fresh: collect + sort.
+            // If sortedPos > 0 we are resuming: use the stored packed order.
+            int packedOrder;
+            int childCount;
+
+            if (sortedPos == 0) {
+                // ----- COLLECT: scan all 8 Morton children, compute intersections -----
+                int nCandidates = 0;
+                for (int childIdx = 0; childIdx < 8; childIdx++) {
+                    if (!currentNode.hasChild(childIdx)) {
+                        continue;
+                    }
+                    // getChildVerticesFromParent: Morton→Bey internally (INDEX_TO_BEY_NUMBER)
+                    getChildVerticesFromParent(currentVerts, childIdx, parentType, scratchVerts);
+                    if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
+                            scratchVerts[0], scratchVerts[1], scratchVerts[2], scratchVerts[3],
+                            tetResult)) {
+                        continue;
+                    }
+                    candidateTEntry[nCandidates] = tetResult.tEntry;
+                    candidateIdx[nCandidates] = childIdx;
+                    nCandidates++;
                 }
 
-                // Get child vertices using Morton index
-                // getChildVerticesFromParent() converts Morton to Bey internally for geometry
-                getChildVerticesFromParent(currentVerts, childIdx, parentType, scratchVerts);
-
-                // Test ray-child intersection
-                if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
-                        scratchVerts[0], scratchVerts[1], scratchVerts[2], scratchVerts[3],
-                        tetResult)) {
-                    continue;
+                // ----- INSERTION SORT ascending by tEntry, tiebreak childIdx ascending -----
+                // Direct tandem sort of the two parallel arrays; max 8 elements.
+                // P3 mirrors this exact shape in .cl/.comp: same loop, same comparator.
+                for (int i = 1; i < nCandidates; i++) {
+                    float ti = candidateTEntry[i];
+                    int ci = candidateIdx[i];
+                    int j = i - 1;
+                    while (j >= 0 && (candidateTEntry[j] > ti
+                                      || (candidateTEntry[j] == ti && candidateIdx[j] > ci))) {
+                        candidateTEntry[j + 1] = candidateTEntry[j];
+                        candidateIdx[j + 1] = candidateIdx[j];
+                        j--;
+                    }
+                    candidateTEntry[j + 1] = ti;
+                    candidateIdx[j + 1] = ci;
                 }
 
-                // Child intersection found
-                float childTEntry = tetResult.tEntry;
-                int childEntryFace = tetResult.entryFace;
+                childCount = nCandidates;
+                // Pack the sorted childIdx order into the sorted-order word
+                packedOrder = ESVTStack.packSortedOrder(childCount, candidateIdx);
 
-                // Check if this is a leaf (using Morton index)
-                if (node.isChildLeaf(childIdx)) {
-                    // Get child node for contour data and type (relative pointer + current node index)
-                    int childNodeIdx = node.getChildIndex(childIdx, parentIdx, farPointers);
-                    var childNode = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
-                        ? nodes[childNodeIdx] : null;
+                // ----- VISIT in sorted order, PRUNE when tEntry >= bestT -----
+                boolean descendedInner = false;
+                for (int si = 0; si < childCount; si++) {
+                    int childIdx = candidateIdx[si];
+                    float childTEntry = candidateTEntry[si];
 
-                    // Apply contour refinement if available
-                    float refinedT = childTEntry;
-                    Vector3f refinedNormal = null;
+                    // front-to-back: prune — next ordered child's tEntry >= bestT → BREAK
+                    // (sorted ⇒ all remaining also >= bestT, cannot improve result)
+                    if (childTEntry >= bestT) {
+                        break; // prune: next tEntry >= bestT, break
+                    }
 
-                    if (contours != null && childNode != null && childNode.hasContour()) {
-                        // Get contour for entry face
-                        int contourMask = childNode.getContourMask();
-                        if ((contourMask & (1 << childEntryFace)) != 0) {
-                            int contourPtr = childNode.getContourPtr();
-                            int contourOffset = Integer.bitCount(contourMask & ((1 << childEntryFace) - 1));
-                            int contourIdx = contourPtr + contourOffset;
+                    // Re-derive vertices and full intersection result for this child
+                    getChildVerticesFromParent(currentVerts, childIdx, parentType, scratchVerts);
+                    if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
+                            scratchVerts[0], scratchVerts[1], scratchVerts[2], scratchVerts[3],
+                            tetResult)) {
+                        // No longer intersects (shouldn't happen since we collected above, but be safe)
+                        continue;
+                    }
+                    int childEntryFace = tetResult.entryFace;
 
-                            if (contourIdx >= 0 && contourIdx < contours.length) {
-                                int contour = contours[contourIdx];
+                    if (currentNode.isChildLeaf(childIdx)) {
+                        int childNodeIdx = currentNode.getChildIndex(childIdx, parentIdx, farPointers);
+                        var childNode = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
+                            ? nodes[childNodeIdx] : null;
 
-                                // Compute tetrahedron scale from current level
-                                float tetScale = (float) Math.pow(0.5, MAX_DEPTH - 1 - scale);
+                        float refinedT = childTEntry;
+                        Vector3f refinedNormal = null;
 
-                                // Set up ray for contour intersection
-                                contourRayOrigin.set(rayOrigin.x, rayOrigin.y, rayOrigin.z);
-                                contourRayDir.set(rayDir.x, rayDir.y, rayDir.z);
+                        if (contours != null && childNode != null && childNode.hasContour()) {
+                            int contourMask = childNode.getContourMask();
+                            if ((contourMask & (1 << childEntryFace)) != 0) {
+                                int contourPtr = childNode.getContourPtr();
+                                int contourOffset = Integer.bitCount(contourMask & ((1 << childEntryFace) - 1));
+                                int contourIdx = contourPtr + contourOffset;
 
-                                // Intersect ray with contour
-                                float[] contourHit = ESVTContour.intersectRay(
-                                    contour, contourRayOrigin, contourRayDir, tetScale);
+                                if (contourIdx >= 0 && contourIdx < contours.length) {
+                                    int contour = contours[contourIdx];
+                                    float tetScale = (float) Math.pow(0.5, MAX_DEPTH - 1 - scale);
+                                    contourRayOrigin.set(rayOrigin.x, rayOrigin.y, rayOrigin.z);
+                                    contourRayDir.set(rayDir.x, rayDir.y, rayDir.z);
+                                    float[] contourHit = ESVTContour.intersectRay(
+                                        contour, contourRayOrigin, contourRayDir, tetScale);
 
-                                if (contourHit == null) {
-                                    // Contour-invalid: continue to next child (do NOT abort subtree)
-                                    continue;
-                                }
+                                    if (contourHit == null) {
+                                        // Contour-invalid: continue to next child (do NOT abort subtree)
+                                        continue;
+                                    }
 
-                                // Refine hit to contour surface
-                                var decoded = ESVTContour.decodeNormal(contour);
-                                float[] posThick = ESVTContour.decodePosThick(contour);
-                                float contourPos = posThick[0] * tetScale;
-
-                                // Calculate refined t at contour plane center
-                                float denom = decoded.x * rayDir.x + decoded.y * rayDir.y + decoded.z * rayDir.z;
-                                if (Math.abs(denom) > 1e-10f) {
-                                    float originDot = decoded.x * rayOrigin.x + decoded.y * rayOrigin.y + decoded.z * rayOrigin.z;
-                                    float newT = (contourPos - originDot) / denom;
-                                    if (newT >= childTEntry && newT <= tetResult.tExit) {
-                                        refinedT = newT;
-                                        refinedNormal = decoded;
-                                        refinedNormal.normalize();
-
-                                        // Ensure normal faces ray
-                                        if (refinedNormal.x * rayDir.x + refinedNormal.y * rayDir.y + refinedNormal.z * rayDir.z > 0) {
-                                            refinedNormal.negate();
+                                    var decoded = ESVTContour.decodeNormal(contour);
+                                    float[] posThick = ESVTContour.decodePosThick(contour);
+                                    float contourPos = posThick[0] * tetScale;
+                                    float denom = decoded.x * rayDir.x + decoded.y * rayDir.y + decoded.z * rayDir.z;
+                                    if (Math.abs(denom) > 1e-10f) {
+                                        float originDot = decoded.x * rayOrigin.x + decoded.y * rayOrigin.y + decoded.z * rayOrigin.z;
+                                        float newT = (contourPos - originDot) / denom;
+                                        if (newT >= childTEntry && newT <= tetResult.tExit) {
+                                            refinedT = newT;
+                                            refinedNormal = decoded;
+                                            refinedNormal.normalize();
+                                            if (refinedNormal.x * rayDir.x + refinedNormal.y * rayDir.y + refinedNormal.z * rayDir.z > 0) {
+                                                refinedNormal.negate();
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    // Global min-t: only update bestResult if this hit is closer.
-                    // Do NOT return here — continue scanning all remaining children.
-                    if (refinedT < bestT) {
-                        bestT = refinedT;
-
-                        // Read child type from child node (reuse childNodeIdx from above)
-                        byte childType = childNode != null ? childNode.getTetType() : 0;
-                        bestResult.setHit(refinedT,
-                            rayOrigin.x + refinedT * rayDir.x,
-                            rayOrigin.y + refinedT * rayDir.y,
-                            rayOrigin.z + refinedT * rayDir.z,
-                            parentIdx, childIdx, childType,
-                            (byte) childEntryFace, scale);
-                        bestResult.exitFace = (byte) tetResult.exitFace;
-                        if (refinedNormal != null) {
-                            bestResult.normal = refinedNormal;
+                        // Global min-t: only update bestResult if this hit is closer.
+                        if (refinedT < bestT) {
+                            bestT = refinedT;
+                            byte childType = childNode != null ? childNode.getTetType() : 0;
+                            bestResult.setHit(refinedT,
+                                rayOrigin.x + refinedT * rayDir.x,
+                                rayOrigin.y + refinedT * rayDir.y,
+                                rayOrigin.z + refinedT * rayDir.z,
+                                parentIdx, childIdx, childType,
+                                (byte) childEntryFace, scale);
+                            bestResult.exitFace = (byte) tetResult.exitFace;
+                            if (refinedNormal != null) {
+                                bestResult.normal = refinedNormal;
+                            }
                         }
+                        // Continue to check other children at same level (may find closer hit)
+                        continue;
                     }
-                    // Continue to check other children at same level (may find closer hit)
-                    continue;
+
+                    // Non-leaf: fail loud on OOB before any state mutation
+                    int childNodeIdx = currentNode.getChildIndex(childIdx, parentIdx, farPointers);
+                    if (childNodeIdx < 0 || childNodeIdx >= nodes.length) {
+                        throw new IllegalStateException(
+                            "child pointer out of bounds: " + childNodeIdx
+                            + " (node " + parentIdx + ", child " + childIdx
+                            + ", nodes.length " + nodes.length + ")");
+                    }
+
+                    // Push current state; store packed sorted order + next resume position
+                    stack.write(scale, parentIdx, tMax, parentType, (byte) entryFace);
+                    // Resume position = si+1 (next slot in sorted order after this non-leaf descent)
+                    stack.writeSiblingPos(scale, (byte) (si + 1));
+                    stack.writeSortedOrder(scale, packedOrder);
+                    stack.writeVerts(scale,
+                        currentVerts[0], currentVerts[1], currentVerts[2],
+                        currentVerts[3], currentVerts[4], currentVerts[5],
+                        currentVerts[6], currentVerts[7], currentVerts[8],
+                        currentVerts[9], currentVerts[10], currentVerts[11]);
+
+                    // Descend
+                    currentVerts[0] = scratchVerts[0].x; currentVerts[1] = scratchVerts[0].y; currentVerts[2] = scratchVerts[0].z;
+                    currentVerts[3] = scratchVerts[1].x; currentVerts[4] = scratchVerts[1].y; currentVerts[5] = scratchVerts[1].z;
+                    currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
+                    currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
+
+                    parentIdx = childNodeIdx;
+                    parentType = nodes[childNodeIdx].getTetType();
+                    entryFace = childEntryFace >= 0 ? childEntryFace : 0;
+                    tMax = tetResult.tExit;
+                    scale--;
+                    sortedPos = 0;
+                    descendedInner = true;
+                    descended = true;
+                    break;
                 }
+                descended = descendedInner;
 
-                // Fetch child index FIRST — fail loud if out of bounds (malformed tree)
-                int childNodeIdx = node.getChildIndex(childIdx, parentIdx, farPointers);
-                if (childNodeIdx < 0 || childNodeIdx >= nodes.length) {
-                    throw new IllegalStateException(
-                        "child pointer out of bounds: " + childNodeIdx
-                        + " (node " + parentIdx + ", child " + childIdx
-                        + ", nodes.length " + nodes.length + ")");
+            } else {
+                // ----- RESUME: we popped back to this node; continue sorted-order visit -----
+                // Restore the packed sorted order (already read above during pop restore or passed through)
+                packedOrder = stack.readSortedOrder(scale);
+                childCount = ESVTStack.sortedCount(packedOrder);
+
+                boolean descendedResume = false;
+                for (int si = sortedPos; si < childCount; si++) {
+                    int childIdx = ESVTStack.sortedChildAt(packedOrder, si);
+
+                    // Re-derive vertices + re-intersect (per design: resume re-intersects, no stored tEntry)
+                    getChildVerticesFromParent(currentVerts, childIdx, parentType, scratchVerts);
+                    if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
+                            scratchVerts[0], scratchVerts[1], scratchVerts[2], scratchVerts[3],
+                            tetResult)) {
+                        continue;
+                    }
+                    float childTEntry = tetResult.tEntry;
+                    int childEntryFace = tetResult.entryFace;
+
+                    // front-to-back: prune — next ordered child's tEntry >= bestT → BREAK
+                    if (childTEntry >= bestT) {
+                        break; // prune: next tEntry >= bestT, break
+                    }
+
+                    if (currentNode.isChildLeaf(childIdx)) {
+                        int childNodeIdx = currentNode.getChildIndex(childIdx, parentIdx, farPointers);
+                        var childNode = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
+                            ? nodes[childNodeIdx] : null;
+
+                        float refinedT = childTEntry;
+                        Vector3f refinedNormal = null;
+
+                        if (contours != null && childNode != null && childNode.hasContour()) {
+                            int contourMask = childNode.getContourMask();
+                            if ((contourMask & (1 << childEntryFace)) != 0) {
+                                int contourPtr = childNode.getContourPtr();
+                                int contourOffset = Integer.bitCount(contourMask & ((1 << childEntryFace) - 1));
+                                int contourIdx = contourPtr + contourOffset;
+
+                                if (contourIdx >= 0 && contourIdx < contours.length) {
+                                    int contour = contours[contourIdx];
+                                    float tetScale = (float) Math.pow(0.5, MAX_DEPTH - 1 - scale);
+                                    contourRayOrigin.set(rayOrigin.x, rayOrigin.y, rayOrigin.z);
+                                    contourRayDir.set(rayDir.x, rayDir.y, rayDir.z);
+                                    float[] contourHit = ESVTContour.intersectRay(
+                                        contour, contourRayOrigin, contourRayDir, tetScale);
+
+                                    if (contourHit == null) {
+                                        // Contour-invalid: continue to next child (do NOT abort subtree)
+                                        continue;
+                                    }
+
+                                    var decoded = ESVTContour.decodeNormal(contour);
+                                    float[] posThick = ESVTContour.decodePosThick(contour);
+                                    float contourPos = posThick[0] * tetScale;
+                                    float denom = decoded.x * rayDir.x + decoded.y * rayDir.y + decoded.z * rayDir.z;
+                                    if (Math.abs(denom) > 1e-10f) {
+                                        float originDot = decoded.x * rayOrigin.x + decoded.y * rayOrigin.y + decoded.z * rayOrigin.z;
+                                        float newT = (contourPos - originDot) / denom;
+                                        if (newT >= childTEntry && newT <= tetResult.tExit) {
+                                            refinedT = newT;
+                                            refinedNormal = decoded;
+                                            refinedNormal.normalize();
+                                            if (refinedNormal.x * rayDir.x + refinedNormal.y * rayDir.y + refinedNormal.z * rayDir.z > 0) {
+                                                refinedNormal.negate();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (refinedT < bestT) {
+                            bestT = refinedT;
+                            byte childType = childNode != null ? childNode.getTetType() : 0;
+                            bestResult.setHit(refinedT,
+                                rayOrigin.x + refinedT * rayDir.x,
+                                rayOrigin.y + refinedT * rayDir.y,
+                                rayOrigin.z + refinedT * rayDir.z,
+                                parentIdx, childIdx, childType,
+                                (byte) childEntryFace, scale);
+                            bestResult.exitFace = (byte) tetResult.exitFace;
+                            if (refinedNormal != null) {
+                                bestResult.normal = refinedNormal;
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Non-leaf: fail loud on OOB before any state mutation
+                    int childNodeIdx = currentNode.getChildIndex(childIdx, parentIdx, farPointers);
+                    if (childNodeIdx < 0 || childNodeIdx >= nodes.length) {
+                        throw new IllegalStateException(
+                            "child pointer out of bounds: " + childNodeIdx
+                            + " (node " + parentIdx + ", child " + childIdx
+                            + ", nodes.length " + nodes.length + ")");
+                    }
+
+                    // Push: store resume at si+1
+                    stack.write(scale, parentIdx, tMax, parentType, (byte) entryFace);
+                    stack.writeSiblingPos(scale, (byte) (si + 1));
+                    stack.writeSortedOrder(scale, packedOrder);
+                    stack.writeVerts(scale,
+                        currentVerts[0], currentVerts[1], currentVerts[2],
+                        currentVerts[3], currentVerts[4], currentVerts[5],
+                        currentVerts[6], currentVerts[7], currentVerts[8],
+                        currentVerts[9], currentVerts[10], currentVerts[11]);
+
+                    currentVerts[0] = scratchVerts[0].x; currentVerts[1] = scratchVerts[0].y; currentVerts[2] = scratchVerts[0].z;
+                    currentVerts[3] = scratchVerts[1].x; currentVerts[4] = scratchVerts[1].y; currentVerts[5] = scratchVerts[1].z;
+                    currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
+                    currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
+
+                    parentIdx = childNodeIdx;
+                    parentType = nodes[childNodeIdx].getTetType();
+                    entryFace = childEntryFace >= 0 ? childEntryFace : 0;
+                    tMax = tetResult.tExit;
+                    scale--;
+                    sortedPos = 0;
+                    descendedResume = true;
+                    descended = true;
+                    break;
                 }
-
-                // Non-leaf - push current state including vertices and sibling position
-                stack.write(scale, parentIdx, tMax, parentType, (byte) entryFace);
-                stack.writeSiblingPos(scale, (byte) (childIdx + 1)); // Resume from next sibling after pop
-                stack.writeVerts(scale,
-                    currentVerts[0], currentVerts[1], currentVerts[2],
-                    currentVerts[3], currentVerts[4], currentVerts[5],
-                    currentVerts[6], currentVerts[7], currentVerts[8],
-                    currentVerts[9], currentVerts[10], currentVerts[11]);
-
-                // Update current vertices to child vertices
-                currentVerts[0] = scratchVerts[0].x; currentVerts[1] = scratchVerts[0].y; currentVerts[2] = scratchVerts[0].z;
-                currentVerts[3] = scratchVerts[1].x; currentVerts[4] = scratchVerts[1].y; currentVerts[5] = scratchVerts[1].z;
-                currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
-                currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
-
-                parentIdx = childNodeIdx;
-                // Read child type directly from the child node (types are propagated during build)
-                parentType = nodes[childNodeIdx].getTetType();
-                entryFace = childEntryFace >= 0 ? childEntryFace : 0;
-                tMin = childTEntry;
-                tMax = tetResult.tExit;
-                scale--;
-                siblingPos = 0;
-                descended = true;
-                break;
+                descended = descendedResume;
             }
 
             if (!descended) {
-                // No valid non-leaf child descended into — pop to parent
+                // No more children to visit — pop to parent
                 if (scale >= MAX_DEPTH - 1) {
-                    // At root level, traversal complete
                     break;
                 }
 
@@ -374,29 +542,14 @@ public final class ESVTTraversal {
                     System.arraycopy(restoredVerts, 0, currentVerts, 0, 12);
                 }
 
-                // Resume from next untested sibling
-                siblingPos = stack.readSiblingPos(scale);
+                // Resume at the stored sorted position for this level
+                sortedPos = stack.readSiblingPos(scale);
             }
         }
 
         // Return global best hit after stack exhaustion (bestT preserved across all pop/resume)
         bestResult.iterations = iterations;
         return bestResult;
-    }
-
-    /**
-     * Pop traversal state from stack.
-     */
-    private boolean popStack(int currentScale, ESVTResult tempResult) {
-        int parentScale = currentScale + 1;
-        if (!stack.hasEntry(parentScale)) {
-            return false;
-        }
-        tempResult.nodeIndex = stack.readNode(parentScale);
-        tempResult.tetType = stack.readType(parentScale);
-        tempResult.entryFace = stack.readEntryFace(parentScale);
-        tempResult.t = stack.readTmax(parentScale);
-        return true;
     }
 
     /**
@@ -500,95 +653,6 @@ public final class ESVTTraversal {
         }
     }
 
-    /**
-     * Get child tetrahedron vertices at given scale.
-     *
-     * <p>Uses Bey subdivision to compute child vertices from parent.
-     * At each level, the tetrahedra are scaled by 0.5.
-     */
-    private void getChildVertices(int parentType, int childIdx, int scale, Point3f[] verts) {
-        // Get parent vertices
-        Point3i[] parentStandard = Constants.SIMPLEX_STANDARD[parentType];
-        float[] pv0 = {parentStandard[0].x, parentStandard[0].y, parentStandard[0].z};
-        float[] pv1 = {parentStandard[1].x, parentStandard[1].y, parentStandard[1].z};
-        float[] pv2 = {parentStandard[2].x, parentStandard[2].y, parentStandard[2].z};
-        float[] pv3 = {parentStandard[3].x, parentStandard[3].y, parentStandard[3].z};
-
-        // Scale factor for this level (each level halves the size)
-        float levelScale = (float) Math.pow(0.5, MAX_DEPTH - 1 - scale);
-
-        // Edge midpoints
-        float[] m01 = midpoint(pv0, pv1);
-        float[] m02 = midpoint(pv0, pv2);
-        float[] m03 = midpoint(pv0, pv3);
-        float[] m12 = midpoint(pv1, pv2);
-        float[] m13 = midpoint(pv1, pv3);
-        float[] m23 = midpoint(pv2, pv3);
-
-        // Bey children vertices (from BeySubdivision)
-        switch (childIdx) {
-            case 0 -> { // Corner at v0
-                setVertex(verts[0], pv0, levelScale);
-                setVertex(verts[1], m01, levelScale);
-                setVertex(verts[2], m02, levelScale);
-                setVertex(verts[3], m03, levelScale);
-            }
-            case 1 -> { // Corner at v1
-                setVertex(verts[0], pv1, levelScale);
-                setVertex(verts[1], m01, levelScale);
-                setVertex(verts[2], m12, levelScale);
-                setVertex(verts[3], m13, levelScale);
-            }
-            case 2 -> { // Corner at v2
-                setVertex(verts[0], pv2, levelScale);
-                setVertex(verts[1], m02, levelScale);
-                setVertex(verts[2], m12, levelScale);
-                setVertex(verts[3], m23, levelScale);
-            }
-            case 3 -> { // Corner at v3
-                setVertex(verts[0], pv3, levelScale);
-                setVertex(verts[1], m03, levelScale);
-                setVertex(verts[2], m13, levelScale);
-                setVertex(verts[3], m23, levelScale);
-            }
-            case 4 -> { // Octahedral region
-                setVertex(verts[0], m01, levelScale);
-                setVertex(verts[1], m02, levelScale);
-                setVertex(verts[2], m03, levelScale);
-                setVertex(verts[3], m12, levelScale);
-            }
-            case 5 -> {
-                setVertex(verts[0], m01, levelScale);
-                setVertex(verts[1], m02, levelScale);
-                setVertex(verts[2], m12, levelScale);
-                setVertex(verts[3], m13, levelScale);
-            }
-            case 6 -> {
-                setVertex(verts[0], m02, levelScale);
-                setVertex(verts[1], m03, levelScale);
-                setVertex(verts[2], m12, levelScale);
-                setVertex(verts[3], m23, levelScale);
-            }
-            case 7 -> {
-                setVertex(verts[0], m03, levelScale);
-                setVertex(verts[1], m12, levelScale);
-                setVertex(verts[2], m13, levelScale);
-                setVertex(verts[3], m23, levelScale);
-            }
-        }
-    }
-
-    private static float[] midpoint(float[] a, float[] b) {
-        return new float[]{
-            (a[0] + b[0]) / 2,
-            (a[1] + b[1]) / 2,
-            (a[2] + b[2]) / 2
-        };
-    }
-
-    private static void setVertex(Point3f vert, float[] coords, float scale) {
-        vert.set(coords[0] * scale, coords[1] * scale, coords[2] * scale);
-    }
 
     /**
      * Cast multiple rays (batch processing).

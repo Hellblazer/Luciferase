@@ -23,33 +23,27 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Source-pin tests for ESVT GPU shader and kernel correctness (P3 — Luciferase-g51tc).
+ * Source-pin tests for ESVT GPU shader and kernel correctness.
  *
- * <p>Eight headless tests pin the post-fix textual contracts for:
- * <ol>
- *   <li>{@code raycast_esvt.comp} — all-8 Morton loop: uses {@code childIdx < 8}, NOT the old {@code pos < 4}
- *       CHILD_ORDER positional loop (P3 Fix 1a)</li>
- *   <li>{@code raycast_esvt.comp} — CHILD_ORDER constant absent: the dead 4-child table has been removed
- *       (P3 Fix 1b)</li>
- *   <li>{@code raycast_esvt.comp} — siblingPos shared stack present: {@code stack_siblingPos} array added for
- *       correct resume-after-pop (P3 Fix 1c)</li>
- *   <li>{@code raycast_esvt.comp} — global min-t tracking: {@code bestT} variable declared, LOD and leaf hit
- *       sites update {@code bestT} and {@code continue} rather than returning immediately (P3 Fix 1d)</li>
- *   <li>{@code raycast_esvt.comp} — no first-hit early return inside the child loop: the pre-fix pattern
- *       {@code return;} inside the traversal while loop is gone (P3 Fix 1d)</li>
- *   <li>{@code esvt_ray_traversal.cl} — dead CHILD_ORDER[96] block absent: the unused constant was removed
- *       (P3 Fix 2)</li>
- *   <li>{@code esvt_ray_traversal.cl} — all-8 scan retained: {@code childIdx < 8} still present in kernel
- *       (regression guard)</li>
- *   <li>{@code esvt_ray_traversal.cl} — global min-t retained: {@code bestT} and {@code < bestT} still
- *       present in kernel (regression guard)</li>
- * </ol>
+ * <p>Headless tests pinning the textual contracts of {@code raycast_esvt.comp} and
+ * {@code esvt_ray_traversal.cl}, loaded via the same {@link ShaderResourceLoader} /
+ * resource path used at runtime (no GPU/OpenCL required).
  *
- * <p>All tests are headless (no GPU/OpenCL required); they pin the source text
- * loaded via the same {@link ShaderResourceLoader} / resource path used at runtime.
- * Tests 1–5 pin the compute shader; tests 6–8 pin the OpenCL kernel.
+ * <p>Two pin generations:
+ * <ul>
+ *   <li><b>jk5tk/g51tc parity pins</b> (Pins 1-11): all-8 Morton scan, CHILD_ORDER removal,
+ *       global min-t bestT, no first-hit return, Morton→Bey conversion, root-without-leaf MISS,
+ *       real leaf normals. Pins 1, 3, 5b, and 7 were revised in place by 2s3jc (see their javadoc)
+ *       — the all-8 loop survives as the front-to-back COLLECT scan, stack_siblingPos is
+ *       repurposed as the packed sorted-order slot, and the keep-scanning marker count doubled
+ *       (fresh + resume paths).</li>
+ *   <li><b>2s3jc front-to-back pins</b> (Pins 12-19): tandem insertion sort present in both
+ *       shaders with the exact CPU comparator, sortedOrder StackEntry field (.cl), packed
+ *       sorted-order slot + per-thread offset + no-6th-shared-array (.comp), and the prune-break
+ *       marker at both implementations' visit loops.</li>
+ * </ul>
  *
- * <p>Bead: Luciferase-g51tc (P3 RED phase, TDD). Branch: feature/jk5tk-esvt-parity.
+ * <p>Beads: Luciferase-g51tc (parity pins), Luciferase-y3l06 (front-to-back pin revision).
  */
 class ESVTShaderSourcePinTest {
 
@@ -74,16 +68,15 @@ class ESVTShaderSourcePinTest {
     // -------------------------------------------------------------------------
 
     /**
-     * Pin 1: traversal loop must iterate all 8 Morton children ({@code childIdx < 8}).
+     * Pin 1 (revised by 2s3jc): all-8 Morton scan must survive as the front-to-back COLLECT loop.
      *
-     * <p>The pre-fix shader iterated only 4 entry-face children via
+     * <p>The pre-jk5tk shader iterated only 4 entry-face children via
      * {@code for (int pos = siblingPos; pos < 4; pos++)} with an indirection through
-     * {@code CHILD_ORDER[parentType][entryFace][pos]}. This misses up to 4 children whose
-     * tetrahedral geometry does intersect the ray but are not in the entry-face set.
-     * Post-fix: {@code for (int childIdx = siblingPos; childIdx < 8; childIdx++)} in
-     * Morton order, matching the {@code esvt_ray_traversal.cl} pattern.
-     *
-     * <p>This test is RED before P3 Fix 1a.
+     * {@code CHILD_ORDER[parentType][entryFace][pos]}, missing up to 4 intersecting children.
+     * jk5tk replaced it with the all-8 Morton visit loop. 2s3jc restructured that loop into
+     * COLLECT ({@code for (int childIdx = 0; childIdx < 8; childIdx++)} gathering candidates)
+     * + sorted VISIT — the all-8 scan survives as the collection pass. The {@code pos < 4}
+     * pattern must never return.
      */
     @Test
     void comp_childLoop_iteratesAllEightChildren() {
@@ -114,16 +107,15 @@ class ESVTShaderSourcePinTest {
     }
 
     /**
-     * Pin 3: shared siblingPos stack must be present.
+     * Pin 3 (revised by 2s3jc): shared siblingPos stack must be present — now as the packed
+     * front-to-back slot.
      *
-     * <p>The pre-fix shader had {@code stack_nodes}, {@code stack_tmax}, {@code stack_type},
-     * and {@code stack_entryFace} but no {@code stack_siblingPos}. On pop, it always reset
-     * {@code siblingPos = 0}, restarting the child scan from Morton child 0 instead of resuming
-     * after the child that triggered the descent. Post-fix adds:
-     * {@code shared int stack_siblingPos[64 * CAST_STACK_DEPTH];} and saves
-     * {@code childIdx + 1} on push, restores on pop.
-     *
-     * <p>This test is RED before P3 Fix 1c.
+     * <p>jk5tk added {@code shared int stack_siblingPos[64 * CAST_STACK_DEPTH];} storing
+     * {@code childIdx + 1} for resume-after-pop. 2s3jc repurposed the slot (NO 6th shared
+     * array — 32 KiB shared-memory budget): bits 31-28 = sortedPos resume cursor, bits 27-24 =
+     * sorted child count, bits 23-0 = eight 3-bit Morton childIdx slots in sorted visit order.
+     * The array itself must remain — without it, pop restarts the child visit from slot 0,
+     * re-scanning already-visited children.
      */
     @Test
     void comp_siblingPosStack_present() {
@@ -215,14 +207,13 @@ class ESVTShaderSourcePinTest {
     }
 
     /**
-     * Pin 7 (regression): all-8 Morton scan must be retained in the kernel.
+     * Pin 7 (regression, revised by 2s3jc): all-8 Morton scan must be retained in the kernel
+     * — now as the front-to-back COLLECT loop.
      *
-     * <p>The correct {@code esvt_ray_traversal.cl} traversal already uses
-     * {@code for (int childIdx = siblingPos; childIdx < 8; childIdx++)} in Morton order.
-     * This regression guard ensures P3 Fix 2 (deletion of the dead CHILD_ORDER block)
-     * does not accidentally remove or corrupt the traversal loop.
-     *
-     * <p>This test is GREEN before P3 Fix 2 and must stay GREEN after.
+     * <p>The jk5tk kernel visited all 8 children via
+     * {@code for (int childIdx = siblingPos; childIdx < 8; childIdx++)}. 2s3jc restructured
+     * this into COLLECT ({@code for (int childIdx = 0; childIdx < 8; childIdx++)}) + sorted
+     * VISIT; the all-8 scan survives as the collection pass and must not be narrowed.
      */
     @Test
     void cl_allEightScan_retained() {
@@ -283,16 +274,17 @@ class ESVTShaderSourcePinTest {
     }
 
     /**
-     * Pin 5b (robustness): leaf-hit and LOD-hit sites must continue with stable marker comment,
-     * not return.
+     * Pin 5b (robustness, revised by 2s3jc): leaf-hit and LOD-hit sites must continue with the
+     * stable marker comment, not return — at all FOUR sites.
      *
      * <p>Pin 5 used a whitespace-exact negative assertion that could miss a reintroduced
-     * {@code return} with different surrounding whitespace. Post-fix: both hit sites explicitly
-     * annotate the continuation with {@code // keep scanning for closer hits} — a stable
-     * marker that is present if and only if the correct {@code continue} replaces the old
-     * {@code return}. This positive assertion is formatting-independent.
+     * {@code return} with different surrounding whitespace. The hit sites explicitly annotate
+     * the continuation with {@code // Keep scanning for closer hits} — a stable marker present
+     * if and only if the correct {@code continue} replaces the old first-hit {@code return}.
      *
-     * <p>This test is GREEN after P3 Fix 1d and must stay GREEN through all subsequent edits.
+     * <p>2s3jc duplicated the LOD-termination and leaf-hit bodies across the fresh (collect+sort)
+     * and resume visit paths, so the marker count doubled from 2 to 4: fresh-LOD, fresh-leaf,
+     * resume-LOD, resume-leaf.
      */
     @Test
     void comp_hitSites_continueWithMarker() {
@@ -303,10 +295,10 @@ class ESVTShaderSourcePinTest {
             count++;
             idx = compSource.indexOf(marker, idx + 1);
         }
-        assertEquals(2, count,
-                "raycast_esvt.comp must carry 'continue; // Keep scanning for closer hits' at BOTH "
-                + "the LOD-termination and leaf hit sites (found " + count + ") "
-                + "— a bare return; at either site is the pre-fix first-hit-only bug");
+        assertEquals(4, count,
+                "raycast_esvt.comp must carry 'continue; // Keep scanning for closer hits' at all FOUR "
+                + "hit sites — LOD + leaf in BOTH the fresh and resume visit paths (found " + count + ") "
+                + "— a bare return; at any site is the pre-fix first-hit-only bug");
     }
 
     // -------------------------------------------------------------------------
@@ -359,5 +351,166 @@ class ESVTShaderSourcePinTest {
         assertFalse(clSource.contains("leafNormal"),
                 "esvt_ray_traversal.cl must not contain the debug 'leafNormal' variable — "
                 + "post-fix writes bestHitNormal directly to hitNormals[gid]");
+    }
+
+    // -------------------------------------------------------------------------
+    // 2s3jc front-to-back pins (Luciferase-y3l06)
+    // -------------------------------------------------------------------------
+
+    /** The exact tandem-sort comparator shared by ESVTTraversal.java, .cl, and .comp. */
+    private static final String COMPARATOR =
+        "candidateTEntry[j] == ti && candidateIdx[j] > ci";
+
+    /** The exact prune-break marker shared by ESVTTraversal.java, .cl, and .comp. */
+    private static final String PRUNE_MARKER =
+        "break; // prune: next tEntry >= bestT, break";
+
+    /**
+     * Pin 12: tandem insertion sort must be present in the OpenCL kernel with the exact
+     * CPU comparator.
+     *
+     * <p>2s3jc front-to-back requires all three implementations (Java, .cl, .comp) to sort
+     * candidates with the identical comparator — ascending tEntry, childIdx-ascending tiebreak.
+     * Any divergence in the comparator is the jk5tk three-way-divergence bug class: results
+     * stay correct for most scenes but visit order (and therefore tie resolution and pruning)
+     * silently differs across implementations.
+     */
+    @Test
+    void cl_insertionSort_present() {
+        assertTrue(clSource.contains("INSERTION SORT ascending by tEntry, tiebreak childIdx ascending"),
+                "esvt_ray_traversal.cl must carry the front-to-back insertion-sort block — "
+                + "without it the kernel visits children in Morton order and cannot prune");
+        assertTrue(clSource.contains(COMPARATOR),
+                "esvt_ray_traversal.cl insertion sort must use the exact CPU comparator '"
+                + COMPARATOR + "' — any deviation diverges visit order from ESVTTraversal.java");
+    }
+
+    /**
+     * Pin 13: tandem insertion sort must be present in the compute shader with the exact
+     * CPU comparator. Same contract as Pin 12 for raycast_esvt.comp.
+     */
+    @Test
+    void comp_insertionSort_present() {
+        assertTrue(compSource.contains("INSERTION SORT ascending by tEntry, tiebreak childIdx ascending"),
+                "raycast_esvt.comp must carry the front-to-back insertion-sort block — "
+                + "without it the shader visits children in Morton order and cannot prune");
+        assertTrue(compSource.contains(COMPARATOR),
+                "raycast_esvt.comp insertion sort must use the exact CPU comparator '"
+                + COMPARATOR + "' — any deviation diverges visit order from ESVTTraversal.java");
+    }
+
+    /**
+     * Pin 14: the .cl StackEntry must carry the packed sortedOrder field.
+     *
+     * <p>The OpenCL stack is private per-work-item, so a dedicated struct field is the
+     * correct storage for the packed sorted order (count in bits 27-24, eight 3-bit Morton
+     * childIdx slots at bits 23-0). The resume path reads it via
+     * {@code stack[scale].sortedOrder}; without it, resume cannot reconstruct the sorted
+     * visit order and would fall back to Morton-order scanning.
+     */
+    @Test
+    void cl_sortedOrder_stackField() {
+        assertTrue(clSource.contains("int sortedOrder;"),
+                "esvt_ray_traversal.cl StackEntry must declare 'int sortedOrder;' — the packed "
+                + "sorted visit order the resume path replays after pop");
+        assertTrue(clSource.contains("stack[scale].sortedOrder"),
+                "esvt_ray_traversal.cl must read/write 'stack[scale].sortedOrder' on push and resume");
+    }
+
+    /**
+     * Pin 15: the .comp packed sorted-order slot must pack the resume cursor into the high
+     * nibble of the EXISTING stack_siblingPos slot.
+     *
+     * <p>Layout: bits 31-28 = sortedPos resume cursor (0-8), bits 27-24 = count, bits 23-0 =
+     * sorted childIdx slots. Exactly 32 bits — written with uint casts to avoid sign-extension
+     * on the high nibble. The write {@code int((uint(si + 1) << 28) | uint(packedOrder))} and
+     * the cursor read {@code >> 28) & 0xFu} are both required.
+     */
+    @Test
+    void comp_sortedOrder_packed() {
+        assertTrue(compSource.contains("int((uint(si + 1) << 28) | uint(packedOrder))"),
+                "raycast_esvt.comp push must pack the resume cursor (si+1) into bits 31-28 of the "
+                + "stack_siblingPos slot alongside the 28-bit packedOrder");
+        assertTrue(compSource.contains(">> 28) & 0xFu"),
+                "raycast_esvt.comp pop must extract the resume cursor from the high nibble via "
+                + "unsigned shift — signed shift would sign-extend when sortedPos == 8");
+    }
+
+    /**
+     * Pin 16: every .comp shared-stack access must use the per-thread offset.
+     *
+     * <p>The shared arrays are indexed {@code stackBase + scale} with
+     * {@code stackBase = threadIdx * CAST_STACK_DEPTH} — the 0bn1q race class: any access
+     * missing the per-thread base reads/writes another invocation's stack slice.
+     */
+    @Test
+    void comp_sortedOrder_perThreadOffset() {
+        assertTrue(compSource.contains("int stackBase = threadIdx * CAST_STACK_DEPTH;"),
+                "raycast_esvt.comp must compute the per-thread stack base — shared arrays are "
+                + "sliced per invocation (0bn1q race class)");
+        assertTrue(compSource.contains("stack_siblingPos[stackBase + scale]"),
+                "raycast_esvt.comp must index the packed sorted-order slot with 'stackBase + scale' — "
+                + "a bare [scale] access races against other invocations in the workgroup");
+        assertFalse(compSource.contains("stack_siblingPos[scale]"),
+                "raycast_esvt.comp must not index stack_siblingPos without the per-thread base");
+    }
+
+    /**
+     * Pin 17: the .comp shared-memory stack must remain exactly 5 arrays — NO 6th shared array.
+     *
+     * <p>The workgroup shared budget is 32 KiB; the 5 arrays (64 threads x CAST_STACK_DEPTH x
+     * 4 bytes each) total 28,160 bytes. Adding a 6th array (e.g. a dedicated sortedOrder array,
+     * +5,632 bytes = 33,792) exceeds the limit on common hardware. This is why the sorted order
+     * is packed into the existing stack_siblingPos slot rather than stored separately.
+     */
+    @Test
+    void comp_noSixthSharedArray() {
+        // Count declarations only (line-start "shared "), not prose mentions in comments
+        long count = compSource.lines().filter(l -> l.startsWith("shared ")).count();
+        assertEquals(5, count,
+                "raycast_esvt.comp must declare exactly 5 shared stack arrays (found " + count + ") — "
+                + "a 6th would push workgroup shared memory past the 32 KiB budget "
+                + "(28,160 B -> 33,792 B); pack new per-level state into existing slots instead");
+    }
+
+    /**
+     * Pin 18: the prune-break marker must be present in the OpenCL kernel — in BOTH the fresh
+     * and resume visit paths.
+     *
+     * <p>The prune is the entire point of front-to-back: once the next sorted child's tEntry
+     * is >= bestT, no remaining child can improve the result and the visit loop BREAKs.
+     * Replacing the break with continue (or removing the check) silently reverts to exhaustive
+     * scanning — results stay identical, performance regresses, and no result-pin catches it.
+     */
+    @Test
+    void cl_pruneBreak_marker() {
+        int count = 0;
+        int idx = clSource.indexOf(PRUNE_MARKER);
+        while (idx >= 0) {
+            count++;
+            idx = clSource.indexOf(PRUNE_MARKER, idx + 1);
+        }
+        assertEquals(2, count,
+                "esvt_ray_traversal.cl must carry '" + PRUNE_MARKER + "' in BOTH the fresh and "
+                + "resume visit paths (found " + count + ") — removing either silently reverts "
+                + "that path to exhaustive scanning");
+    }
+
+    /**
+     * Pin 19: the prune-break marker must be present in the compute shader — in BOTH the fresh
+     * and resume visit paths. Same contract as Pin 18 for raycast_esvt.comp.
+     */
+    @Test
+    void comp_pruneBreak_marker() {
+        int count = 0;
+        int idx = compSource.indexOf(PRUNE_MARKER);
+        while (idx >= 0) {
+            count++;
+            idx = compSource.indexOf(PRUNE_MARKER, idx + 1);
+        }
+        assertEquals(2, count,
+                "raycast_esvt.comp must carry '" + PRUNE_MARKER + "' in BOTH the fresh and "
+                + "resume visit paths (found " + count + ") — removing either silently reverts "
+                + "that path to exhaustive scanning");
     }
 }

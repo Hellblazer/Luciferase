@@ -73,10 +73,13 @@ const int INDEX_TO_BEY_NUMBER[6][8] = {
     { 0, 5, 4, 1, 6, 7, 2, 3 }   // Parent type 5
 };
 
-// All-8 Morton scan (Luciferase-g51tc / jk5tk P3): traversal iterates childIdx=0..7 in Morton order,
-// tracking a global bestT across all DFS branches. The old 4-child per-type entry-face
-// table has been removed: it only scanned 4 of 8 children and returned on the first hit rather than
-// the globally closest one. The .cl kernel reference always used all-8 Morton order; this shader now matches.
+// Front-to-back traversal (Luciferase-2s3jc, supersedes the all-8 exhaustive scan of g51tc/jk5tk):
+// on fresh node entry the COLLECT loop scans all 8 Morton children (hasChild + intersect), then a
+// tandem insertion sort orders candidates ascending by (tEntry, childIdx tiebreak), the visit loop
+// proceeds in sorted order, and prunes with BREAK when the next tEntry >= bestT (sorted order
+// guarantees no remaining child can improve the result). Global bestT across all DFS branches is
+// preserved; result returned only after stack exhaustion. Mirrors ESVTTraversal.java and
+// esvt_ray_traversal.cl exactly: same collect scan, same comparator, same prune condition.
 
 // ============================================================================
 // BUFFER BINDINGS
@@ -87,7 +90,10 @@ shared uint stack_nodes[64 * CAST_STACK_DEPTH];
 shared float stack_tmax[64 * CAST_STACK_DEPTH];
 shared int stack_type[64 * CAST_STACK_DEPTH];
 shared int stack_entryFace[64 * CAST_STACK_DEPTH];
-// siblingPos stores childIdx+1 (range 1-8, 0 = empty slot) so pop resumes after the child that triggered descent
+// Front-to-back packed slot (NO 6th shared array — 32 KiB shared-memory budget, Luciferase-y3l06):
+// bits 31-28 = sortedPos resume cursor (0-8), bits 27-24 = sorted child count (0-8),
+// bits 23-0  = eight 3-bit Morton childIdx slots in sorted visit order (slot i at shift 21 - i*3).
+// Exactly 32 bits; read/write via uint casts to avoid sign-extension on the high nibble.
 shared int stack_siblingPos[64 * CAST_STACK_DEPTH];
 
 // SSBO for ESVT nodes (8 bytes per node = 2 x uint)
@@ -708,7 +714,8 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
     float tMax = rootHit.tExit;
     int scale = CAST_STACK_DEPTH - 1;
     float scaleExp2 = 1.0;
-    int siblingPos = 0;
+    // front-to-back: sorted position (index into the sorted visit order per level)
+    int sortedPos = 0;
     int iter = 0;
 
     // Global min-t accumulators — updated at every LOD/leaf hit, returned after stack exhaustion
@@ -732,150 +739,352 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
             tMax = stack_tmax[stackBase + scale];
             parentType = stack_type[stackBase + scale];
             entryFace = stack_entryFace[stackBase + scale];
-            siblingPos = stack_siblingPos[stackBase + scale];
+            // Resume cursor lives in the high nibble of the packed siblingPos slot
+            sortedPos = int((uint(stack_siblingPos[stackBase + scale]) >> 28) & 0xFu);
             scaleExp2 *= 2.0;
             continue;
         }
 
-        // All-8 Morton scan: iterate childIdx=0..7, tracking global bestT (Luciferase-g51tc P3)
+        // -----------------------------------------------------------------------
+        // Front-to-back: collect intersecting children, insertion-sort by tEntry,
+        // visit in sorted order, prune when next tEntry >= bestT.
+        //
+        // On first entry to this node: sortedPos == 0, collect all candidates.
+        // On resume (after pop): sortedPos > 0, use the stored packed order.
+        // Mirrors ESVTTraversal.java and esvt_ray_traversal.cl exactly:
+        // same collect scan, same comparator, same prune condition.
+        // -----------------------------------------------------------------------
         bool descended = false;
-        for (int childIdx = siblingPos; childIdx < 8; childIdx++) {
 
-            // Check if child exists (childmask is Morton-ordered — use raw childIdx)
-            if (!hasChild(node, childIdx)) {
-                continue;
+        if (sortedPos == 0) {
+            // ----- COLLECT: scan all 8 Morton children, compute intersections -----
+            float candidateTEntry[8];
+            int candidateIdx[8];
+            int nCandidates = 0;
+            for (int childIdx = 0; childIdx < 8; childIdx++) {
+                // Check if child exists (childmask is Morton-ordered — use raw childIdx)
+                if (!hasChild(node, childIdx)) {
+                    continue;
+                }
+                // Convert Morton child index to Bey child index for geometry lookups.
+                int scanBeyIdx = INDEX_TO_BEY_NUMBER[parentType][childIdx];
+                vec3 sv0, sv1, sv2, sv3;
+                getChildVertices(parentType, scanBeyIdx, scaleExp2 * 0.5, sv0, sv1, sv2, sv3);
+                TetrahedronHit scanHit = intersectTetrahedron(ray.origin, ray.direction, sv0, sv1, sv2, sv3);
+                if (!scanHit.hit) {
+                    continue;
+                }
+                // Beam optimization: children entirely behind our tmin are not candidates
+                if (scanHit.tExit < ray.tmin) {
+                    continue;
+                }
+                candidateTEntry[nCandidates] = scanHit.tEntry;
+                candidateIdx[nCandidates] = childIdx;
+                nCandidates++;
             }
 
-            // Convert Morton child index to Bey child index for geometry/type lookups.
-            // hasChild/isChildLeaf/getChildIndex use the Morton-ordered bitset — keep childIdx there.
-            int beyIdx = INDEX_TO_BEY_NUMBER[parentType][childIdx];
-
-            // Get child vertices (Bey-indexed switch — must pass beyIdx)
-            vec3 cv0, cv1, cv2, cv3;
-            getChildVertices(parentType, beyIdx, scaleExp2 * 0.5, cv0, cv1, cv2, cv3);
-
-            // Test ray-child intersection
-            TetrahedronHit childHit = intersectTetrahedron(ray.origin, ray.direction, cv0, cv1, cv2, cv3);
-            if (!childHit.hit) {
-                continue;
+            // ----- INSERTION SORT ascending by tEntry, tiebreak childIdx ascending -----
+            // Direct tandem sort of the two parallel arrays; max 8 elements.
+            for (int i = 1; i < nCandidates; i++) {
+                float ti = candidateTEntry[i];
+                int ci = candidateIdx[i];
+                int j = i - 1;
+                while (j >= 0 && (candidateTEntry[j] > ti
+                                  || (candidateTEntry[j] == ti && candidateIdx[j] > ci))) {
+                    candidateTEntry[j + 1] = candidateTEntry[j];
+                    candidateIdx[j + 1] = candidateIdx[j];
+                    j--;
+                }
+                candidateTEntry[j + 1] = ti;
+                candidateIdx[j + 1] = ci;
             }
 
-            // Beam optimization: skip children entirely behind our tmin
-            if (childHit.tExit < ray.tmin) {
-                continue;
+            int childCount = nCandidates;
+            // Pack sorted childIdx order: count in bits 27-24, 3-bit slots at bits 23-0
+            int packedOrder = (childCount & 0xF) << 24;
+            for (int i = 0; i < childCount; i++) {
+                packedOrder |= (candidateIdx[i] & 0x7) << (21 - i * 3);
             }
 
-            // Check LOD termination
-            float raySize = childHit.tEntry * ray.dir_sz + ray.orig_sz;
-            if (raySize >= scaleExp2 * 0.5) {
-                // LOD termination - voxel small enough
-                // Get child node for contour data
-                uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
-                uvec2 childNode = esvt.nodes[childNodeIdx];
-                float childScale = scaleExp2 * 0.5;
+            // ----- VISIT in sorted order, PRUNE when tEntry >= bestT -----
+            for (int si = 0; si < childCount; si++) {
+                int childIdx = candidateIdx[si];
 
-                // Apply contour refinement if available
-                ContourRefinement contourRef = refineHitWithContours(
-                    childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
-                    ray.origin, ray.direction, childScale);
+                // front-to-back: prune — next ordered child's tEntry >= bestT → BREAK
+                // (sorted ⇒ all remaining also >= bestT, cannot improve result)
+                if (candidateTEntry[si] >= bestT) {
+                    break; // prune: next tEntry >= bestT, break
+                }
 
-                if (!contourRef.valid) {
-                    // Contour indicates no hit - continue searching
+                // Re-derive vertices and full intersection result for this child.
+                // hasChild/isChildLeaf/getChildIndex use the Morton-ordered bitset — keep childIdx there.
+                int beyIdx = INDEX_TO_BEY_NUMBER[parentType][childIdx];
+                vec3 cv0, cv1, cv2, cv3;
+                getChildVertices(parentType, beyIdx, scaleExp2 * 0.5, cv0, cv1, cv2, cv3);
+                TetrahedronHit childHit = intersectTetrahedron(ray.origin, ray.direction, cv0, cv1, cv2, cv3);
+                if (!childHit.hit) {
                     continue;
                 }
 
-                // Update global min-t rather than returning immediately — closer hits may follow
-                if (contourRef.t < bestT) {
-                    bestT = contourRef.t;
-                    bestDidHit = true;
-                    bestHitPoint = ray.origin + ray.direction * contourRef.t;
-
-                    // Use contour normal if available, otherwise calculate from face
-                    if (length(contourRef.normal) > 0.5) {
-                        bestHitNormal = contourRef.normal;
-                    } else {
-                        // Calculate normal from entry face
-                        vec3 fv0, fv1, fv2;
-                        int entryF = childHit.entryFace;
-
-                        if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                        else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                        else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                        else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
-
-                        bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-                        if (dot(bestHitNormal, ray.direction) > 0) {
-                            bestHitNormal = -bestHitNormal;
-                        }
-                    }
-                }
-                continue; // Keep scanning for closer hits
-            }
-
-            // Check if this is a leaf
-            if (isChildLeaf(node, childIdx)) {
-                // Leaf hit - get child node for contour data
-                uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
-                uvec2 childNode = esvt.nodes[childNodeIdx];
-                float childScale = scaleExp2 * 0.5;
-
-                // Apply contour refinement if available
-                ContourRefinement contourRef = refineHitWithContours(
-                    childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
-                    ray.origin, ray.direction, childScale);
-
-                if (!contourRef.valid) {
-                    // Contour indicates no hit - continue searching
+                // Beam optimization: skip children entirely behind our tmin
+                if (childHit.tExit < ray.tmin) {
                     continue;
                 }
 
-                // Update global min-t rather than returning immediately — closer hits may follow
-                if (contourRef.t < bestT) {
-                    bestT = contourRef.t;
-                    bestDidHit = true;
-                    bestHitPoint = ray.origin + ray.direction * contourRef.t;
+                // Check LOD termination
+                float raySize = childHit.tEntry * ray.dir_sz + ray.orig_sz;
+                if (raySize >= scaleExp2 * 0.5) {
+                    // LOD termination - voxel small enough
+                    // Get child node for contour data
+                    uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
+                    uvec2 childNode = esvt.nodes[childNodeIdx];
+                    float childScale = scaleExp2 * 0.5;
 
-                    // Use contour normal if available, otherwise calculate from face
-                    if (length(contourRef.normal) > 0.5) {
-                        bestHitNormal = contourRef.normal;
-                    } else {
-                        // Calculate normal from entry face
-                        vec3 fv0, fv1, fv2;
-                        int entryF = childHit.entryFace;
+                    // Apply contour refinement if available
+                    ContourRefinement contourRef = refineHitWithContours(
+                        childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
+                        ray.origin, ray.direction, childScale);
 
-                        if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                        else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                        else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                        else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+                    if (!contourRef.valid) {
+                        // Contour indicates no hit - continue searching
+                        continue;
+                    }
 
-                        bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-                        if (dot(bestHitNormal, ray.direction) > 0) {
-                            bestHitNormal = -bestHitNormal;
+                    // Update global min-t rather than returning immediately — closer hits may follow
+                    if (contourRef.t < bestT) {
+                        bestT = contourRef.t;
+                        bestDidHit = true;
+                        bestHitPoint = ray.origin + ray.direction * contourRef.t;
+
+                        // Use contour normal if available, otherwise calculate from face
+                        if (length(contourRef.normal) > 0.5) {
+                            bestHitNormal = contourRef.normal;
+                        } else {
+                            // Calculate normal from entry face
+                            vec3 fv0, fv1, fv2;
+                            int entryF = childHit.entryFace;
+
+                            if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                            else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                            else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                            else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                            bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                            if (dot(bestHitNormal, ray.direction) > 0) {
+                                bestHitNormal = -bestHitNormal;
+                            }
                         }
                     }
+                    continue; // Keep scanning for closer hits
                 }
-                continue; // Keep scanning for closer hits
+
+                // Check if this is a leaf
+                if (isChildLeaf(node, childIdx)) {
+                    // Leaf hit - get child node for contour data
+                    uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
+                    uvec2 childNode = esvt.nodes[childNodeIdx];
+                    float childScale = scaleExp2 * 0.5;
+
+                    // Apply contour refinement if available
+                    ContourRefinement contourRef = refineHitWithContours(
+                        childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
+                        ray.origin, ray.direction, childScale);
+
+                    if (!contourRef.valid) {
+                        // Contour indicates no hit - continue searching
+                        continue;
+                    }
+
+                    // Update global min-t rather than returning immediately — closer hits may follow
+                    if (contourRef.t < bestT) {
+                        bestT = contourRef.t;
+                        bestDidHit = true;
+                        bestHitPoint = ray.origin + ray.direction * contourRef.t;
+
+                        // Use contour normal if available, otherwise calculate from face
+                        if (length(contourRef.normal) > 0.5) {
+                            bestHitNormal = contourRef.normal;
+                        } else {
+                            // Calculate normal from entry face
+                            vec3 fv0, fv1, fv2;
+                            int entryF = childHit.entryFace;
+
+                            if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                            else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                            else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                            else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                            bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                            if (dot(bestHitNormal, ray.direction) > 0) {
+                                bestHitNormal = -bestHitNormal;
+                            }
+                        }
+                    }
+                    continue; // Keep scanning for closer hits
+                }
+
+                // Non-leaf - push and descend
+                stack_nodes[stackBase + scale] = parentIdx;
+                stack_tmax[stackBase + scale] = tMax;
+                stack_type[stackBase + scale] = parentType;
+                stack_entryFace[stackBase + scale] = entryFace;
+                // Packed slot: resume cursor (si+1) in bits 31-28, sorted order in bits 27-0
+                stack_siblingPos[stackBase + scale] = int((uint(si + 1) << 28) | uint(packedOrder));
+
+                // Move to child (getChildIndex uses Morton-ordered bitset — use childIdx)
+                parentIdx = getChildIndex(node, childIdx, parentIdx);
+                // PARENT_TYPE_TO_CHILD_TYPE is Bey-indexed — use beyIdx, not childIdx
+                parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType][beyIdx];
+                entryFace = childHit.entryFace >= 0 ? childHit.entryFace : 0;
+                tMin = childHit.tEntry;
+                tMax = childHit.tExit;
+                scale--;
+                scaleExp2 *= 0.5;
+                sortedPos = 0;
+                descended = true;
+                break;
             }
 
-            // Non-leaf - push and descend
-            stack_nodes[stackBase + scale] = parentIdx;
-            stack_tmax[stackBase + scale] = tMax;
-            stack_type[stackBase + scale] = parentType;
-            stack_entryFace[stackBase + scale] = entryFace;
-            stack_siblingPos[stackBase + scale] = childIdx + 1; // resume AFTER this child on pop
+        } else {
+            // ----- RESUME: popped back to this node; continue sorted-order visit -----
+            int packedOrder = int(uint(stack_siblingPos[stackBase + scale]) & 0x0FFFFFFFu);
+            int childCount = (packedOrder >> 24) & 0xF;
 
-            // Move to child (getChildIndex uses Morton-ordered bitset — use childIdx)
-            parentIdx = getChildIndex(node, childIdx, parentIdx);
-            // PARENT_TYPE_TO_CHILD_TYPE is Bey-indexed — use beyIdx, not childIdx
-            parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType][beyIdx];
-            entryFace = childHit.entryFace >= 0 ? childHit.entryFace : 0;
-            tMin = childHit.tEntry;
-            tMax = childHit.tExit;
-            scale--;
-            scaleExp2 *= 0.5;
-            siblingPos = 0;
-            descended = true;
-            break;
+            for (int si = sortedPos; si < childCount; si++) {
+                int childIdx = (packedOrder >> (21 - si * 3)) & 0x7;
+
+                // Re-derive vertices + re-intersect (resume re-intersects, no stored tEntry)
+                int beyIdx = INDEX_TO_BEY_NUMBER[parentType][childIdx];
+                vec3 cv0, cv1, cv2, cv3;
+                getChildVertices(parentType, beyIdx, scaleExp2 * 0.5, cv0, cv1, cv2, cv3);
+                TetrahedronHit childHit = intersectTetrahedron(ray.origin, ray.direction, cv0, cv1, cv2, cv3);
+                if (!childHit.hit) {
+                    continue;
+                }
+
+                // front-to-back: prune — next ordered child's tEntry >= bestT → BREAK
+                if (childHit.tEntry >= bestT) {
+                    break; // prune: next tEntry >= bestT, break
+                }
+
+                // Beam optimization: skip children entirely behind our tmin
+                if (childHit.tExit < ray.tmin) {
+                    continue;
+                }
+
+                // Check LOD termination
+                float raySize = childHit.tEntry * ray.dir_sz + ray.orig_sz;
+                if (raySize >= scaleExp2 * 0.5) {
+                    // LOD termination - voxel small enough
+                    // Get child node for contour data
+                    uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
+                    uvec2 childNode = esvt.nodes[childNodeIdx];
+                    float childScale = scaleExp2 * 0.5;
+
+                    // Apply contour refinement if available
+                    ContourRefinement contourRef = refineHitWithContours(
+                        childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
+                        ray.origin, ray.direction, childScale);
+
+                    if (!contourRef.valid) {
+                        // Contour indicates no hit - continue searching
+                        continue;
+                    }
+
+                    // Update global min-t rather than returning immediately — closer hits may follow
+                    if (contourRef.t < bestT) {
+                        bestT = contourRef.t;
+                        bestDidHit = true;
+                        bestHitPoint = ray.origin + ray.direction * contourRef.t;
+
+                        // Use contour normal if available, otherwise calculate from face
+                        if (length(contourRef.normal) > 0.5) {
+                            bestHitNormal = contourRef.normal;
+                        } else {
+                            // Calculate normal from entry face
+                            vec3 fv0, fv1, fv2;
+                            int entryF = childHit.entryFace;
+
+                            if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                            else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                            else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                            else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                            bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                            if (dot(bestHitNormal, ray.direction) > 0) {
+                                bestHitNormal = -bestHitNormal;
+                            }
+                        }
+                    }
+                    continue; // Keep scanning for closer hits
+                }
+
+                // Check if this is a leaf
+                if (isChildLeaf(node, childIdx)) {
+                    // Leaf hit - get child node for contour data
+                    uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
+                    uvec2 childNode = esvt.nodes[childNodeIdx];
+                    float childScale = scaleExp2 * 0.5;
+
+                    // Apply contour refinement if available
+                    ContourRefinement contourRef = refineHitWithContours(
+                        childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
+                        ray.origin, ray.direction, childScale);
+
+                    if (!contourRef.valid) {
+                        // Contour indicates no hit - continue searching
+                        continue;
+                    }
+
+                    // Update global min-t rather than returning immediately — closer hits may follow
+                    if (contourRef.t < bestT) {
+                        bestT = contourRef.t;
+                        bestDidHit = true;
+                        bestHitPoint = ray.origin + ray.direction * contourRef.t;
+
+                        // Use contour normal if available, otherwise calculate from face
+                        if (length(contourRef.normal) > 0.5) {
+                            bestHitNormal = contourRef.normal;
+                        } else {
+                            // Calculate normal from entry face
+                            vec3 fv0, fv1, fv2;
+                            int entryF = childHit.entryFace;
+
+                            if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                            else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                            else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                            else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                            bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                            if (dot(bestHitNormal, ray.direction) > 0) {
+                                bestHitNormal = -bestHitNormal;
+                            }
+                        }
+                    }
+                    continue; // Keep scanning for closer hits
+                }
+
+                // Non-leaf - push and descend
+                stack_nodes[stackBase + scale] = parentIdx;
+                stack_tmax[stackBase + scale] = tMax;
+                stack_type[stackBase + scale] = parentType;
+                stack_entryFace[stackBase + scale] = entryFace;
+                // Packed slot: resume cursor (si+1) in bits 31-28, sorted order in bits 27-0
+                stack_siblingPos[stackBase + scale] = int((uint(si + 1) << 28) | uint(packedOrder));
+
+                // Move to child (getChildIndex uses Morton-ordered bitset — use childIdx)
+                parentIdx = getChildIndex(node, childIdx, parentIdx);
+                // PARENT_TYPE_TO_CHILD_TYPE is Bey-indexed — use beyIdx, not childIdx
+                parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType][beyIdx];
+                entryFace = childHit.entryFace >= 0 ? childHit.entryFace : 0;
+                tMin = childHit.tEntry;
+                tMax = childHit.tExit;
+                scale--;
+                scaleExp2 *= 0.5;
+                sortedPos = 0;
+                descended = true;
+                break;
+            }
         }
 
         if (!descended) {
@@ -895,7 +1104,8 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
             tMax = stack_tmax[stackBase + scale];
             parentType = stack_type[stackBase + scale];
             entryFace = stack_entryFace[stackBase + scale];
-            siblingPos = stack_siblingPos[stackBase + scale]; // resume after child that triggered descent
+            // Resume cursor lives in the high nibble of the packed siblingPos slot
+            sortedPos = int((uint(stack_siblingPos[stackBase + scale]) >> 28) & 0xFu);
         }
     }
 

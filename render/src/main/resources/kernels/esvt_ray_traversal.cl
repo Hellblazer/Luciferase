@@ -58,7 +58,8 @@ typedef struct {
     float tMax;
     int parentType;
     int entryFace;
-    int siblingPos;  // Next child index to try when we pop back to this level
+    int siblingPos;  // front-to-back: resume position (sortedPos) in this level's sorted visit order
+    int sortedOrder; // front-to-back: packed sorted order — count in bits 27-24, 3-bit Morton childIdx slots at bits 23-0
     // Store actual parent vertices for correct multi-level traversal
     float3 v0, v1, v2, v3;
 } StackEntry;
@@ -651,6 +652,7 @@ __kernel void traverseESVT(
     for (int i = 0; i < CAST_STACK_DEPTH; i++) {
         stack[i].nodeIdx = 0xFFFFFFFFu;
         stack[i].siblingPos = 0;
+        stack[i].sortedOrder = 0;
     }
 
     // Get root node
@@ -714,7 +716,8 @@ __kernel void traverseESVT(
         float tMaxLocal = rootHit_tExit;
         int scale = CAST_STACK_DEPTH - 1;
         float scaleExp2 = 1.0f;
-        int siblingPos = 0;
+        // front-to-back: sorted position (index into the sorted visit order per level)
+        int sortedPos = 0;
         int iter = 0;
 
         // Track best hit (using float flag to avoid conditional crash)
@@ -738,7 +741,7 @@ __kernel void traverseESVT(
                 tMaxLocal = stack[scale].tMax;
                 parentType = stack[scale].parentType;
                 entryFace = stack[scale].entryFace;
-                siblingPos = stack[scale].siblingPos;  // Resume from saved position
+                sortedPos = stack[scale].siblingPos;  // Resume from saved sorted position
                 pv0 = stack[scale].v0;
                 pv1 = stack[scale].v1;
                 pv2 = stack[scale].v2;
@@ -747,109 +750,275 @@ __kernel void traverseESVT(
                 continue;
             }
 
-            // Try each child starting from siblingPos (for resumption after pop)
-            // Bey subdivision has 8 children that completely fill the parent
+            // -----------------------------------------------------------------------
+            // Front-to-back: collect intersecting children, insertion-sort by tEntry,
+            // visit in sorted order, prune when next tEntry >= bestT.
+            //
+            // On first entry to this node: sortedPos == 0, collect all candidates.
+            // On resume (after pop): sortedPos > 0, use the stored packed order.
+            // Mirrors ESVTTraversal.java castRay exactly: same loop, same comparator.
+            // -----------------------------------------------------------------------
             bool descended = false;
-            for (int childIdx = siblingPos; childIdx < 8; childIdx++) {
 
-                if (!hasChild(node, childIdx)) {
-                    continue;
+            if (sortedPos == 0) {
+                // ----- COLLECT: scan all 8 Morton children, compute intersections -----
+                float candidateTEntry[8];
+                int candidateIdx[8];
+                int nCandidates = 0;
+                for (int childIdx = 0; childIdx < 8; childIdx++) {
+                    if (!hasChild(node, childIdx)) {
+                        continue;
+                    }
+                    // childIdx is in Morton order; getChildVerticesFromParent converts to Bey order
+                    float3 sv0, sv1, sv2, sv3;
+                    getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, parentType, &sv0, &sv1, &sv2, &sv3);
+                    bool scanHit_hit;
+                    float scanHit_tEntry, scanHit_tExit;
+                    int scanHit_entryFace, scanHit_exitFace;
+                    intersectTetrahedronInplace(rayOrigin, rayDir, sv0, sv1, sv2, sv3,
+                                                &scanHit_hit, &scanHit_tEntry, &scanHit_tExit,
+                                                &scanHit_entryFace, &scanHit_exitFace);
+                    if (!scanHit_hit) {
+                        continue;
+                    }
+                    candidateTEntry[nCandidates] = scanHit_tEntry;
+                    candidateIdx[nCandidates] = childIdx;
+                    nCandidates++;
                 }
 
-                // Get child vertices from ACTUAL parent vertices (not SIMPLEX_STANDARD)
-                // childIdx is in Morton order; getChildVerticesFromParent converts to Bey order
-                float3 cv0, cv1, cv2, cv3;
-                getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, parentType, &cv0, &cv1, &cv2, &cv3);
-
-                // Test intersection using inplace version (avoids struct return issues)
-                bool childHit_hit;
-                float childHit_tEntry, childHit_tExit;
-                int childHit_entryFace, childHit_exitFace;
-                intersectTetrahedronInplace(rayOrigin, rayDir, cv0, cv1, cv2, cv3,
-                                            &childHit_hit, &childHit_tEntry, &childHit_tExit,
-                                            &childHit_entryFace, &childHit_exitFace);
-                if (!childHit_hit) {
-                    continue;
+                // ----- INSERTION SORT ascending by tEntry, tiebreak childIdx ascending -----
+                // Direct tandem sort of the two parallel arrays; max 8 elements.
+                for (int i = 1; i < nCandidates; i++) {
+                    float ti = candidateTEntry[i];
+                    int ci = candidateIdx[i];
+                    int j = i - 1;
+                    while (j >= 0 && (candidateTEntry[j] > ti
+                                      || (candidateTEntry[j] == ti && candidateIdx[j] > ci))) {
+                        candidateTEntry[j + 1] = candidateTEntry[j];
+                        candidateIdx[j + 1] = candidateIdx[j];
+                        j--;
+                    }
+                    candidateTEntry[j + 1] = ti;
+                    candidateIdx[j + 1] = ci;
                 }
 
-                // Check if leaf
-                if (isChildLeaf(node, childIdx)) {
-                    uint childNodeIdx = getChildIndex(farPointers, node, childIdx, parentIdx);
-                    ESVTNode childNode = nodes[childNodeIdx];
-                    float childScale = scaleExp2 * 0.5f;
+                int childCount = nCandidates;
+                // Pack sorted childIdx order: count in bits 27-24, 3-bit slots at bits 23-0
+                int packedOrder = (childCount & 0xF) << 24;
+                for (int i = 0; i < childCount; i++) {
+                    packedOrder |= (candidateIdx[i] & 0x7) << (21 - i * 3);
+                }
 
-                    // Use inplace version to avoid struct return
-                    float contourT;
-                    float3 contourNormal;
-                    bool contourValid;
-                    refineHitWithContoursInplace(
-                        childNode, childHit_entryFace, childHit_tEntry, childHit_tExit,
-                        rayOrigin, rayDir, childScale, contours,
-                        &contourT, &contourNormal, &contourValid);
+                // ----- VISIT in sorted order, PRUNE when tEntry >= bestT -----
+                for (int si = 0; si < childCount; si++) {
+                    int childIdx = candidateIdx[si];
 
-                    if (!contourValid) {
+                    // front-to-back: prune — next ordered child's tEntry >= bestT → BREAK
+                    // (sorted ⇒ all remaining also >= bestT, cannot improve result)
+                    if (candidateTEntry[si] >= bestT) {
+                        break; // prune: next tEntry >= bestT, break
+                    }
+
+                    // Re-derive vertices and full intersection result for this child
+                    float3 cv0, cv1, cv2, cv3;
+                    getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, parentType, &cv0, &cv1, &cv2, &cv3);
+                    bool childHit_hit;
+                    float childHit_tEntry, childHit_tExit;
+                    int childHit_entryFace, childHit_exitFace;
+                    intersectTetrahedronInplace(rayOrigin, rayDir, cv0, cv1, cv2, cv3,
+                                                &childHit_hit, &childHit_tEntry, &childHit_tExit,
+                                                &childHit_entryFace, &childHit_exitFace);
+                    if (!childHit_hit) {
                         continue;
                     }
 
-                    // Found valid leaf hit - check if it's closer
-                    if (contourT < bestT) {
-                        bestT = contourT;
-                        bestHitPoint = rayOrigin + rayDir * contourT;
+                    // Check if leaf
+                    if (isChildLeaf(node, childIdx)) {
+                        uint childNodeIdx = getChildIndex(farPointers, node, childIdx, parentIdx);
+                        ESVTNode childNode = nodes[childNodeIdx];
+                        float childScale = scaleExp2 * 0.5f;
 
-                        // Calculate normal
-                        float normalLen = length(contourNormal);
-                        if (normalLen > 0.5f) {
-                            bestHitNormal = contourNormal;
-                        } else {
-                            // Compute face normal based on entry face
-                            float3 fv0, fv1, fv2;
-                            int ef = childHit_entryFace;
-                            // Use safe indexing to select face vertices
-                            if (ef == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                            else if (ef == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                            else if (ef == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                            else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+                        // Use inplace version to avoid struct return
+                        float contourT;
+                        float3 contourNormal;
+                        bool contourValid;
+                        refineHitWithContoursInplace(
+                            childNode, childHit_entryFace, childHit_tEntry, childHit_tExit,
+                            rayOrigin, rayDir, childScale, contours,
+                            &contourT, &contourNormal, &contourValid);
 
-                            bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-                            if (dot(bestHitNormal, rayDir) > 0) {
-                                bestHitNormal = -bestHitNormal;
-                            }
+                        if (!contourValid) {
+                            continue;
                         }
-                        foundLeafFlag = 1.0f;
+
+                        // Found valid leaf hit - check if it's closer
+                        if (contourT < bestT) {
+                            bestT = contourT;
+                            bestHitPoint = rayOrigin + rayDir * contourT;
+
+                            // Calculate normal
+                            float normalLen = length(contourNormal);
+                            if (normalLen > 0.5f) {
+                                bestHitNormal = contourNormal;
+                            } else {
+                                // Compute face normal based on entry face
+                                float3 fv0, fv1, fv2;
+                                int ef = childHit_entryFace;
+                                // Use safe indexing to select face vertices
+                                if (ef == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                                else if (ef == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                                else if (ef == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                                else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                                bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                                if (dot(bestHitNormal, rayDir) > 0) {
+                                    bestHitNormal = -bestHitNormal;
+                                }
+                            }
+                            foundLeafFlag = 1.0f;
+                        }
+                        // Continue to check other children at same level (may find closer hit)
+                        continue;
                     }
-                    // Continue to check other children at same level (may find closer hit)
-                    continue;
+
+                    // Non-leaf - push and descend
+                    // Save current state including parent vertices + packed sorted order
+                    stack[scale].nodeIdx = parentIdx;
+                    stack[scale].tMax = tMaxLocal;
+                    stack[scale].parentType = parentType;
+                    stack[scale].entryFace = entryFace;
+                    stack[scale].siblingPos = si + 1;  // Resume at next slot in sorted order
+                    stack[scale].sortedOrder = packedOrder;
+                    stack[scale].v0 = pv0;
+                    stack[scale].v1 = pv1;
+                    stack[scale].v2 = pv2;
+                    stack[scale].v3 = pv3;
+
+                    // Update state for child - child vertices become new parent vertices
+                    parentIdx = getChildIndex(farPointers, node, childIdx, parentIdx);
+                    // childIdx is Morton index; convert to Bey index for type lookup
+                    int beyIdx = INDEX_TO_BEY_NUMBER[parentType * 8 + childIdx];
+                    parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + beyIdx];
+                    entryFace = (childHit_entryFace >= 0) ? childHit_entryFace : 0;
+                    tMinLocal = childHit_tEntry;
+                    tMaxLocal = childHit_tExit;
+                    pv0 = cv0;
+                    pv1 = cv1;
+                    pv2 = cv2;
+                    pv3 = cv3;
+                    scale--;
+                    scaleExp2 *= 0.5f;
+                    sortedPos = 0;
+                    descended = true;
+                    break;
                 }
 
-                // Non-leaf - push and descend
-                // Save current state including parent vertices
-                stack[scale].nodeIdx = parentIdx;
-                stack[scale].tMax = tMaxLocal;
-                stack[scale].parentType = parentType;
-                stack[scale].entryFace = entryFace;
-                stack[scale].siblingPos = childIdx + 1;  // Resume from next sibling when we pop back
-                stack[scale].v0 = pv0;
-                stack[scale].v1 = pv1;
-                stack[scale].v2 = pv2;
-                stack[scale].v3 = pv3;
+            } else {
+                // ----- RESUME: popped back to this node; continue sorted-order visit -----
+                int packedOrder = stack[scale].sortedOrder;
+                int childCount = (packedOrder >> 24) & 0xF;
 
-                // Update state for child - child vertices become new parent vertices
-                parentIdx = getChildIndex(farPointers, node, childIdx, parentIdx);
-                // childIdx is Morton index; convert to Bey index for type lookup
-                int beyIdx = INDEX_TO_BEY_NUMBER[parentType * 8 + childIdx];
-                parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + beyIdx];
-                entryFace = (childHit_entryFace >= 0) ? childHit_entryFace : 0;
-                tMinLocal = childHit_tEntry;
-                tMaxLocal = childHit_tExit;
-                pv0 = cv0;
-                pv1 = cv1;
-                pv2 = cv2;
-                pv3 = cv3;
-                scale--;
-                scaleExp2 *= 0.5f;
-                siblingPos = 0;
-                descended = true;
-                break;
+                for (int si = sortedPos; si < childCount; si++) {
+                    int childIdx = (packedOrder >> (21 - si * 3)) & 0x7;
+
+                    // Re-derive vertices + re-intersect (resume re-intersects, no stored tEntry)
+                    float3 cv0, cv1, cv2, cv3;
+                    getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, parentType, &cv0, &cv1, &cv2, &cv3);
+                    bool childHit_hit;
+                    float childHit_tEntry, childHit_tExit;
+                    int childHit_entryFace, childHit_exitFace;
+                    intersectTetrahedronInplace(rayOrigin, rayDir, cv0, cv1, cv2, cv3,
+                                                &childHit_hit, &childHit_tEntry, &childHit_tExit,
+                                                &childHit_entryFace, &childHit_exitFace);
+                    if (!childHit_hit) {
+                        continue;
+                    }
+
+                    // front-to-back: prune — next ordered child's tEntry >= bestT → BREAK
+                    if (childHit_tEntry >= bestT) {
+                        break; // prune: next tEntry >= bestT, break
+                    }
+
+                    // Check if leaf
+                    if (isChildLeaf(node, childIdx)) {
+                        uint childNodeIdx = getChildIndex(farPointers, node, childIdx, parentIdx);
+                        ESVTNode childNode = nodes[childNodeIdx];
+                        float childScale = scaleExp2 * 0.5f;
+
+                        // Use inplace version to avoid struct return
+                        float contourT;
+                        float3 contourNormal;
+                        bool contourValid;
+                        refineHitWithContoursInplace(
+                            childNode, childHit_entryFace, childHit_tEntry, childHit_tExit,
+                            rayOrigin, rayDir, childScale, contours,
+                            &contourT, &contourNormal, &contourValid);
+
+                        if (!contourValid) {
+                            continue;
+                        }
+
+                        // Found valid leaf hit - check if it's closer
+                        if (contourT < bestT) {
+                            bestT = contourT;
+                            bestHitPoint = rayOrigin + rayDir * contourT;
+
+                            // Calculate normal
+                            float normalLen = length(contourNormal);
+                            if (normalLen > 0.5f) {
+                                bestHitNormal = contourNormal;
+                            } else {
+                                // Compute face normal based on entry face
+                                float3 fv0, fv1, fv2;
+                                int ef = childHit_entryFace;
+                                // Use safe indexing to select face vertices
+                                if (ef == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                                else if (ef == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                                else if (ef == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                                else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                                bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                                if (dot(bestHitNormal, rayDir) > 0) {
+                                    bestHitNormal = -bestHitNormal;
+                                }
+                            }
+                            foundLeafFlag = 1.0f;
+                        }
+                        // Continue to check other children at same level (may find closer hit)
+                        continue;
+                    }
+
+                    // Non-leaf - push and descend
+                    // Save current state including parent vertices + packed sorted order
+                    stack[scale].nodeIdx = parentIdx;
+                    stack[scale].tMax = tMaxLocal;
+                    stack[scale].parentType = parentType;
+                    stack[scale].entryFace = entryFace;
+                    stack[scale].siblingPos = si + 1;  // Resume at next slot in sorted order
+                    stack[scale].sortedOrder = packedOrder;
+                    stack[scale].v0 = pv0;
+                    stack[scale].v1 = pv1;
+                    stack[scale].v2 = pv2;
+                    stack[scale].v3 = pv3;
+
+                    // Update state for child - child vertices become new parent vertices
+                    parentIdx = getChildIndex(farPointers, node, childIdx, parentIdx);
+                    // childIdx is Morton index; convert to Bey index for type lookup
+                    int beyIdx = INDEX_TO_BEY_NUMBER[parentType * 8 + childIdx];
+                    parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + beyIdx];
+                    entryFace = (childHit_entryFace >= 0) ? childHit_entryFace : 0;
+                    tMinLocal = childHit_tEntry;
+                    tMaxLocal = childHit_tExit;
+                    pv0 = cv0;
+                    pv1 = cv1;
+                    pv2 = cv2;
+                    pv3 = cv3;
+                    scale--;
+                    scaleExp2 *= 0.5f;
+                    sortedPos = 0;
+                    descended = true;
+                    break;
+                }
             }
 
             if (!descended) {
@@ -869,7 +1038,7 @@ __kernel void traverseESVT(
                 tMaxLocal = stack[scale].tMax;
                 parentType = stack[scale].parentType;
                 entryFace = stack[scale].entryFace;
-                siblingPos = stack[scale].siblingPos;  // Resume from saved position
+                sortedPos = stack[scale].siblingPos;  // Resume from saved sorted position
                 pv0 = stack[scale].v0;
                 pv1 = stack[scale].v1;
                 pv2 = stack[scale].v2;
