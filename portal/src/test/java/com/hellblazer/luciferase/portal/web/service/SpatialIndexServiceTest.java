@@ -260,4 +260,109 @@ class SpatialIndexServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.rayQuery("s14", req),
                 "Ray origin with NaN coordinate must be rejected");
     }
+
+    // ===== createIndex TOCTOU (Luciferase-6zs8q) =====
+
+    /**
+     * Two concurrent createIndex calls for the same session must admit exactly one —
+     * the loser gets IllegalStateException and must not overwrite the winner's index
+     * or its live entity counter. The preClaimHook barrier guarantees both threads
+     * pass the exists-check before either claims the indices map.
+     */
+    @Test
+    void concurrentCreateIndexForSameSessionAdmitsExactlyOne() throws Exception {
+        var service = new SpatialIndexService();
+        var barrier = new java.util.concurrent.CyclicBarrier(2);
+        service.preClaimHook = () -> {
+            try {
+                barrier.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+        var request = new CreateIndexRequest(SpatialIndexService.IndexType.OCTREE, (byte) 10, 10);
+
+        var successes = new java.util.concurrent.atomic.AtomicInteger();
+        var conflicts = new java.util.concurrent.atomic.AtomicInteger();
+        Runnable create = () -> {
+            try {
+                service.createIndex("race-session", request);
+                successes.incrementAndGet();
+            } catch (IllegalStateException e) {
+                conflicts.incrementAndGet();
+            }
+        };
+        var t1 = new Thread(create);
+        var t2 = new Thread(create);
+        t1.start();
+        t2.start();
+        t1.join(10_000);
+        t2.join(10_000);
+        assertFalse(t1.isAlive(), "t1 must complete within join timeout");
+        assertFalse(t2.isAlive(), "t2 must complete within join timeout");
+
+        assertEquals(1, successes.get(), "Exactly one concurrent createIndex must win");
+        assertEquals(1, conflicts.get(), "The losing createIndex must get IllegalStateException");
+        assertTrue(service.hasIndex("race-session"));
+        // The entityCounts invariant must hold: counting works after the race
+        assertEquals(0, service.sessionEntityCount("race-session"),
+                "Entity counter must exist and be coherent after a racing create");
+        var inserted = service.insertEntity("race-session", new InsertEntityRequest(0.5f, 0.5f, 0.5f, null));
+        assertNotNull(inserted);
+        assertEquals(1, service.sessionEntityCount("race-session"),
+                "Counter must track inserts after a racing create");
+    }
+
+    /**
+     * A losing create must not reset a LIVE counter: the loser is held in the race window
+     * while the winner creates the session AND inserts an entity (counter = 1); when the
+     * loser proceeds, its counter write must not clobber the live count back to 0. Pins
+     * entityCounts.putIfAbsent — a plain put would reset the counter and fail this test.
+     */
+    @Test
+    void losingCreateMustNotResetLiveCounter() throws Exception {
+        var service = new SpatialIndexService();
+        var loserInWindow = new java.util.concurrent.CountDownLatch(1);
+        var releaseLoser = new java.util.concurrent.CountDownLatch(1);
+        var firstCaller = new java.util.concurrent.atomic.AtomicBoolean(true);
+        service.preClaimHook = () -> {
+            // Only the first caller (the loser thread) is held; the winner runs through
+            if (firstCaller.compareAndSet(true, false)) {
+                loserInWindow.countDown();
+                try {
+                    if (!releaseLoser.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                        throw new RuntimeException("release timeout");
+                    }
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+        var request = new CreateIndexRequest(SpatialIndexService.IndexType.OCTREE, (byte) 10, 10);
+
+        var conflicts = new java.util.concurrent.atomic.AtomicInteger();
+        var loser = new Thread(() -> {
+            try {
+                service.createIndex("live-session", request);
+            } catch (IllegalStateException e) {
+                conflicts.incrementAndGet();
+            }
+        });
+        loser.start();
+        assertTrue(loserInWindow.await(5, java.util.concurrent.TimeUnit.SECONDS),
+                "loser must reach the race window");
+
+        // Winner creates the session and inserts an entity — the counter is live at 1
+        service.createIndex("live-session", request);
+        service.insertEntity("live-session", new InsertEntityRequest(0.5f, 0.5f, 0.5f, null));
+        assertEquals(1, service.sessionEntityCount("live-session"));
+
+        releaseLoser.countDown();
+        loser.join(10_000);
+        assertFalse(loser.isAlive(), "loser must complete within join timeout");
+
+        assertEquals(1, conflicts.get(), "loser must get IllegalStateException");
+        assertEquals(1, service.sessionEntityCount("live-session"),
+                "losing create must not reset the live entity counter");
+    }
 }
