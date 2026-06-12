@@ -107,9 +107,14 @@ public class HierarchicalZBuffer {
     }
     
     /**
-     * Updates camera matrices
+     * Updates camera matrices.
+     *
+     * <p>Both matrices are 4x4 in ROW-MAJOR layout ({@code m[row*4+col]}) with
+     * GL-style clip semantics: in-frustum geometry projects to clip {@code w > 0}
+     * and NDC z in [-1, 1] (near plane → -1, far plane → +1). Column-major (OpenGL
+     * memory-layout) matrices must be transposed before being passed in.
      */
-    public void updateCamera(float[] viewMatrix, float[] projectionMatrix, 
+    public void updateCamera(float[] viewMatrix, float[] projectionMatrix,
                            float nearPlane, float farPlane) {
         lock.writeLock().lock();
         try {
@@ -223,6 +228,10 @@ public class HierarchicalZBuffer {
                     int srcX = x * 2;
                     int srcY = y * 2;
                     
+                    // Seed 0.0 acts as -infinity here: depths are viewport depths in [0,1],
+                    // so the max over the (always >= 1) in-bounds samples is unaffected.
+                    // Out-of-bounds samples on odd-dimension levels are simply absent —
+                    // the cell's value is the max of its existing samples only.
                     float maxDepth = 0.0f;
                     for (int dy = 0; dy < 2 && srcY + dy < srcHeight; dy++) {
                         for (int dx = 0; dx < 2 && srcX + dx < srcWidth; dx++) {
@@ -277,14 +286,23 @@ public class HierarchicalZBuffer {
         corners[6] = new Point3f(min.x, max.y, max.z);
         corners[7] = new Point3f(max.x, max.y, max.z);
         
-        // Project each corner
+        // Project each corner. A corner contributes only when it is usable:
+        //  - clip w > 0  — in front of the camera (a negative w means the corner is
+        //    behind the camera; the sign-flipping perspective divide would otherwise
+        //    produce NDC z > 1 that beats an EMPTY buffer and reports phantom occlusion)
+        //  - depth01 in [0,1] (NDC z in [-1,1]) — within the near/far depth range;
+        //    the lower bound is the behind test for orthographic projections (w == 1
+        //    always), the upper bound rejects beyond-far corners whose depth would
+        //    otherwise tie the buffer's far-plane init and report phantom occlusion
+        // Depths are GL viewport depths in [0,1]: 0 = near plane, 1 = far plane —
+        // matching the buffer convention (init 1.0, min-write, '< buffer' visibility).
         float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
         float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
-        
+
         boolean anyInFront = false;
         for (Point3f corner : corners) {
             float[] projected = projectPoint(corner);
-            if (projected[2] > 0) {
+            if (projected[3] > 0 && projected[2] >= 0 && projected[2] <= 1.0f) {
                 anyInFront = true;
                 minX = Math.min(minX, projected[0]);
                 minY = Math.min(minY, projected[1]);
@@ -294,22 +312,32 @@ public class HierarchicalZBuffer {
                 maxZ = Math.max(maxZ, projected[2]);
             }
         }
-        
+
         if (!anyInFront) {
-            return null; // All corners behind camera
+            return null; // All corners behind camera or outside the near/far depth range
         }
-        
+
         // Convert to pixel coordinates
         int pixelMinX = Math.max(0, (int)(minX * width));
         int pixelMinY = Math.max(0, (int)(minY * height));
         int pixelMaxX = Math.min(width - 1, (int)(maxX * width));
         int pixelMaxY = Math.min(height - 1, (int)(maxY * height));
-        
+
         return new ScreenSpaceBounds(pixelMinX, pixelMinY, pixelMaxX, pixelMaxY, minZ);
     }
-    
+
     /**
-     * Projects a 3D point to normalized device coordinates
+     * Projects a 3D point through the view-projection matrix.
+     *
+     * <p>Matrices are ROW-MAJOR ({@code m[row*4+col]}) with GL-style clip semantics:
+     * visible eye-space geometry has clip {@code w > 0} and NDC z in [-1, 1]
+     * (near plane → -1, far plane → +1).
+     *
+     * @return {@code [x01, y01, depth01, clipW]} where x01/y01 are screen coordinates
+     *         in [0,1], depth01 is the GL viewport depth {@code (ndcZ + 1) / 2}
+     *         (0 = near, 1 = far), and clipW is the pre-divide clip-space w used by
+     *         callers to reject behind-camera corners. When {@code clipW <= 0} the
+     *         divided components are meaningless and must not be used.
      */
     private float[] projectPoint(Point3f point) {
         float[] homogeneous = new float[4];
@@ -317,23 +345,26 @@ public class HierarchicalZBuffer {
         homogeneous[1] = point.y;
         homogeneous[2] = point.z;
         homogeneous[3] = 1.0f;
-        
+
         float[] transformed = new float[4];
         multiplyMatrixVector(viewProjectionMatrix, homogeneous, transformed);
-        
+
+        float clipW = transformed[3];
+
         // Perspective divide
-        if (transformed[3] != 0) {
-            transformed[0] /= transformed[3];
-            transformed[1] /= transformed[3];
-            transformed[2] /= transformed[3];
+        if (clipW != 0) {
+            transformed[0] /= clipW;
+            transformed[1] /= clipW;
+            transformed[2] /= clipW;
         }
-        
-        // Convert to [0,1] range
-        float[] result = new float[3];
+
+        // Convert to [0,1] range (x/y screen coords and GL viewport depth)
+        float[] result = new float[4];
         result[0] = (transformed[0] + 1.0f) * 0.5f;
         result[1] = (transformed[1] + 1.0f) * 0.5f;
-        result[2] = transformed[2]; // Keep Z in NDC space
-        
+        result[2] = (transformed[2] + 1.0f) * 0.5f; // depth01: 0 = near plane, 1 = far plane
+        result[3] = clipW;
+
         return result;
     }
     

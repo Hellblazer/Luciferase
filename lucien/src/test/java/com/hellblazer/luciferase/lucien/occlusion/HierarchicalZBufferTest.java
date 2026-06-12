@@ -84,9 +84,9 @@ public class HierarchicalZBufferTest {
     @Test
     void testRenderOccluder() {
         float[] viewMatrix = createIdentityMatrix();
-        float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
+        float[] projMatrix = createRowMajorOrthographic(-100, 100, -100, 100, 0.1f, 1000);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
-        var occluderBounds = new EntityBounds(new Point3f(0, 0, 10), new Point3f(50, 50, 20));
+        var occluderBounds = new EntityBounds(new Point3f(0, 0, -20), new Point3f(50, 50, -10));
         zBuffer.renderOccluder(occluderBounds);
         zBuffer.updateHierarchy();
         // Smoke test only - actual occlusion depends on projection implementation
@@ -94,9 +94,9 @@ public class HierarchicalZBufferTest {
 
     @Test
     void testHierarchyUpdate() {
-        var bounds = new EntityBounds(new Point3f(0, 0, 10), new Point3f(10, 10, 20));
+        var bounds = new EntityBounds(new Point3f(0, 0, -20), new Point3f(10, 10, -10));
         float[] viewMatrix = createIdentityMatrix();
-        float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
+        float[] projMatrix = createRowMajorOrthographic(-100, 100, -100, 100, 0.1f, 1000);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
         zBuffer.renderOccluder(bounds);
         assertDoesNotThrow(zBuffer::updateHierarchy);
@@ -105,7 +105,7 @@ public class HierarchicalZBufferTest {
     @Test
     void testBoundsOutsideFrustum() {
         float[] viewMatrix = createIdentityMatrix();
-        float[] projMatrix = createOrthographicMatrix(-10, 10, -10, 10, 0.1f, 100);
+        float[] projMatrix = createRowMajorOrthographic(-10, 10, -10, 10, 0.1f, 100);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 100);
         var bounds = new EntityBounds(new Point3f(1000, 1000, 1000), new Point3f(1100, 1100, 1100));
         assertFalse(zBuffer.isOccluded(bounds));
@@ -129,7 +129,7 @@ public class HierarchicalZBufferTest {
     @Test
     void testThreadSafety() throws InterruptedException {
         float[] viewMatrix = createIdentityMatrix();
-        float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
+        float[] projMatrix = createRowMajorOrthographic(-100, 100, -100, 100, 0.1f, 1000);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
         int numThreads = 10;
         Thread[] threads = new Thread[numThreads];
@@ -138,7 +138,7 @@ public class HierarchicalZBufferTest {
             threads[i] = new Thread(() -> {
                 for (int j = 0; j < 100; j++) {
                     float offset = threadId * 20;
-                    var b = new EntityBounds(new Point3f(offset, offset, 10), new Point3f(offset + 10, offset + 10, 20));
+                    var b = new EntityBounds(new Point3f(offset, offset, -20), new Point3f(offset + 10, offset + 10, -10));
                     zBuffer.renderOccluder(b);
                 }
             });
@@ -158,7 +158,7 @@ public class HierarchicalZBufferTest {
     @Test
     void testConcurrentRenderAndUpdateHierarchyNoTornPyramid() throws InterruptedException {
         float[] viewMatrix = createIdentityMatrix();
-        float[] projMatrix = createOrthographicMatrix(-100, 100, -100, 100, 0.1f, 1000);
+        float[] projMatrix = createRowMajorOrthographic(-100, 100, -100, 100, 0.1f, 1000);
         zBuffer.updateCamera(viewMatrix, projMatrix, 0.1f, 1000);
 
         AtomicBoolean failed = new AtomicBoolean(false);
@@ -170,8 +170,8 @@ public class HierarchicalZBufferTest {
             Thread t = new Thread(() -> {
                 try {
                     while (!stop.get()) {
-                        var b = new EntityBounds(new Point3f(offset, offset, 5f),
-                                                 new Point3f(offset + 10f, offset + 10f, 15f));
+                        var b = new EntityBounds(new Point3f(offset, offset, -15f),
+                                                 new Point3f(offset + 10f, offset + 10f, -5f));
                         zBuffer.renderOccluder(b);
                     }
                 } catch (Exception e) {
@@ -336,9 +336,9 @@ public class HierarchicalZBufferTest {
         // No-throw smoke: renderOccluder + isOccluded on boundary bounds must not throw
         // ArrayIndexOutOfBoundsException regardless of projection outcome.
         float[] view = createIdentityMatrix();
-        float[] proj = createOrthographicMatrix(-50, 50, -50, 50, 0.1f, 1000);
+        float[] proj = createRowMajorOrthographic(-50, 50, -50, 50, 0.1f, 1000);
         buf.updateCamera(view, proj, 0.1f, 1000f);
-        var boundary = new EntityBounds(new Point3f(0, 0, 10), new Point3f(50, 50, 20));
+        var boundary = new EntityBounds(new Point3f(0, 0, -20), new Point3f(50, 50, -10));
         assertDoesNotThrow(() -> buf.renderOccluder(boundary),
             "renderOccluder on non-power-of-two buffer must not throw OOB");
         buf.updateHierarchy();
@@ -346,25 +346,207 @@ public class HierarchicalZBufferTest {
             "isOccluded on non-power-of-two buffer must not throw OOB");
     }
 
+    // -------------------------------------------------------------------------
+    // Behavioral occlusion tests (Luciferase-01w6v): renderOccluder must actually
+    // write depth and isOccluded must report objects behind a rendered occluder.
+    //
+    // Matrices below are ROW-MAJOR (m[row*4+col]) — the convention used by
+    // HierarchicalZBuffer.multiplyMatrixVector. Column-major (OpenGL memory-layout)
+    // matrices must be transposed before being passed to updateCamera.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Near-half perspective occluder (Luciferase-01w6v RED case 1).
+     *
+     * <p>With near=1, far=10, geometry nearer than 2fn/(f+n) ≈ 1.82 eye units has
+     * NEGATIVE GL NDC z. The pre-fix guard {@code projected[2] > 0} rejected every
+     * corner of such an occluder, projectBounds returned null, renderOccluder
+     * silently no-oped, and nothing was ever occluded — the DSOC dead-when-enabled
+     * defect. Camera at z=5.4 looking down -z; occluder at z∈[3.7,4.2] is entirely
+     * in the near half (eye z ∈ [-1.2,-1.7], NDC z ∈ [-0.63,-0.09]).
+     */
+    @Test
+    void testNearHalfPerspectiveOccluderOccludesBehindObject() {
+        float[] view = createRowMajorTranslationView(5.4f);
+        float[] proj = createRowMajorPerspective(60f, 1f, 1f, 10f);
+        zBuffer.updateCamera(view, proj, 1f, 10f);
+
+        // Large occluder entirely in the NEAR half of the frustum (negative NDC z)
+        var occluder = new EntityBounds(new Point3f(-2, -2, 3.7f), new Point3f(2, 2, 4.2f));
+        // Small box well behind it (eye z ∈ [-4.5,-4.8]), screen-covered by the occluder
+        var behind = new EntityBounds(new Point3f(-0.2f, -0.2f, 0.6f), new Point3f(0.2f, 0.2f, 0.9f));
+
+        assertFalse(zBuffer.isOccluded(behind), "empty Z-buffer must not occlude anything");
+
+        zBuffer.renderOccluder(occluder);
+
+        assertTrue(zBuffer.isOccluded(behind),
+                "box fully behind a near-half occluder must be occluded — pre-fix the z-sign "
+                + "guard rejected all negative-NDC-z corners and renderOccluder silently no-oped");
+    }
+
+    /**
+     * Far-half perspective regression guard + in-front discrimination.
+     *
+     * <p>Far-half geometry (positive GL NDC z) accidentally worked pre-fix; this pins
+     * that it keeps working, and that an object IN FRONT of the occluder is never
+     * reported occluded (depth ordering, not just coverage).
+     */
+    @Test
+    void testFarHalfPerspectiveOcclusionAndInFrontDiscrimination() {
+        float[] view = createRowMajorTranslationView(100f);
+        float[] proj = createRowMajorPerspective(60f, 1f, 0.1f, 1000f);
+        zBuffer.updateCamera(view, proj, 0.1f, 1000f);
+
+        var occluder = new EntityBounds(new Point3f(-30, -30, 40), new Point3f(30, 30, 50));
+        var behind   = new EntityBounds(new Point3f(-5, -5, -20), new Point3f(5, 5, -10));
+        var inFront  = new EntityBounds(new Point3f(-5, -5, 70), new Point3f(5, 5, 80));
+
+        assertFalse(zBuffer.isOccluded(behind), "empty Z-buffer must not occlude anything");
+
+        zBuffer.renderOccluder(occluder);
+
+        assertTrue(zBuffer.isOccluded(behind),
+                "box behind the occluder (farther from camera) must be occluded");
+        assertFalse(zBuffer.isOccluded(inFront),
+                "box between camera and occluder must NOT be occluded");
+    }
+
+    /**
+     * Near-region orthographic occluder (Luciferase-01w6v RED case 2).
+     *
+     * <p>Standard GL ortho maps the near half of [near,far] to negative NDC z; the
+     * pre-fix guard rejected those corners. Identity view (camera at origin looking
+     * down -z), ortho ±100, near=0.1, far=100. Occluder at z∈[-20,-10] has NDC
+     * z ∈ [-0.80,-0.60] — fully rejected pre-fix.
+     */
+    @Test
+    void testOrthographicNearRegionOccluderOccludesBehindObject() {
+        float[] view = createIdentityMatrix();
+        float[] proj = createRowMajorOrthographic(-100, 100, -100, 100, 0.1f, 100f);
+        zBuffer.updateCamera(view, proj, 0.1f, 100f);
+
+        var occluder = new EntityBounds(new Point3f(-50, -50, -20), new Point3f(50, 50, -10));
+        var behind   = new EntityBounds(new Point3f(-5, -5, -60), new Point3f(5, 5, -50));
+
+        assertFalse(zBuffer.isOccluded(behind), "empty Z-buffer must not occlude anything");
+
+        zBuffer.renderOccluder(occluder);
+
+        assertTrue(zBuffer.isOccluded(behind),
+                "box behind a near-region ortho occluder must be occluded — pre-fix the "
+                + "z-sign guard rejected all negative-NDC-z corners");
+    }
+
+    /**
+     * Behind-camera bounds (Luciferase-01w6v RED case 3).
+     *
+     * <p>A box behind the camera has clip w &lt; 0; the perspective divide flips signs
+     * and produces NDC z &gt; 1, which PASSED the pre-fix {@code > 0} guard. Its
+     * nearZ (&gt; 1) then failed {@code nearZ < buffer} at every pixel of an EMPTY
+     * buffer, so isOccluded reported true for an object behind the camera with
+     * nothing rendered at all. Post-fix the w-guard rejects it: not occluded, and
+     * rendering it as an occluder is a clean no-op.
+     */
+    @Test
+    void testBehindCameraBoundsNeverOccluded() {
+        float[] view = createRowMajorTranslationView(5.4f);
+        float[] proj = createRowMajorPerspective(60f, 1f, 1f, 10f);
+        zBuffer.updateCamera(view, proj, 1f, 10f);
+
+        // Camera at z=5.4 looking down -z: world z > 5.4 is behind the camera
+        var behindCamera = new EntityBounds(new Point3f(-1, -1, 6f), new Point3f(1, 1, 7f));
+
+        assertFalse(zBuffer.isOccluded(behindCamera),
+                "a box behind the camera must never be reported occluded — pre-fix the "
+                + "sign-flipped divide produced NDC z > 1 which passed the guard and beat "
+                + "an empty buffer");
+
+        assertDoesNotThrow(() -> zBuffer.renderOccluder(behindCamera),
+                "rendering a behind-camera occluder must be a clean no-op");
+
+        // The no-op must not have corrupted the buffer: an in-frustum box is still visible
+        var inFrustum = new EntityBounds(new Point3f(-0.5f, -0.5f, 2f), new Point3f(0.5f, 0.5f, 2.5f));
+        assertFalse(zBuffer.isOccluded(inFrustum),
+                "after a behind-camera no-op render, in-frustum geometry must remain unoccluded");
+    }
+
+    /**
+     * Beyond-far-plane bounds must not report occluded against an empty buffer.
+     *
+     * <p>A box entirely past the far plane projects to depth01 &gt; 1 at every corner.
+     * Without the admission upper bound, its clamped nearZ (1.0) ties the buffer's
+     * far-plane initialization and {@code nearZ < buffer} fails at every pixel —
+     * phantom occlusion with nothing rendered. The depth-range admission guard
+     * rejects such corners; projectBounds returns null and the box stays visible.
+     */
+    @Test
+    void testBeyondFarPlaneBoundsNotOccluded() {
+        float[] view = createRowMajorTranslationView(100f);
+        float[] proj = createRowMajorPerspective(60f, 1f, 0.1f, 50f); // far plane at 50
+        zBuffer.updateCamera(view, proj, 0.1f, 50f);
+
+        // Eye z ∈ [-160,-150] — entirely beyond the far plane (50)
+        var beyondFar = new EntityBounds(new Point3f(-5, -5, -60), new Point3f(5, 5, -50));
+
+        assertFalse(zBuffer.isOccluded(beyondFar),
+                "a box entirely beyond the far plane must not report occluded against an "
+                + "empty buffer — its depth01 > 1 corners must be rejected, not clamped to "
+                + "the far-plane init value");
+
+        assertDoesNotThrow(() -> zBuffer.renderOccluder(beyondFar),
+                "rendering a beyond-far occluder must be a clean no-op");
+    }
+
     // Helper methods
+
+    /**
+     * Row-major view matrix for a camera at (0, 0, cameraZ) looking down -Z with +Y up:
+     * eye = world - (0,0,cameraZ).
+     */
+    private float[] createRowMajorTranslationView(float cameraZ) {
+        float[] m = createIdentityMatrix();
+        m[11] = -cameraZ; // row 2, col 3
+        return m;
+    }
+
+    /**
+     * Row-major GL-style perspective projection (visible eye z ∈ [-near,-far] maps to
+     * NDC z ∈ [-1,1], clip w = -z_eye).
+     */
+    private float[] createRowMajorPerspective(float fovYDegrees, float aspect, float near, float far) {
+        float f = (float) (1.0 / Math.tan(Math.toRadians(fovYDegrees) / 2.0));
+        float[] m = new float[16];
+        m[0]  = f / aspect;
+        m[5]  = f;
+        m[10] = (far + near) / (near - far);
+        m[11] = 2f * far * near / (near - far);
+        m[14] = -1f;
+        return m;
+    }
+
+    /**
+     * Row-major GL-style orthographic projection (visible eye z ∈ [-near,-far] maps to
+     * NDC z ∈ [-1,1], clip w = 1).
+     */
+    private float[] createRowMajorOrthographic(float left, float right, float bottom, float top,
+                                               float near, float far) {
+        float[] m = new float[16];
+        m[0]  = 2f / (right - left);
+        m[3]  = -(right + left) / (right - left);
+        m[5]  = 2f / (top - bottom);
+        m[7]  = -(top + bottom) / (top - bottom);
+        m[10] = -2f / (far - near);
+        m[11] = -(far + near) / (far - near);
+        m[15] = 1f;
+        return m;
+    }
 
     private float[] createIdentityMatrix() {
         float[] matrix = new float[16];
         for (int i = 0; i < 16; i++) {
             matrix[i] = (i % 5 == 0) ? 1.0f : 0.0f;
         }
-        return matrix;
-    }
-
-    private float[] createOrthographicMatrix(float left, float right, float bottom, float top, float near, float far) {
-        float[] matrix = new float[16];
-        matrix[0] = 2.0f / (right - left);
-        matrix[5] = 2.0f / (top - bottom);
-        matrix[10] = -2.0f / (far - near);
-        matrix[12] = -(right + left) / (right - left);
-        matrix[13] = -(top + bottom) / (top - bottom);
-        matrix[14] = -(far + near) / (far - near);
-        matrix[15] = 1.0f;
         return matrix;
     }
 }
