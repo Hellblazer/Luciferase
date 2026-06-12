@@ -36,7 +36,30 @@ import java.util.Objects;
  */
 public class PersistenceManagerAdapter extends AbstractLifecycleAdapter {
 
+    private static final org.slf4j.Logger log =
+        org.slf4j.LoggerFactory.getLogger(PersistenceManagerAdapter.class);
+
     private final PersistenceManager persistenceManager;
+
+    /**
+     * Clean-shutdown gate (Luciferase-n6jrh.2). When set (by the 4-arg
+     * {@code NodeBootstrap.assemble} to {@code migrator::isTerminated}), {@link #doStop()} only
+     * performs the checkpoint-and-truncate {@code closeClean()} when the gate holds — i.e. the
+     * migration executor has fully terminated and no in-flight migration can ever write to the
+     * WAL again. If the gate fails (the coordinator's per-component stop budget expired before
+     * the migrator finished draining, or a forced interrupt left a half-bracket), the WAL is
+     * closed crash-safe instead, RETAINING it: recovery then reconstructs MIGRATING_OUT from
+     * the retained ENTITY_DEPARTURE rather than truncation silently erasing it. Null (3-arg
+     * assemble / standalone) means no migrator exists and clean shutdown is unconditional.
+     */
+    private volatile java.util.function.BooleanSupplier cleanShutdownGate;
+
+    /**
+     * Wire the clean-shutdown gate; see field javadoc. Call before shutdown begins.
+     */
+    public void setCleanShutdownGate(java.util.function.BooleanSupplier gate) {
+        this.cleanShutdownGate = gate;
+    }
 
     /**
      * Create an adapter for PersistenceManager.
@@ -85,7 +108,18 @@ public class PersistenceManagerAdapter extends AbstractLifecycleAdapter {
         // RDR-017 P3 (gate O1): a lifecycle stop is a CLEAN shutdown — checkpoint + truncate the WAL
         // (compaction) so the next start recovers nothing. The crash path (abort in doStart) calls
         // close() directly, retaining the WAL for recovery.
-        persistenceManager.closeClean();
+        // Luciferase-n6jrh.2: clean shutdown additionally requires the migration executor to have
+        // fully terminated — otherwise an in-flight migration's ENTITY_DEPARTURE half-bracket
+        // would be truncated away (silent entity loss) or a late commit would hit a closed WAL.
+        // When the gate fails, degrade to the crash-safe close, retaining the WAL for recovery.
+        var gate = cleanShutdownGate;
+        if (gate == null || gate.getAsBoolean()) {
+            persistenceManager.closeClean();
+        } else {
+            log.warn("Clean-shutdown gate failed (migrator not fully drained) — closing WAL "
+                     + "crash-safe and retaining it for recovery instead of truncating");
+            persistenceManager.close();
+        }
     }
 
     @Override

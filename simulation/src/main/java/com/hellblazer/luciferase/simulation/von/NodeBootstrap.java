@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.simulation.consensus.ownership.BubbleOwnershipR
 import com.hellblazer.luciferase.simulation.consensus.ownership.FirefliesBubbleOwnershipResolver;
 import com.hellblazer.luciferase.simulation.consensus.ownership.RendezvousOwnershipFunction;
 import com.hellblazer.luciferase.simulation.delos.MembershipView;
+import com.hellblazer.luciferase.simulation.lifecycle.BubbleMigratorAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.PersistenceManagerAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.RecoveryIntegrationAdapter;
 import com.hellblazer.luciferase.simulation.lifecycle.SocketConnectionManagerAdapter;
@@ -199,14 +200,14 @@ public final class NodeBootstrap {
      * and started (the coordinator started in the {@link Manager} constructor starts components on
      * registration), so the migrator never logs against an unrecovered/unstarted WAL.
      * <p>
-     * <b>Shutdown ordering contract.</b> The migrator is wired to the persistence manager but is NOT
-     * registered as a lifecycle component, so {@code Manager.close()} does not stop it. The caller MUST
-     * call {@code migrator.shutdown()} (draining in-flight migrations) <b>before</b> {@code Manager.close()}
-     * closes the WAL — otherwise an in-flight migration can call {@code logMigrationCommit()} after the
-     * WAL is closed, failing the commit and leaving an {@code ENTITY_DEPARTURE}-without-{@code COMMIT}
-     * split-brain precondition (the exact hazard RDR-016 R2 guards). Lifecycle-integrating the migrator
-     * (a {@code BubbleMigratorAdapter} stopped ahead of the persistence layer) is tracked for the live
-     * {@link #main} wiring — until then {@code main} throws, so the race is unreachable in production.
+     * <b>Shutdown ordering (Luciferase-n6jrh.2).</b> The migrator is lifecycle-registered as a
+     * {@link BubbleMigratorAdapter} at Layer 1 (dependency: {@code PersistenceManager}), so
+     * {@code Manager.close()} drains it — in-flight migrations run to completion, new ones are
+     * rejected — <b>before</b> the coordinator stops the persistence layer and closes the WAL.
+     * An in-flight migration therefore can never call {@code logMigrationCommit()} against a
+     * closed WAL (the {@code ENTITY_DEPARTURE}-without-{@code COMMIT} split-brain precondition
+     * RDR-016 R2 guards). Callers no longer need to stop the migrator manually; after
+     * {@code Manager.close()} the migrator is drained and cannot be restarted.
      *
      * @param manager    the VON manager owning the lifecycle coordinator
      * @param scmAdapter the connection-manager adapter (Layer 0)
@@ -220,7 +221,18 @@ public final class NodeBootstrap {
         // After coordinator.start()/registration: the persistence adapter is RUNNING (recovered,
         // schedulers up), so the migration WAL bracket can durably log against it.
         migrator.setPersistenceManager(pmAdapter.getPersistenceManager());
-        log.info("Migration durability wired: BubbleMigrator → {}", pmAdapter.name());
+        // Lifecycle-integrate the migrator ABOVE the persistence layer so reverse-order shutdown
+        // drains in-flight migrations before the WAL closes (Luciferase-n6jrh.2).
+        manager.registerInfrastructure(new BubbleMigratorAdapter(migrator));
+        // Defense for the over-budget case: the coordinator's per-component stop timeout does not
+        // cancel a still-running drain, so the persistence layer may be reached while migrations
+        // are alive. The gate makes that safe — the WAL is checkpoint-truncated ONLY when the
+        // migration executor has fully terminated; otherwise it is closed crash-safe and retained,
+        // so an interrupted migration's half-bracket recovers as MIGRATING_OUT instead of being
+        // silently truncated away.
+        pmAdapter.setCleanShutdownGate(migrator::isTerminated);
+        log.info("Migration durability wired: BubbleMigrator → {} (lifecycle Layer 1, clean-shutdown gated)",
+                 pmAdapter.name());
     }
 
     /**

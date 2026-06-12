@@ -99,8 +99,11 @@ class NodeBootstrapDurabilityRoundTripTest {
             pmAdapter1.getPersistenceManager().close();
         } finally {
             target.close();        // releases the target Bubble's retry-scheduler daemon thread
-            migrator.shutdown();    // releases the migration executor pool
-            mgr1.close();           // doStop → closeClean is a no-op (PM already closed); stops the SCM
+            // Since n6jrh.2 the lifecycle drains the migrator in mgr1.close(); this abrupt
+            // shutdown is redundant (no-op on an already-drained executor) but kept as
+            // belt-and-braces for the early-throw paths above assemble().
+            migrator.shutdown();
+            mgr1.close();           // drains migrator (L1), then PM doStop; closeClean no-op (PM already closed)
         }
 
         // ───────── WAL-identity pinning (gate C1): the reopened node derives the SAME dir ─────────
