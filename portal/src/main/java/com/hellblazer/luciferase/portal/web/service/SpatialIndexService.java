@@ -17,6 +17,7 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Service for managing spatial indices via REST API.
@@ -31,6 +32,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * to drift above the true entity count, leading to spurious 413 responses.  Do not relax the
  * single-session-serialization assumption without adding a per-session lock around the full
  * read-modify-write sequence.
+ *
+ * <p>Exception: {@link #createIndex} is safe against concurrent duplicate creates for the same
+ * session (atomic {@code putIfAbsent} claim — exactly one wins, the loser gets
+ * {@link IllegalStateException}). A create racing a {@link #deleteIndex} of the same session
+ * remains under the serialization assumption (the two-map removal in delete is not atomic):
+ * the new session can inherit the old session's non-zero counter, or — if the full create
+ * lands between delete's two removals — delete removes the new session's counter, leaving an
+ * index with no counter and silently disabling cap enforcement for that session.
  */
 public class SpatialIndexService {
 
@@ -43,10 +52,17 @@ public class SpatialIndexService {
     private final Map<String, SpatialIndexHolder> indices = new ConcurrentHashMap<>();
 
     /** Per-session live entity count, kept in sync with insert/remove. */
-    private final Map<String, java.util.concurrent.atomic.AtomicInteger> entityCounts =
-            new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> entityCounts = new ConcurrentHashMap<>();
 
     private final int maxSessionEntities;
+
+    /**
+     * Test seam: runs between createIndex's exists-check and the atomic claim of the
+     * indices map, so the TOCTOU regression test can deterministically hold two threads
+     * in the race window. No-op in production.
+     */
+    Runnable preClaimHook = () -> {
+    };
 
     public SpatialIndexService() {
         this(DEFAULT_MAX_SESSION_ENTITIES);
@@ -68,8 +84,17 @@ public class SpatialIndexService {
         }
 
         var holder = createIndexHolder(request);
-        indices.put(sessionId, holder);
-        entityCounts.put(sessionId, new java.util.concurrent.atomic.AtomicInteger(0));
+        preClaimHook.run();
+        // Atomic claim: the containsKey check above is a cheap fast-fail only — a concurrent
+        // create for the same session can race past it. The counter is initialized BEFORE the
+        // claim (putIfAbsent, so a losing create cannot replace the winner's live counter):
+        // this keeps the invariant that any session visible in `indices` has its counter,
+        // with no window where an insert could observe the index but miss the counter.
+        entityCounts.putIfAbsent(sessionId, new AtomicInteger(0));
+        if (indices.putIfAbsent(sessionId, holder) != null) {
+            log.debug("Concurrent createIndex lost race for session {}; discarding", sessionId);
+            throw new IllegalStateException("Session already has a spatial index. Delete it first.");
+        }
 
         log.info("Created {} index for session {} with maxDepth={}, maxEntitiesPerNode={}",
                 request.indexType(), sessionId, request.maxDepth(), request.maxEntitiesPerNode());
