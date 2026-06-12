@@ -16,7 +16,10 @@ import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -157,6 +160,61 @@ class RenderServiceTest {
         assertThrows(RenderBuildException.class,
                      () -> service.createRender(SESSION, tetreeWithEntities(), request));
         assertFalse(service.hasRender(SESSION));
+    }
+
+    /**
+     * TOCTOU regression (Luciferase-lc06v): two concurrent createRender calls for the
+     * same session must admit exactly one — the loser gets IllegalStateException and
+     * must not overwrite the winner's holder. The barrier inside the bridge guarantees
+     * both threads pass the exists-check before either stores its result.
+     */
+    @Test
+    void concurrentCreateForSameSessionAdmitsExactlyOne() throws Exception {
+        // Both threads' bridge instances share this one barrier via closure — that's the
+        // intent: neither may store its result until both are past the exists-check.
+        var barrier = new CyclicBarrier(2);
+        Supplier<SpatialBridge<ESVTData>> blocking = () -> new SpatialBridge<>() {
+            @Override
+            public BuildResult<ESVTData> buildFromVoxels(List<Point3i> voxels, int maxDepth, int gridResolution) {
+                try {
+                    barrier.await(5, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                return new ESVTBridge().buildFromVoxels(voxels, maxDepth, gridResolution);
+            }
+
+            @Override
+            public String getStructureTypeName() {
+                return "ESVT";
+            }
+        };
+        var service = new RenderService(blocking, () -> failingBridge("Octree"));
+        var request = new CreateRenderRequest(RenderType.ESVT, 5, 16);
+        var tetree = tetreeWithEntities();
+
+        var successes = new AtomicInteger();
+        var conflicts = new AtomicInteger();
+        Runnable create = () -> {
+            try {
+                service.createRender(SESSION, tetree, request);
+                successes.incrementAndGet();
+            } catch (IllegalStateException e) {
+                conflicts.incrementAndGet();
+            }
+        };
+        var t1 = new Thread(create);
+        var t2 = new Thread(create);
+        t1.start();
+        t2.start();
+        t1.join(10_000);
+        t2.join(10_000);
+        assertFalse(t1.isAlive(), "t1 must complete within join timeout — barrier or build may be hung");
+        assertFalse(t2.isAlive(), "t2 must complete within join timeout — barrier or build may be hung");
+
+        assertEquals(1, successes.get(), "Exactly one concurrent create must win");
+        assertEquals(1, conflicts.get(), "The losing create must get IllegalStateException");
+        assertTrue(service.hasRender(SESSION));
     }
 
     // ===== Success path must be unchanged through the bridges =====
