@@ -29,7 +29,6 @@ import java.util.function.BiConsumer;
  * <ul>
  *   <li>{@link InMemoryGhostChannel}: For testing and single-server deployments (deterministic, optional latency)</li>
  *   <li>{@link P2PGhostChannel}: For production distributed multi-bubble (VON-based P2P synchronization)</li>
- *   <li>{@link DelosSocketTransport}: DEPRECATED - Incomplete prototype, use P2PGhostChannel instead</li>
  * </ul>
  * <p>
  * See simulation/doc/ADR_001_MIGRATION_CONSENSUS_ARCHITECTURE.md § Ghost Channel Implementations

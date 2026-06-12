@@ -48,7 +48,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <ul>
  *   <li>Uses DeadReckoningEstimator for position extrapolation</li>
  *   <li>Uses GhostCullPolicy for staleness detection</li>
- *   <li>Integrates with DelosSocketTransport for network updates</li>
+ *   <li>Integrates with GhostChannel implementations (e.g. P2PGhostChannel) for network updates</li>
  *   <li>Coordinates with RealTimeController for tick updates</li>
  * </ul>
  * <p>
@@ -246,7 +246,7 @@ public class GhostStateManager {
     }
 
     /**
-     * Handle incoming ghost update from network (via DelosSocketTransport).
+     * Handle incoming ghost update from network (via the ghost channel, e.g. P2PGhostChannel).
      * Creates new ghost or updates existing ghost with new position and velocity.
      *
      * @param sourceBubbleId Source bubble that sent this update

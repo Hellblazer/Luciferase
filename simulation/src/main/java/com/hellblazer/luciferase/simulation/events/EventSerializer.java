@@ -27,7 +27,7 @@ import java.nio.charset.StandardCharsets;
  * EventSerializer - Custom Binary Serialization for EntityUpdateEvent (Phase 7B.1)
  *
  * Provides efficient binary serialization for cross-bubble entity updates.
- * Uses custom format (NOT Java serialization) for network transmission via Delos.
+ * Uses custom format (NOT Java serialization) for network transmission.
  *
  * BINARY FORMAT (Version 0x01):
  * <pre>
@@ -68,7 +68,7 @@ import java.nio.charset.StandardCharsets;
  * </pre>
  *
  * PHASE 7B.1: Custom binary serialization
- * PHASE 7B.2: Will integrate with Delos for reliable multicast
+ * PHASE 7B.2: Delos transport prototype removed (Luciferase-j877j); ghost transport is P2PGhostChannel (VON-based)
  * PHASE 7B.3: Events will be used for dead reckoning updates
  *
  * @author hal.hildebrand

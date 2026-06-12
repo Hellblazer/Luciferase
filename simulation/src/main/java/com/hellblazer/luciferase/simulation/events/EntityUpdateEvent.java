@@ -25,7 +25,7 @@ import javax.vecmath.Point3f;
  * EntityUpdateEvent - Cross-Bubble Entity State Update (Phase 7B.1)
  *
  * Carries entity position/velocity updates for cross-bubble synchronization.
- * Serialized via custom binary format (EventSerializer) for network transmission via Delos.
+ * Serialized via custom binary format (EventSerializer) for network transmission.
  *
  * IMMUTABILITY: This is a record class - all fields are final and immutable.
  * No Java serialization - custom binary format ensures efficient wire protocol.
@@ -61,7 +61,7 @@ import javax.vecmath.Point3f;
  * </pre>
  *
  * PHASE 7B.1: Event type definitions and serialization
- * PHASE 7B.2: Will integrate with Delos for cross-bubble delivery
+ * PHASE 7B.2: Delos transport prototype removed (Luciferase-j877j); cross-bubble delivery is P2PGhostChannel (VON-based)
  * PHASE 7B.3: Will enable dead reckoning in DistributedEntityTracker
  *
  * @param entityId Entity identifier
