@@ -82,7 +82,8 @@ public class ESVOBridge implements SpatialBridge<ESVOOctreeData> {
             currentMaxDepth = maxDepth;
             
             var buildTime = (System.nanoTime() - startTime) / 1_000_000.0; // Convert to ms
-            log.debug("Octree built in {:.2f}ms with {} nodes", buildTime, currentOctree.getNodeCount());
+            log.debug("Octree built in {}ms with {} nodes", String.format("%.2f", buildTime),
+                      currentOctree.getNodeCount());
             
             return currentOctree;
         } catch (Exception e) {

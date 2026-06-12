@@ -327,6 +327,14 @@ public class ESVTBridge implements SpatialBridge<ESVTData> {
         long startMs = System.currentTimeMillis();
         int voxelCount = voxels != null ? voxels.size() : 0;
         try {
+            if (voxels == null) {
+                throw new IllegalArgumentException("Voxels list cannot be null");
+            }
+            // Tetree supports 21 levels; ESVTTraversal.MAX_DEPTH (22) is the scale domain,
+            // so the deepest buildable tree is 21.
+            if (maxDepth < 1 || maxDepth > 21) {
+                throw new IllegalArgumentException("Max depth must be between 1 and 21, got: " + maxDepth);
+            }
             long startNs = System.nanoTime();
             this.data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
             this.lastBuildTimeNs = System.nanoTime() - startNs;
