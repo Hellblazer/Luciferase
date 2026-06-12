@@ -100,11 +100,65 @@ public class BubbleMigrator {
     }
 
     /**
-     * Shut down the dedicated migration executor. Call when the migrator is no longer needed to
-     * release its threads.
+     * Shut down the dedicated migration executor immediately, interrupting in-flight migrations.
+     * Test/abrupt cleanup path — production shutdown goes through
+     * {@link #shutdownGracefully(Duration)} via the lifecycle adapter so in-flight WAL brackets
+     * complete before the WAL closes (Luciferase-n6jrh.2).
      */
     public void shutdown() {
         migrationExecutor.shutdownNow();
+    }
+
+    /**
+     * Drain in-flight migrations, then shut down the executor (Luciferase-n6jrh.2). New
+     * migrations are rejected immediately; in-flight ones run to completion so their WAL
+     * bracket (ENTITY_DEPARTURE … MIGRATION_COMMIT) lands on an open WAL. Falls back to
+     * {@code shutdownNow()} when the grace period elapses — an interrupted migration aborts
+     * pre-commit (the recoverable MIGRATING_OUT half-bracket), it never half-commits.
+     *
+     * @param grace how long to wait for in-flight migrations; in-flight work is bounded by
+     *              {@code migrationTimeout}, so that is the natural grace value
+     * @return true if all in-flight migrations drained within the grace period
+     */
+    public boolean shutdownGracefully(Duration grace) {
+        var inFlightAtDrain = inFlightMigrations.size();
+        migrationExecutor.shutdown();
+        try {
+            if (migrationExecutor.awaitTermination(grace.toMillis(), TimeUnit.MILLISECONDS)) {
+                return true;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        log.warn("BubbleMigrator drain incomplete after {}ms; interrupting (had {} in-flight at drain start)",
+                 grace.toMillis(), inFlightAtDrain);
+        migrationExecutor.shutdownNow();
+        return false;
+    }
+
+    /**
+     * @return whether the migration executor has been shut down (gracefully or not)
+     */
+    public boolean isShutdown() {
+        return migrationExecutor.isShutdown();
+    }
+
+    /**
+     * @return whether the migration executor has fully terminated — shut down AND every
+     * in-flight task completed. Once true it is true forever: no migration can ever write to
+     * the WAL again. {@code PersistenceManagerAdapter} uses this as the clean-shutdown gate
+     * (Luciferase-n6jrh.2): the WAL may only be checkpoint-truncated when this holds.
+     */
+    public boolean isTerminated() {
+        return migrationExecutor.isTerminated();
+    }
+
+    /**
+     * @return the configured per-migration timeout (bounds in-flight work; the lifecycle
+     * adapter uses it as the default drain grace)
+     */
+    public Duration migrationTimeout() {
+        return migrationTimeout;
     }
 
     /**
@@ -197,15 +251,25 @@ public class BubbleMigrator {
             );
         }
 
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                return executeMigration(bubble, sourceServerId, targetServerId, startTime);
-            } finally {
-                // Luciferase-0frcy.38: value-conditional removal so we only clear OUR reservation,
-                // never a subsequent re-reservation of the same bubbleId by another thread.
-                inFlightMigrations.remove(bubbleId, state);
-            }
-        }, migrationExecutor) // dedicated pool — never block ForkJoinPool.commonPool (0frcy.116)
+        CompletableFuture<MigrationResult> submitted;
+        try {
+            submitted = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return executeMigration(bubble, sourceServerId, targetServerId, startTime);
+                } finally {
+                    // Luciferase-0frcy.38: value-conditional removal so we only clear OUR reservation,
+                    // never a subsequent re-reservation of the same bubbleId by another thread.
+                    inFlightMigrations.remove(bubbleId, state);
+                }
+            }, migrationExecutor); // dedicated pool — never block ForkJoinPool.commonPool (0frcy.116)
+        } catch (java.util.concurrent.RejectedExecutionException ree) {
+            // Migrator drained/shut down (Luciferase-n6jrh.2): reject as a clean failed result
+            // rather than throwing at the caller mid-shutdown.
+            inFlightMigrations.remove(bubbleId, state);
+            return CompletableFuture.completedFuture(
+                new MigrationResult(bubbleId, targetServerId, false, "Migrator is shut down", 0));
+        }
+        return submitted
           .orTimeout(migrationTimeout.toMillis(), TimeUnit.MILLISECONDS)
           .exceptionally(ex -> {
               // The supplyAsync body's finally already removed our entry on normal completion; this
