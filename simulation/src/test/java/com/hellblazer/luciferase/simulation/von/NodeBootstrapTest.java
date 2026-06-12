@@ -98,6 +98,106 @@ class NodeBootstrapTest {
     }
 
     @Test
+    void requireAssemblyManagerRejectsCreateBubbleBeforeAssemble() {
+        // RDR-017 HIGH-2 (Luciferase-n6jrh.1): a composed-node Manager constructed via
+        // NodeBootstrap.armedManager must reject createBubble until NodeBootstrap.assemble has
+        // set the bubble dependencies — otherwise a bubble created in the window between Manager
+        // construction and assemble() silently lands at Layer 0, bypassing persistence ordering.
+        var registry = LocalServerTransport.Registry.create();
+        var manager = NodeBootstrap.armedManager(registry, SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL, 16L,
+                                                 SpatialLevelHeuristic.DEFAULT_AOI_RADIUS,
+                                                 com.hellblazer.luciferase.common.time.Clock.system());
+        try {
+            var ex = assertThrows(IllegalStateException.class, manager::createBubble,
+                                  "createBubble before assemble must fail loud on a requireAssembly manager");
+            assertTrue(ex.getMessage().contains("assemble"),
+                       "guard message must point at NodeBootstrap.assemble, got: " + ex.getMessage());
+            assertEquals(0, manager.size(), "no bubble may leak from a rejected create");
+            assertEquals(0, registry.size(),
+                         "the guard must fire before transport registration — no transport may leak");
+
+            var ex2 = assertThrows(IllegalStateException.class, () -> manager.createBubble(UUID.randomUUID()),
+                                   "createBubble(UUID) must be guarded identically");
+            assertTrue(ex2.getMessage().contains("assemble"));
+            assertEquals(0, manager.size());
+            assertEquals(0, registry.size());
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void requireAssemblyManagerCreatesBubblesAfterAssemble(@TempDir Path walDir) throws IOException {
+        // The guard must open exactly when assemble() completes: same flow as the unguarded
+        // assemble test, but on an armed manager — and assembly itself must be fully wired
+        // (deps configured, infrastructure RUNNING), not merely gate-opening.
+        var registry = LocalServerTransport.Registry.create();
+        var manager = NodeBootstrap.armedManager(registry, SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL, 16L,
+                                                 SpatialLevelHeuristic.DEFAULT_AOI_RADIUS,
+                                                 com.hellblazer.luciferase.common.time.Clock.system());
+        var scm = new SocketConnectionManager(ProcessAddress.localhost("n6jrh1-guard", 0), msg -> {});
+        var pm = new PersistenceManager(UUID.randomUUID(), walDir);
+        try {
+            NodeBootstrap.assemble(manager, new SocketConnectionManagerAdapter(scm),
+                                   new PersistenceManagerAdapter(pm));
+
+            assertEquals(java.util.List.of("PersistenceManager"), manager.getBubbleDependencies(),
+                         "assemble must configure bubbles to depend on PersistenceManager");
+            assertEquals(LifecycleState.RUNNING, manager.coordinator().getState("SocketConnectionManager"));
+            assertEquals(LifecycleState.RUNNING, manager.coordinator().getState("PersistenceManager"));
+
+            var bubble = manager.createBubble();
+            assertEquals(LifecycleState.RUNNING, manager.coordinator().getState("EnhancedBubble-" + bubble.id()),
+                         "after assemble, a requireAssembly manager must create bubbles normally (Layer 1)");
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void armedManagerGateIsMonotonic(@TempDir Path walDir) throws IOException {
+        // Once assemble() opens the gate, clearing the dependencies on an armed manager must be
+        // rejected — otherwise a post-assembly setBubbleDependencies(List.of()) would silently
+        // re-route new bubbles to Layer 0 (review finding on Luciferase-n6jrh.1).
+        var registry = LocalServerTransport.Registry.create();
+        var manager = NodeBootstrap.armedManager(registry, SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL, 16L,
+                                                 SpatialLevelHeuristic.DEFAULT_AOI_RADIUS,
+                                                 com.hellblazer.luciferase.common.time.Clock.system());
+        var scm = new SocketConnectionManager(ProcessAddress.localhost("n6jrh1-mono", 0), msg -> {});
+        var pm = new PersistenceManager(UUID.randomUUID(), walDir);
+        try {
+            NodeBootstrap.assemble(manager, new SocketConnectionManagerAdapter(scm),
+                                   new PersistenceManagerAdapter(pm));
+
+            assertThrows(IllegalStateException.class,
+                         () -> manager.setBubbleDependencies(java.util.List.of()),
+                         "armed manager must reject clearing dependencies after assembly");
+            // The gate must still be open
+            var bubble = manager.createBubble();
+            assertEquals(LifecycleState.RUNNING, manager.coordinator().getState("EnhancedBubble-" + bubble.id()));
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void createBubbleWithExplicitIdIsTrackedByManager() {
+        // Pre-existing omission caught in the n6jrh.1 review: createBubble(UUID) never put the
+        // bubble into the manager's map, making it invisible to size()/getBubble()/close().
+        var registry = LocalServerTransport.Registry.create();
+        var manager = new Manager(registry, SpatialLevelHeuristic.DEFAULT_SPATIAL_LEVEL, 16L,
+                                  SpatialLevelHeuristic.DEFAULT_AOI_RADIUS);
+        try {
+            var id = UUID.randomUUID();
+            var bubble = manager.createBubble(id);
+            assertEquals(1, manager.size(), "explicit-id bubble must be tracked by the manager");
+            assertEquals(bubble, manager.getBubble(id), "getBubble(id) must resolve the explicit-id bubble");
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
     void createBubbleHasNoPersistenceDependencyByDefault() {
         // No regression: a Manager not wired for persistence creates bubbles with no
         // lifecycle dependencies (registers at Layer 0, exactly as before RDR-017).
