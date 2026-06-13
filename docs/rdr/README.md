@@ -33,7 +33,7 @@ See the [RDR process documentation](https://github.com/cwensel/rdr) for the full
 | [RDR-020](RDR-020-bubble-to-fireflies-member-digest-resolution.md) | Bubble→Fireflies Member Digest Resolution for Migration Consensus | implemented | Bug Fix | high |
 | [RDR-021](RDR-021-wire-partition-fault-tolerance-node-bootstrap.md) | Wire Partition Fault Tolerance into the Production Node Bootstrap | implemented | Architecture | medium |
 | [RDR-022](RDR-022-wire-bubble-ownership-resolver-node-bootstrap.md) | Wire Bubble Ownership Resolution into the Production Node Bootstrap | implemented | Architecture | medium |
-| [RDR-023](RDR-023-grpc-mtls-handshake-shaded-netty.md) | Real gRPC mTLS Handshake over Shaded-Only Netty — Verify and Fix the Unproven TLS Transport | accepted | Bug Fix | P2 |
+| [RDR-023](RDR-023-grpc-mtls-handshake-shaded-netty.md) | Real gRPC mTLS Handshake over Shaded-Only Netty — Verify and Fix the Unproven TLS Transport | implemented | Bug Fix | P2 |
 
 ## Post-Mortems
 
@@ -57,3 +57,4 @@ Closed/implemented RDRs carry a post-mortem under [`post-mortem/`](post-mortem/)
 | RDR-020 | [post-mortem/020-bubble-to-fireflies-member-digest-resolution.md](post-mortem/020-bubble-to-fireflies-member-digest-resolution.md) |
 | RDR-021 | [post-mortem/021-wire-partition-fault-tolerance-node-bootstrap.md](post-mortem/021-wire-partition-fault-tolerance-node-bootstrap.md) |
 | RDR-022 | [post-mortem/022-wire-bubble-ownership-resolver-node-bootstrap.md](post-mortem/022-wire-bubble-ownership-resolver-node-bootstrap.md) |
+| RDR-023 | [post-mortem/023-grpc-mtls-handshake-shaded-netty.md](post-mortem/023-grpc-mtls-handshake-shaded-netty.md) |
