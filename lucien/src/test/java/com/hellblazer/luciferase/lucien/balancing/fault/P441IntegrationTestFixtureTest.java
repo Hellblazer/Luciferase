@@ -57,17 +57,20 @@ class P441IntegrationTestFixtureTest {
     }
 
     @Test
-    void testPartitionFailureInjection() throws InterruptedException {
+    void testPartitionFailureInjection() throws Exception {
         // Given: Forest with 3 partitions and configured handler
         var forest = fixture.setupForestWithPartitions(3);
         fixture.configureFaultHandler();
         var partitionId = forest.getPartitionIds().iterator().next();
 
         // When: Inject partition failure with 100ms delay
-        fixture.injectPartitionFailure(partitionId, 100);
+        var injection = fixture.injectPartitionFailure(partitionId, 100);
 
-        // Then: Partition should fail after delay
-        Thread.sleep(150); // Wait for failure
+        // Then: once the (background) injection actually completes, the partition is unhealthy.
+        // Await the injection Future rather than sleeping a fixed margin over the delay — the
+        // injection runs on a background thread, so a fixed Thread.sleep(150) raced it under CI
+        // load and intermittently asserted before the partition was marked failed (Luciferase-8brw9).
+        injection.get(5, TimeUnit.SECONDS);
         assertFalse(
             forest.isPartitionHealthy(partitionId),
             "Partition should be marked unhealthy"
