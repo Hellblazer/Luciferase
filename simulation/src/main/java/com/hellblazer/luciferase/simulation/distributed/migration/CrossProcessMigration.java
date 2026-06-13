@@ -769,6 +769,8 @@ public class CrossProcessMigration implements AutoCloseable {
                     log.warn("PREPARE phase timed out for entity {} ({}ms > {}ms)",
                             entityId, prepareElapsed, config.phaseTimeoutMs());
                     recordFailure.accept("PREPARE_TIMEOUT");
+                    // No WAL ABORT tombstone is written on timeout — see the no-tombstone note on abort()
+                    // (Luciferase-9kjpt). The dangling PREPARE is left for recovery to roll back.
                     failAndUnlock("TIMEOUT");
                     return;
                 }
@@ -869,6 +871,22 @@ public class CrossProcessMigration implements AutoCloseable {
          * EntitySnapshot.content holds on the wire (RDR-004 hygiene). Rollback therefore restores
          * the entity's String content (and identity/position/epoch), not any richer in-memory
          * content type that may have existed before serialization.
+         * <p>
+         * <b>No-tombstone-on-failure (Luciferase-9kjpt) — deliberate, deferred.</b> Only a SUCCESSFUL
+         * rollback writes a WAL ABORT record ({@code walRecordAbort} below). The ABORT_TIMEOUT branch
+         * and the catch (ROLLBACK_FAILED), like PREPARE_TIMEOUT in {@code prepare()}, complete the
+         * migration WITHOUT a WAL resolution record — so {@code MigrationLogPersistence.loadIncomplete()}
+         * returns the dangling PREPARE for a timed-out / failed-rollback / orphaned transaction. No production
+         * code consumes {@code loadIncomplete()} yet, so that dangling PREPARE is currently inert (nothing
+         * acts on it); leaving it is the correct shape for a FUTURE recovery consumer (uncertainty should
+         * bias toward re-attempting rollback once such a consumer exists).
+         * A distinct TIMEOUT/ORPHANED tombstone (so recovery could route those differently and operators
+         * could audit them separately) is intentionally NOT written yet: there is currently no production
+         * consumer of {@code loadIncomplete()} that re-attempts rollback, and the cross-process add path is
+         * still stubbed ({@code added = true}). Designing the tombstone format before its recovery consumer
+         * exists would be speculative; it is deferred to migration productionization (tracked by 9kjpt).
+         * The current no-tombstone behavior is pinned by
+         * {@code CrossProcessMigration2PCInstrumentationTest.timedOutMigrationLeavesPrepareIncompleteForRecovery}.
          */
         private void abort() {
             try {
@@ -890,7 +908,7 @@ public class CrossProcessMigration implements AutoCloseable {
                               snapshot.epoch(), snapshot.position(), abortReason);
                     recordRollbackFailure.run();
                     recordOrphanedEntity.accept(entityId); // Phase 2C: Track orphaned entity
-                    recordAbort.accept("TIMEOUT");
+                    recordAbort.accept("TIMEOUT");  // metrics only — NOT a WAL tombstone (see abort() note, 9kjpt)
                     failAndUnlock("ABORT_TIMEOUT");
                     return;
                 }
@@ -939,7 +957,7 @@ public class CrossProcessMigration implements AutoCloseable {
                           snapshot.epoch(), snapshot.position(), abortReason, e.getMessage(), e);
                 recordRollbackFailure.run();
                 recordOrphanedEntity.accept(entityId); // Phase 2C: Track orphaned entity
-                recordAbort.accept("ROLLBACK_FAILED");
+                recordAbort.accept("ROLLBACK_FAILED");  // metrics only — NOT a WAL tombstone (see abort() note, 9kjpt)
                 failAndUnlock("ROLLBACK_FAILED");
             }
         }
