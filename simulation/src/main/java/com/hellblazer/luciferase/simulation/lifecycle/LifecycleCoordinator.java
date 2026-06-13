@@ -8,6 +8,7 @@
  */
 package com.hellblazer.luciferase.simulation.lifecycle;
 
+import com.hellblazer.luciferase.common.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -121,6 +122,7 @@ public class LifecycleCoordinator {
     private final AtomicBoolean isStarted;
     private final ViewStabilityGate viewStabilityGate;  // Optional Fireflies integration
     private final long componentTimeoutMs;
+    private final Clock clock;  // Luciferase-43bat: injectable for deterministic shutdown-budget tests
 
     /**
      * Create a new lifecycle coordinator without Fireflies integration.
@@ -160,18 +162,38 @@ public class LifecycleCoordinator {
     /**
      * Create a new lifecycle coordinator with custom component timeout and Fireflies integration.
      * <p>
-     * Master constructor - all other constructors delegate to this one.
+     * Delegates to the master constructor with a {@link Clock#system()} clock.
      *
      * @param componentTimeoutMs timeout in milliseconds per component
      * @param viewStabilityGate optional gate for view stability checking (null for no Fireflies integration)
      */
     public LifecycleCoordinator(long componentTimeoutMs, ViewStabilityGate viewStabilityGate) {
+        this(componentTimeoutMs, viewStabilityGate, Clock.system());
+    }
+
+    /**
+     * Create a new lifecycle coordinator with custom component timeout, Fireflies integration, and an injectable
+     * clock.
+     * <p>
+     * Master constructor - all other constructors delegate to this one. The clock governs ONLY the shutdown-budget
+     * deadline <em>arithmetic</em> in {@link #stop(long)} (Luciferase-43bat) — i.e. how large each layer's budget
+     * is computed to be from elapsed time. It does NOT drive the layer barrier's {@code orTimeout} enforcement,
+     * which always uses the JVM scheduler (real wall-clock). Consequently a frozen test clock yields a constant
+     * per-layer budget (rolling slack does not advance) while real components still stop in real time; tests that
+     * need rolling-slack behavior must use {@link Clock#system()}. A null clock falls back to {@link Clock#system()}.
+     *
+     * @param componentTimeoutMs timeout in milliseconds per component
+     * @param viewStabilityGate optional gate for view stability checking (null for no Fireflies integration)
+     * @param clock clock used for shutdown-budget elapsed-time measurement (null → {@link Clock#system()})
+     */
+    public LifecycleCoordinator(long componentTimeoutMs, ViewStabilityGate viewStabilityGate, Clock clock) {
         this.components = new ConcurrentHashMap<>();
         this.states = new ConcurrentHashMap<>();
         this.componentLocks = new ConcurrentHashMap<>();  // Luciferase-ucks: Initialize per-component locks
         this.isStarted = new AtomicBoolean(false);
         this.componentTimeoutMs = componentTimeoutMs;
         this.viewStabilityGate = viewStabilityGate;
+        this.clock = clock != null ? clock : Clock.system();
 
         if (viewStabilityGate != null) {
             log.debug("LifecycleCoordinator created with Fireflies view stability integration");
@@ -616,52 +638,87 @@ public class LifecycleCoordinator {
             // Compute dependency layers
             var layers = computeLayers();
 
-            // Calculate per-component timeout
-            var totalComponents = layers.stream().mapToLong(List::size).sum();
-            var perComponentTimeout = totalComponents > 0 ? timeoutMs / totalComponents : timeoutMs;
+            // Luciferase-43bat: budget per LAYER, not per component. Layers are bounded by dependency depth
+            // (~3-4), NOT by component count, so a per-layer budget is k-independent — at scale all bubbles
+            // collapse into one layer and each gets the whole layer's wall-clock budget rather than
+            // timeoutMs/totalComponents (which collapsed to tens of ms at k=100). A rolling deadline hands the
+            // unused slack from fast layers down to slower lower layers.
+            long deadlineNanos = clock.nanoTime() + timeoutMs * 1_000_000L;
+            int layersRemaining = layers.size();
 
             // Stop each layer sequentially in reverse order (N→0)
             for (int i = layers.size() - 1; i >= 0; i--) {
                 var layer = layers.get(i);
-                log.debug("Stopping layer {} with {} components: {}", i, layer.size(), layer);
+                long remainingMs = Math.max(0L, (deadlineNanos - clock.nanoTime()) / 1_000_000L);
+                long layerBudgetMs = computeLayerBudgetMs(remainingMs, layersRemaining);
+                layersRemaining--;
+                log.debug("Stopping layer {} with {} components (budget {}ms): {}", i, layer.size(), layerBudgetMs,
+                          layer);
 
-                // Stop all components in this layer in parallel
-                var futures = layer.stream()
-                                   .filter(name -> {
-                                       var state = states.get(name);
-                                       return state == LifecycleState.RUNNING;
-                                   })
-                                   .map(name -> {
-                                       var component = components.get(name);
-                                       try {
-                                           return component.stop()
-                                                           .orTimeout(perComponentTimeout, TimeUnit.MILLISECONDS)
-                                                           .whenComplete((v, ex) -> {
-                                                               if (ex != null) {
-                                                                   log.warn("Component {} stop timeout or error", name,
-                                                                            ex);
-                                                                   // Don't set FAILED on timeout - allow graceful continuation
-                                                               } else {
-                                                                   states.put(name, component.getState());
-                                                               }
-                                                           })
-                                                           .exceptionally(ex -> {
-                                                               // Graceful degradation on timeout
-                                                               return null;
-                                                           });
-                                       } catch (Exception e) {
-                                           log.error("Exception stopping component {}", name, e);
-                                           return CompletableFuture.completedFuture(null);
-                                       }
-                                   })
-                                   .toList();
+                // Stop all running components in this layer in parallel. No per-component orTimeout: the layer
+                // barrier below carries the single budget so a slow component is surfaced, not starved of an
+                // absurdly small slice. Name↔future correlation lets the barrier name any straggler.
+                var inFlight = new LinkedHashMap<String, CompletableFuture<Void>>();
+                for (var name : layer) {
+                    if (states.get(name) != LifecycleState.RUNNING) {
+                        continue;
+                    }
+                    var component = components.get(name);
+                    try {
+                        inFlight.put(name, component.stop()
+                                                    .whenComplete((v, ex) -> {
+                                                        if (ex != null) {
+                                                            log.warn("Component {} stop error", name, ex);
+                                                            // Don't set FAILED - allow graceful continuation
+                                                        } else {
+                                                            states.put(name, component.getState());
+                                                        }
+                                                    })
+                                                    .exceptionally(ex -> null)); // graceful degradation
+                    } catch (Exception e) {
+                        log.error("Exception stopping component {}", name, e);
+                        inFlight.put(name, CompletableFuture.completedFuture(null));
+                    }
+                }
 
-                // Wait for all components in this layer (with timeout per component)
-                try {
-                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-                } catch (Exception e) {
-                    log.warn("Layer {} stop encountered errors (continuing with remaining layers)", i, e);
-                    // Continue with next layer even if this layer had issues
+                if (inFlight.isEmpty()) {
+                    continue;
+                }
+
+                // Honest barrier: wait up to the layer budget for ALL components, then proceed. orTimeout fires
+                // on the aggregate (not per component); a straggler keeps stopping in the background — but the
+                // overrun is now bounded and surfaced rather than silently starved. Interrupting stragglers is
+                // out of scope (Luciferase-ut59r); the WAL-truncation data-loss seam is independently defended by
+                // PersistenceManagerAdapter's clean-shutdown gate (Luciferase-n6jrh.2).
+                var barrier = CompletableFuture.allOf(inFlight.values().toArray(new CompletableFuture[0]));
+                boolean timedOut;
+                if (layerBudgetMs <= 0) {
+                    // No budget remaining: do not schedule a timeout, just record whatever has not completed.
+                    timedOut = !barrier.isDone();
+                } else {
+                    timedOut = false;
+                    try {
+                        barrier.orTimeout(layerBudgetMs, TimeUnit.MILLISECONDS).join();
+                    } catch (Exception e) {
+                        var cause = (e instanceof java.util.concurrent.CompletionException) ? e.getCause() : e;
+                        if (cause instanceof java.util.concurrent.TimeoutException) {
+                            timedOut = true;
+                        } else {
+                            // Defensive: every component future is wrapped .exceptionally(ex -> null), so the only
+                            // EXPECTED exceptional completion of the barrier is orTimeout's TimeoutException above.
+                            // Anything else (e.g. an external cancellation) is unexpected — log rather than swallow.
+                            log.warn("Layer {} stop encountered an unexpected error (continuing with remaining "
+                                     + "layers)", i, e);
+                        }
+                    }
+                }
+                if (timedOut) {
+                    var stragglers = inFlight.entrySet().stream()
+                                             .filter(en -> !en.getValue().isDone())
+                                             .map(Map.Entry::getKey)
+                                             .toList();
+                    log.error("Layer {} shutdown budget of {}ms exhausted — {} component(s) still stopping in the "
+                              + "background: {}", i, layerBudgetMs, stragglers.size(), stragglers);
                 }
             }
 
@@ -703,6 +760,27 @@ public class LifecycleCoordinator {
         } finally {
             inCoordinatorCall.set(false);
         }
+    }
+
+    /**
+     * Compute the wall-clock budget for a single shutdown layer (Luciferase-43bat).
+     * <p>
+     * Divides the remaining shutdown time by the number of layers still to process — NOT by component count.
+     * Components within a layer stop in parallel and share the layer budget, so the result is independent of how
+     * many components (e.g. bubbles) the layer holds: at scale, where all bubbles collapse into a single layer,
+     * each gets the whole layer budget instead of {@code timeoutMs / totalComponents}. Because it is recomputed
+     * from the live remaining time each layer, unused slack from fast layers rolls down to slower lower layers.
+     * Clamps to zero for exhausted/negative remaining time or when no layers remain.
+     *
+     * @param remainingMs     remaining shutdown time in milliseconds
+     * @param layersRemaining number of layers still to stop, including the current one
+     * @return per-layer budget in milliseconds, always ≥ 0
+     */
+    static long computeLayerBudgetMs(long remainingMs, int layersRemaining) {
+        if (layersRemaining <= 0 || remainingMs <= 0) {
+            return 0L;
+        }
+        return remainingMs / layersRemaining;
     }
 
     /**

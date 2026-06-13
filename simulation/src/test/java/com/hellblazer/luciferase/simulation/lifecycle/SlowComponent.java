@@ -21,19 +21,34 @@ public class SlowComponent implements LifecycleComponent {
     private final String componentName;
     private final long startDelayMs;
     private final long stopDelayMs;
+    private final List<String> componentDependencies;
     private final AtomicReference<LifecycleState> state;
 
     /**
-     * Create a slow component with configurable delays.
+     * Create a slow component with configurable delays and no dependencies.
      *
      * @param name component name
      * @param startDelayMs milliseconds to delay start() completion
      * @param stopDelayMs milliseconds to delay stop() completion
      */
     public SlowComponent(String name, long startDelayMs, long stopDelayMs) {
+        this(name, startDelayMs, stopDelayMs, List.of());
+    }
+
+    /**
+     * Create a slow component with configurable delays and dependencies (to place it in a higher
+     * shutdown layer for budget/straggler tests).
+     *
+     * @param name component name
+     * @param startDelayMs milliseconds to delay start() completion
+     * @param stopDelayMs milliseconds to delay stop() completion
+     * @param dependencies dependency component names
+     */
+    public SlowComponent(String name, long startDelayMs, long stopDelayMs, List<String> dependencies) {
         this.componentName = name;
         this.startDelayMs = startDelayMs;
         this.stopDelayMs = stopDelayMs;
+        this.componentDependencies = List.copyOf(dependencies);
         this.state = new AtomicReference<>(LifecycleState.CREATED);
     }
 
@@ -89,6 +104,6 @@ public class SlowComponent implements LifecycleComponent {
 
     @Override
     public List<String> dependencies() {
-        return List.of();
+        return componentDependencies;
     }
 }
