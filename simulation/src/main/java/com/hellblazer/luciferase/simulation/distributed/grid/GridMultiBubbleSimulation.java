@@ -75,14 +75,32 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
     // observation (Luciferase-jar).
     private final Object snapshotLock = new Object();
 
+    /**
+     * Number of <em>consecutive</em> failing ticks after which the simulation circuit-breaks: it logs a
+     * fatal, cancels the scheduled tick task, and transitions to a terminal {@code failed} state instead of
+     * silently hot-looping a deterministically-broken tick every {@link #DEFAULT_TICK_INTERVAL_MS} ms
+     * forever (Luciferase-a57pj). A transient failure self-heals — a single successful tick resets the
+     * consecutive counter, so only a sustained streak trips the breaker.
+     */
+    static final int MAX_CONSECUTIVE_TICK_FAILURES = 10;
+
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong tickCount = new AtomicLong(0);
     private final AtomicLong currentBucket = new AtomicLong(0);
+    // Tick-failure observability + circuit-break state (Luciferase-a57pj). tickFailureCount is a lifetime
+    // counter (cumulative across restarts); consecutiveTickFailures resets to 0 on any successful tick and
+    // drives the circuit-breaker; failed is the terminal state set when the breaker trips.
+    private final AtomicLong tickFailureCount = new AtomicLong(0);
+    private final AtomicLong consecutiveTickFailures = new AtomicLong(0);
+    private volatile boolean failed = false;
     private final SimulationMetrics metrics = new SimulationMetrics();
     private volatile Clock clock = Clock.system();
 
-    private ScheduledFuture<?> tickTask;
+    // volatile: written by the caller thread in start()/stop(), read by the scheduler thread in tick()'s
+    // circuit-break path. Without it the first tick (initialDelay=0) could read a stale null and skip the
+    // cancel, leaving the task hot-looping despite the breaker tripping (Luciferase-a57pj review).
+    private volatile ScheduledFuture<?> tickTask;
 
     /**
      * Create a multi-bubble simulation with default behavior.
@@ -154,6 +172,9 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
      */
     public void start() {
         if (running.compareAndSet(false, true)) {
+            // Clear circuit-break state so a restart begins healthy (lifetime tickFailureCount is retained).
+            failed = false;
+            consecutiveTickFailures.set(0);
             initializeVelocities();
 
             tickTask = scheduler.scheduleAtFixedRate(
@@ -207,10 +228,49 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
     }
 
     /**
-     * Get tick count.
+     * Get the number of <em>successful</em> ticks completed.
+     * <p>
+     * This counts ticks that ran to completion, NOT scheduler invocations: a tick that throws is counted by
+     * {@link #getTickFailureCount()} instead, so under failures this value diverges (downward) from the
+     * number of times the scheduler fired (Luciferase-a57pj).
      */
     public long getTickCount() {
         return tickCount.get();
+    }
+
+    /**
+     * Get the lifetime count of failing ticks (cumulative across restarts). A failing tick is one whose
+     * body threw; the exception is swallowed to keep the scheduled task alive, but counted here so the
+     * failure is observable. See {@link #getConsecutiveTickFailures()} and {@link #isFailed()}.
+     */
+    public long getTickFailureCount() {
+        return tickFailureCount.get();
+    }
+
+    /**
+     * Get the current run of consecutive failing ticks. Reset to 0 by any successful tick (so transient
+     * failures self-heal); reaching {@link #MAX_CONSECUTIVE_TICK_FAILURES} trips the circuit-breaker
+     * ({@link #isFailed()}).
+     */
+    public long getConsecutiveTickFailures() {
+        return consecutiveTickFailures.get();
+    }
+
+    /**
+     * Whether the simulation has circuit-broken: {@link #MAX_CONSECUTIVE_TICK_FAILURES} consecutive ticks
+     * failed, so the scheduled task was cancelled and the simulation halted in a terminal FAILED state.
+     * A subsequent {@link #start()} clears this.
+     */
+    public boolean isFailed() {
+        return failed;
+    }
+
+    /**
+     * Whether the simulation is running and has not circuit-broken. A supervisor wanting a finer signal can
+     * additionally inspect {@link #getConsecutiveTickFailures()} (running with a non-zero streak = degraded).
+     */
+    public boolean isHealthy() {
+        return running.get() && !failed;
     }
 
     /**
@@ -418,6 +478,8 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
 
             tickCount.incrementAndGet();
             currentBucket.incrementAndGet();
+            // Successful tick — clear any in-progress failure streak so transient failures self-heal.
+            consecutiveTickFailures.set(0);
 
             // Log periodically
             long currentTick = tickCount.get();
@@ -428,7 +490,28 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
             }
 
         } catch (Exception e) {
-            log.error("Error in simulation tick: {}", e.getMessage(), e);
+            // RDR / Luciferase-a57pj: scheduleAtFixedRate keeps the task alive only because we swallow here;
+            // without a failure surface a deterministically-broken tick would hot-loop every 16ms forever and
+            // tickCount (a success counter) would silently diverge from scheduler invocations. Count the
+            // failure, and circuit-break after a sustained streak so the breakage is loud and bounded.
+            long total = tickFailureCount.incrementAndGet();
+            long consecutive = consecutiveTickFailures.incrementAndGet();
+            log.error("Error in simulation tick (lifetime failures={}, consecutive={}/{}): {}",
+                      total, consecutive, MAX_CONSECUTIVE_TICK_FAILURES, e.getMessage(), e);
+
+            if (consecutive >= MAX_CONSECUTIVE_TICK_FAILURES) {
+                // Order matters for observers polling both flags: clear running first, then set failed, so a
+                // reader never sees the inconsistent (running && failed) pair — only ever (running && !failed),
+                // (!running && !failed) transiently, or the terminal (!running && failed).
+                running.set(false);
+                failed = true;
+                var task = tickTask;
+                if (task != null) {
+                    task.cancel(false);  // safe from the scheduler thread; false = don't self-interrupt
+                }
+                log.error("GridMultiBubbleSimulation circuit-break: {} consecutive tick failures — halting "
+                          + "(terminal FAILED state). Last error: {}", consecutive, e.getMessage());
+            }
         }
     }
 
