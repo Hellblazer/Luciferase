@@ -198,6 +198,20 @@ public class GhostStateListener implements MigrationStateListener {
      * - View change converted MIGRATING_IN to GHOST but ghost was already removed
      * - Entity state changed outside normal transition flow
      * - Anomalous states where ghost exists but entity is OWNED
+     * <p>
+     * <b>Prune-only (by design).</b> This method only <i>removes</i> ghosts whose entity is not in GHOST
+     * state; it never <i>adds</i> a ghost. It therefore does not, and must not, re-establish source-side
+     * ghost adjacency for an entity the FSM no longer tracks ({@code getState==null}). That null case arises
+     * after RDR-019 Phase 2 WAL compaction prunes a committed DEPARTURE+COMMIT pair on restart (gate-S1
+     * ACCEPTED GAP, decision B — Luciferase-gg28h): the entity is owned at the target, so source FSM
+     * {@code null} is correct (no ownership violation) and only ghost adjacency tracking is lost.
+     * <p>
+     * <b>Future re-derivation hook (gg28h).</b> If a workload ever surfaces lost source-side ghosts after
+     * compaction+restart, the fix belongs here (or a dedicated recovery hook): re-derive ghost adjacency
+     * from the neighbor/adjacency layer — NOT by adding a {@code null→GHOST} FSM transition (which would
+     * violate the single-owner invariant). The accepted-gap behavior is pinned by
+     * {@code WalCompactionSourceGhostGapTest}; that test documents the contract any re-derivation must keep
+     * (no stale source ownership).
      */
     public void reconcileGhostState() {
         var activeGhosts = ghostStateManager.getActiveGhosts();
