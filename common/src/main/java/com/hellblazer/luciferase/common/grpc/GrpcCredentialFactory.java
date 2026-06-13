@@ -26,7 +26,9 @@ import io.grpc.TlsServerCredentials;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.X509TrustManager;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.X509ExtendedTrustManager;
+import java.net.Socket;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
@@ -152,14 +154,39 @@ public final class GrpcCredentialFactory {
      * Trusts any presented certificate at the TLS layer ON PURPOSE: there is no shared CA, so the
      * cryptographic peer-identity decision is made by {@link PeerAuthInterceptor} + {@link PeerVerifier},
      * not by CA pinning. See RDR-005.
+     * <p>
+     * This is an {@link X509ExtendedTrustManager} (not a plain {@code X509TrustManager}) specifically so
+     * that the {@code SSLEngine}/{@code Socket} overloads — which JSSE uses for endpoint identification —
+     * are no-ops. A plain {@code X509TrustManager} is wrapped by JSSE in a manager that ADDS hostname
+     * verification on those paths, which rejected legitimate peers whose cert CN ≠ the dialed address
+     * (RDR-023: {@code CertificateException: No name matching localhost found}). Disabling hostname
+     * verification is correct here: a Delos/KERI member cert encodes cryptographic identity, not network
+     * topology, so the dialed host is not a trust principal — peer identity is enforced by the KERL-backed
+     * {@link PeerVerifier}, not the cert CN. (RDR-023, accepted 2026-06-13.)
      */
-    private static final X509TrustManager ACCEPT_ANY_CERT = new X509TrustManager() {
+    private static final X509ExtendedTrustManager ACCEPT_ANY_CERT = new X509ExtendedTrustManager() {
         @Override
         public void checkClientTrusted(X509Certificate[] chain, String authType) {
         }
 
         @Override
         public void checkServerTrusted(X509Certificate[] chain, String authType) {
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) {
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) {
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {
         }
 
         @Override
