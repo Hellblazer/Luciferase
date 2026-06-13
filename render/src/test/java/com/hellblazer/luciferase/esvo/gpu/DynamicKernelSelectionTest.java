@@ -23,7 +23,7 @@ import com.hellblazer.luciferase.esvo.dag.DAGOctreeData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -40,8 +40,16 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author hal.hildebrand
  */
 @DisplayName("Phase 4.2.2b: Dynamic Kernel Selection")
-@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
-        disabledReason = "Requires GPU hardware not available in CI")
+// GPU device-probing test: every case constructs a DAGOpenCLRenderer and calls initialize() (OpenCL
+// kernel compilation + device selection). On macOS/GraalVM the device probe can crash the surefire fork
+// (exit 133, "terminated without properly saying goodbye"), aborting the whole render module run when not
+// excluded (Luciferase-vkl96). Guard it as opt-in like the other device-touching GPU tests
+// (DAGOpenCLRendererVendorTest, ESVOOpenCLRendererFarPointerTest): it runs only when RUN_GPU_TESTS=true,
+// so normal local + CI runs skip it (RUN_GPU_TESTS unset) instead of crashing. This subsumes the prior
+// CI-only disable — RUN_GPU_TESTS is unset in CI too.
+@EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true",
+        disabledReason = "GPU device probing crashes the surefire fork on macOS/GraalVM (Luciferase-vkl96); "
+                + "opt-in via RUN_GPU_TESTS=true on a machine with working OpenCL")
 class DynamicKernelSelectionTest {
 
     private DAGOpenCLRenderer renderer;
