@@ -12,9 +12,10 @@ beads: [Luciferase-7m9kh, Luciferase-l9dny]
 
 ## Status
 
-Draft (2026-06-13). Research in progress under `Luciferase-7m9kh`. One Critical Assumption (the actual
-handshake-failure cause) is **unverified** — it requires capturing the live `SslHandshakeException` (see
-§Critical Assumptions). Do not accept until that is resolved.
+Draft (2026-06-13). **Research complete** under `Luciferase-7m9kh` — Critical Assumption 1 is **VERIFIED**
+(see §Research Findings): the failure is client-side TLS hostname verification, NOT a shaded-netty problem.
+The fix is **Strategy C** (no dependency change). Ready for gate once the §Decision/§Approach below are
+finalized to the confirmed fix.
 
 ## Context
 
@@ -61,44 +62,74 @@ the gRPC layer.
 
 ## Critical Assumptions
 
-- [ ] **The handshake-failure root cause** — **Status: UNVERIFIED.** **Method to verify:** stand up a
-  minimal real grpc service over shaded netty with `GrpcCredentialFactory.serverAuth(...)` +
-  `mtlsChannel(...)`, attempt one RPC, and capture the actual exception with
-  `-Djavax.net.debug=ssl:handshake` and netty/grpc DEBUG logging. Distinguish: ALPN failure (no `h2`
-  negotiated), cipher/EC-curve mismatch, shaded-vs-non-shaded credential translation gap, or
-  `-XstartOnFirstThread`/event-loop issue. The fix strategy depends entirely on this.
-- [ ] **The fix is local to credential construction, not a netty-flavor change** — **Status: UNVERIFIED.**
-  If the cause is the non-shaded `Grpc.*` factory mishandling shaded credentials, building a shaded
-  `GrpcSslContexts` `SslContext` directly on the shaded `NettyServerBuilder.sslContext(...)` /
-  `NettyChannelBuilder.sslContext(...)` may fix it without adding non-shaded `grpc-netty` + tcnative
-  (which risks shaded/non-shaded coexistence problems).
+- [x] **The handshake-failure root cause** — **Status: VERIFIED** (2026-06-13, §Research Findings). The
+  failure is **client-side TLS hostname verification**: cert CN `luciferase-test` ≠ the dialed authority
+  `localhost`, yielding `CertificateException: No name matching localhost found` →
+  `SSLHandshakeException` → `UNAVAILABLE`. It is **NOT** a shaded-netty / provider / ALPN problem — the
+  native OpenSslEngine (bundled tcnative) handshakes fine.
+- [x] **The fix is local to credential construction, not a netty-flavor change** — **Status: VERIFIED.**
+  Both the non-shaded `Grpc.*` factory path (with `overrideAuthority` matching the CN) and the shaded
+  `GrpcSslContexts` path handshake successfully; no dependency change is needed. The minimal fix is in
+  `GrpcCredentialFactory` (Strategy C below).
+
+## Research Findings
+
+**2026-06-13 (Luciferase-7m9kh, throwaway diagnostic over grpc-netty-shaded 1.77.0, macOS arm64).** Three
+real-handshake probes against a minimal `BubbleMigrationService` with `GrpcCredentialFactory` creds +
+`PeerAuthInterceptor`:
+
+| Probe | Config | Result |
+|-------|--------|--------|
+| REPRO + `overrideAuthority("luciferase-test")` | `Grpc.newServerBuilderForPort` / `newChannelBuilderForAddress` + non-shaded `Tls*Credentials` | **HANDSHAKE OK** |
+| NO_OVERRIDE (the l9dny config) | same, but no `overrideAuthority` (authority defaults to `localhost`) | **FAILED** |
+| STRATEGY_A | shaded `GrpcSslContexts` `SslContext` on `NettyServerBuilder/NettyChannelBuilder` | **HANDSHAKE OK** |
+
+The NO_OVERRIDE failure cause chain:
+```
+StatusRuntimeException: UNAVAILABLE: io exception
+  → SSLHandshakeException: General OpenSslEngine problem
+  → CertificateException: No name matching localhost found
+```
+
+**Conclusions:**
+1. There is **no shaded-netty / provider / ALPN defect.** The native OpenSslEngine (bundled tcnative)
+   negotiates `h2` over TLS fine — the same non-shaded `Grpc.*` factory path the l9dny prototype used
+   handshakes once the authority matches.
+2. The l9dny `UNAVAILABLE` was **client-side TLS hostname (endpoint-identification) verification**: the
+   self-signed cert CN `luciferase-test` ≠ the dialed authority `localhost`.
+3. `ACCEPT_ANY_CERT` (a plain `X509TrustManager`) bypasses **chain** validation but **NOT** hostname
+   verification — grpc/netty applies endpoint identification separately for `X509TrustManager` (only the
+   `X509ExtendedTrustManager` overloads participate in / can suppress it).
 
 ## Decision
 
-**DEFERRED pending research** (Critical Assumption 1). The decision is the **fix strategy**, chosen once the
-handshake cause is known. Candidate strategies (to be evaluated against the captured exception):
+**Strategy C — fix `GrpcCredentialFactory`'s trust manager; no dependency or netty-flavor change.** Make
+`ACCEPT_ANY_CERT` an `X509ExtendedTrustManager` whose `checkServerTrusted(chain, authType, SSLEngine)` /
+`(…, Socket)` overloads are no-ops, so the client's "trust any" genuinely bypasses hostname verification
+too. This is correct for the RDR-005 model: there is no CA and the cert CN is **not** the trust anchor —
+peer identity is proven cryptographically by `PeerAuthInterceptor` + `FirefliesPeerVerifier` against the
+KERL. Hostname verification adds nothing here (a hostile cert with a matching CN still fails the KERI check;
+a legitimate member whose CN ≠ its dialed address would be wrongly rejected). Strategies A (shaded
+`GrpcSslContexts`) and B (non-shaded `grpc-netty` + tcnative) are **rejected** — both work but add
+shaded-coupling or a dependency for a problem that is purely a trust-manager configuration bug.
 
-- **A — Shaded SslContext path:** build the mTLS `SslContext` via the shaded
-  `io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts` and apply it directly to the shaded
-  `NettyServerBuilder.sslContext(...)` / `NettyChannelBuilder.sslContext(...)`, deriving key/trust managers
-  from `GrpcCredentialFactory`'s key+cert (reusing `PeerAuthInterceptor` unchanged). Keeps the single
-  shaded-netty dependency. *Provisional preference* — no new deps, stays on the proven bundled tcnative.
-- **B — Non-shaded grpc-netty + tcnative:** add `grpc-netty` (non-shaded) + `netty-tcnative-boringssl-static`
-  so `Grpc.newServerBuilderForPort` resolves a non-shaded provider matching the non-shaded
-  `TlsServerCredentials`. Heavier; shaded+non-shaded coexistence on one classpath is a known hazard.
-- **C — other**, if the cause is unrelated to netty flavor (e.g. an ALPN/JDK config fix).
-
-Whichever wins must land a **real-handshake test** (authorized round-trip succeeds; a `PeerVerifier`-rejected
-peer gets `UNAUTHENTICATED`) so the mTLS path can never silently regress again.
+> **Security note (must be in the gate review):** disabling hostname verification weakens TLS *in
+> isolation*; it is only safe because the `PeerVerifier` is the real, mandatory authentication gate.
+> The fix MUST keep the trust-any TLS layer paired with the interceptor (the existing `ServerAuth`
+> invariant) and the real-handshake test MUST include a `PeerVerifier`-rejected-peer → `UNAUTHENTICATED`
+> case so the auth gate is proven, not just the encryption.
 
 ## Approach
 
-1. **Diagnose (CA-1):** minimal real-handshake harness + capture the `SslHandshakeException`.
-2. **Decide strategy** (A/B/C) from the diagnosis; record here.
-3. **Implement** the chosen strategy in `GrpcCredentialFactory` (and/or the server/channel builders).
-4. **Real-handshake test** in `common` (the credential-factory home) — authorized round-trip +
-   forged/rejected-peer `UNAUTHENTICATED`. This is the artifact that proves the mTLS transport works.
-5. **Adopt repo-wide:** confirm Ghost/Balance use the now-proven path; unblock `l9dny` (Bubble channel).
+1. ~~Diagnose (CA-1)~~ — **done** (§Research Findings).
+2. **Implement Strategy C:** change `ACCEPT_ANY_CERT` in `GrpcCredentialFactory` to an
+   `X509ExtendedTrustManager` with no-op endpoint-identification overloads (both client and server side).
+3. **Real-handshake test** in `common` — authorized round-trip succeeds AND a `PeerVerifier`-rejected peer
+   gets `UNAUTHENTICATED` (proves encryption + the auth gate). This is the artifact that proves the mTLS
+   transport works and can never silently regress.
+4. **Unblock `l9dny`:** wire the Bubble-channel mTLS (the reverted prototype) now that the transport works;
+   its test no longer needs `overrideAuthority` workarounds.
+5. **Confirm Ghost/Balance** consume the same fixed path (they already use `GrpcCredentialFactory`).
 
 ## Consequences
 
