@@ -1,8 +1,10 @@
 ---
 id: RDR-023
 title: Real gRPC mTLS Handshake over Shaded-Only Netty — Verify and Fix the Unproven TLS Transport
-status: draft
+status: accepted
 date: 2026-06-13
+accepted_date: 2026-06-13
+reviewed-by: self
 supersedes: []
 related: [RDR-005, RDR-013, RDR-007]
 beads: [Luciferase-7m9kh, Luciferase-l9dny]
