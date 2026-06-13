@@ -169,18 +169,22 @@ class LifecycleCoordinatorTest {
 
         coordinator.start();
 
-        // Act
-        var startTime = System.currentTimeMillis();
-        coordinator.stop(100); // 100ms timeout total
-        var duration = System.currentTimeMillis() - startTime;
+        try {
+            // Act
+            var startTime = System.currentTimeMillis();
+            coordinator.stop(100); // 100ms timeout total
+            var duration = System.currentTimeMillis() - startTime;
 
-        // Assert: the coordinator must not block on the 10s slow component.
-        assertTrue(duration < 2000, "Coordinator should not block on the slow component, took: " + duration + "ms");
-        // The fast component's stop completes shortly after; its state is reconciled when its stop future finishes
-        // (the barrier timeout does not cancel it). Await rather than reading immediately — under CI load the async
-        // completion can land just after stop() returns, so a direct read races the state-map write (Luciferase-h8gm8).
-        await().atMost(java.time.Duration.ofSeconds(10))
-               .until(() -> coordinator.getState("Normal") == LifecycleState.STOPPED);
+            // Assert: the coordinator must not block on the 10s slow component.
+            assertTrue(duration < 2000, "Coordinator should not block on the slow component, took: " + duration + "ms");
+            // The fast component's stop completes shortly after; its state is reconciled when its stop future finishes
+            // (the barrier timeout does not cancel it). Await rather than reading immediately — under CI load the async
+            // completion can land just after stop() returns, so a direct read races the state-map write (Luciferase-h8gm8).
+            await().atMost(java.time.Duration.ofSeconds(10))
+                   .until(() -> coordinator.getState("Normal") == LifecycleState.STOPPED);
+        } finally {
+            slowComponent.close(); // free the abandoned 10s stop thread
+        }
     }
 
     /**
@@ -1317,13 +1321,17 @@ class LifecycleCoordinatorTest {
         coordinator.register(upper);
         coordinator.start();
 
-        long t0 = System.currentTimeMillis();
-        coordinator.stop(2000);   // 2 layers -> ~1000ms each; Upper (30s) straggles, must not block Lower
-        long elapsed = System.currentTimeMillis() - t0;
+        try {
+            long t0 = System.currentTimeMillis();
+            coordinator.stop(2000);   // 2 layers -> ~1000ms each; Upper (30s) straggles, must not block Lower
+            long elapsed = System.currentTimeMillis() - t0;
 
-        assertTrue(elapsed < 10_000, "coordinator must not block on the 30s straggler, took " + elapsed + "ms");
-        assertEquals(LifecycleState.STOPPED, coordinator.getState("Lower"),
-                     "the lower layer must still stop after the upper layer's budget is exhausted");
+            assertTrue(elapsed < 10_000, "coordinator must not block on the 30s straggler, took " + elapsed + "ms");
+            assertEquals(LifecycleState.STOPPED, coordinator.getState("Lower"),
+                         "the lower layer must still stop after the upper layer's budget is exhausted");
+        } finally {
+            upper.close(); // free the abandoned 30s stop thread
+        }
     }
 
     /**
@@ -1335,14 +1343,19 @@ class LifecycleCoordinatorTest {
         disabledReason = "Wall-clock: barrier orTimeout is real-time; asserts a tight timing window")
     @Test
     void layerBarrierTimesOutAtLayerBudget() {
-        coordinator.register(new SlowComponent("Slow", 0, 30_000)); // one layer -> budget == full timeout
-        coordinator.start();
-        long t0 = System.currentTimeMillis();
-        coordinator.stop(1000);
-        long elapsed = System.currentTimeMillis() - t0;
-        assertTrue(elapsed >= 500 && elapsed < 3000,
-                   "barrier must fire near the 1000ms layer budget, not at a per-component slice or the 30s stop; "
-                   + "took " + elapsed + "ms");
+        var slow = new SlowComponent("Slow", 0, 30_000); // one layer -> budget == full timeout
+        coordinator.register(slow);
+        try {
+            coordinator.start();
+            long t0 = System.currentTimeMillis();
+            coordinator.stop(1000);
+            long elapsed = System.currentTimeMillis() - t0;
+            assertTrue(elapsed >= 500 && elapsed < 3000,
+                       "barrier must fire near the 1000ms layer budget, not at a per-component slice or the 30s stop; "
+                       + "took " + elapsed + "ms");
+        } finally {
+            slow.close(); // free the abandoned 30s stop thread promptly (off the common pool either way)
+        }
     }
 
     /**
@@ -1378,8 +1391,9 @@ class LifecycleCoordinatorTest {
         var appender = new ListAppender<ILoggingEvent>();
         appender.start();
         logger.addAppender(appender);
+        var straggler = new SlowComponent("Straggler", 0, 30_000);
+        coordinator.register(straggler);
         try {
-            coordinator.register(new SlowComponent("Straggler", 0, 30_000));
             coordinator.start();
             coordinator.stop(100); // 1 layer -> 100ms budget; the 30s stop is still running at the barrier timeout
             boolean named = appender.list.stream()
@@ -1388,6 +1402,7 @@ class LifecycleCoordinatorTest {
             assertTrue(named, "an ERROR log must name the straggling component on budget exhaustion");
         } finally {
             logger.detachAppender(appender);
+            straggler.close(); // free the abandoned 30s stop thread
         }
     }
 
@@ -1396,11 +1411,16 @@ class LifecycleCoordinatorTest {
      */
     @Test
     void zeroLayerBudgetProceedsSafely() {
-        coordinator.register(new SlowComponent("Slow", 0, 30_000));
-        coordinator.start();
-        long t0 = System.currentTimeMillis();
-        assertDoesNotThrow(() -> coordinator.stop(0));
-        long elapsed = System.currentTimeMillis() - t0;
-        assertTrue(elapsed < 5000, "zero budget must return promptly, took " + elapsed + "ms");
+        var slow = new SlowComponent("Slow", 0, 30_000);
+        coordinator.register(slow);
+        try {
+            coordinator.start();
+            long t0 = System.currentTimeMillis();
+            assertDoesNotThrow(() -> coordinator.stop(0));
+            long elapsed = System.currentTimeMillis() - t0;
+            assertTrue(elapsed < 5000, "zero budget must return promptly, took " + elapsed + "ms");
+        } finally {
+            slow.close(); // free the abandoned 30s stop thread
+        }
     }
 }

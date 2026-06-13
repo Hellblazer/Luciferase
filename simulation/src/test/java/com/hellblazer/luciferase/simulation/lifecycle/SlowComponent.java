@@ -10,19 +10,29 @@ package com.hellblazer.luciferase.simulation.lifecycle;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Mock component with configurable delays for testing timeout handling.
+ * <p>
+ * Async start/stop work runs on a per-instance daemon executor, NOT {@link java.util.concurrent.ForkJoinPool}'s
+ * common pool. This is load-bearing for the shutdown-budget tests (Luciferase-43bat / h8gm8): a budget-exhausted
+ * stop is abandoned by the coordinator and keeps running in the background. If those abandoned multi-second sleeps
+ * ran on the shared common pool, they would starve every later {@code CompletableFuture.runAsync}-based test in the
+ * same JVM on a low-core CI runner (e.g. {@code MockComponent} stops never getting a thread → spurious CREATED/
+ * RUNNING states). Isolating to a daemon executor confines the leak; {@link #close()} interrupts it promptly.
  *
  * @author hal.hildebrand
  */
-public class SlowComponent implements LifecycleComponent {
+public class SlowComponent implements LifecycleComponent, AutoCloseable {
     private final String componentName;
     private final long startDelayMs;
     private final long stopDelayMs;
     private final List<String> componentDependencies;
     private final AtomicReference<LifecycleState> state;
+    private final ExecutorService executor;
 
     /**
      * Create a slow component with configurable delays and no dependencies.
@@ -50,6 +60,11 @@ public class SlowComponent implements LifecycleComponent {
         this.stopDelayMs = stopDelayMs;
         this.componentDependencies = List.copyOf(dependencies);
         this.state = new AtomicReference<>(LifecycleState.CREATED);
+        this.executor = Executors.newSingleThreadExecutor(r -> {
+            var t = new Thread(r, "SlowComponent-" + name);
+            t.setDaemon(true);  // abandoned stragglers must never block JVM exit
+            return t;
+        });
     }
 
     @Override
@@ -69,7 +84,7 @@ public class SlowComponent implements LifecycleComponent {
                 state.set(LifecycleState.FAILED);
                 throw new LifecycleException("Start interrupted", e);
             }
-        });
+        }, executor);
     }
 
     @Override
@@ -89,7 +104,7 @@ public class SlowComponent implements LifecycleComponent {
                 state.set(LifecycleState.FAILED);
                 throw new LifecycleException("Stop interrupted", e);
             }
-        });
+        }, executor);
     }
 
     @Override
@@ -105,5 +120,15 @@ public class SlowComponent implements LifecycleComponent {
     @Override
     public List<String> dependencies() {
         return componentDependencies;
+    }
+
+    /**
+     * Shut down the per-instance executor, interrupting any in-flight (e.g. coordinator-abandoned) start/stop sleep.
+     * Tests that deliberately abandon a slow stop should call this in a finally block for prompt thread cleanup;
+     * the daemon thread makes it safe to omit, but closing frees the thread immediately.
+     */
+    @Override
+    public void close() {
+        executor.shutdownNow();
     }
 }
