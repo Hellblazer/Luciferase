@@ -1,9 +1,12 @@
 ---
 id: RDR-023
 title: Real gRPC mTLS Handshake over Shaded-Only Netty — Verify and Fix the Unproven TLS Transport
-status: accepted
+status: implemented
 date: 2026-06-13
 accepted_date: 2026-06-13
+closed_date: 2026-06-13
+close_reason: implemented
+post_mortem: docs/rdr/post-mortem/023-grpc-mtls-handshake-shaded-netty.md
 reviewed-by: self
 supersedes: []
 related: [RDR-005, RDR-013, RDR-007]
