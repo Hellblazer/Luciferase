@@ -93,6 +93,13 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
     // drives the circuit-breaker; failed is the terminal state set when the breaker trips.
     private final AtomicLong tickFailureCount = new AtomicLong(0);
     private final AtomicLong consecutiveTickFailures = new AtomicLong(0);
+    // Per-entity update-failure observability (Luciferase-nqk13). updateBubbleEntities isolates a
+    // throwing entity (logs + continues to the next) so one bad entity never aborts a whole bubble's
+    // tick — but that swallow was otherwise invisible. This counts failure EVENTS, not distinct entities:
+    // one increment per failing entity per tick, so a single persistently-failing entity contributes one
+    // count every tick (~60/s at 60 Hz). The aggregate flags THAT failures are happening; the per-failure
+    // error log carries entity.id() to identify WHICH entity is stuck.
+    private final AtomicLong entityUpdateFailureCount = new AtomicLong(0);
     private volatile boolean failed = false;
     private final SimulationMetrics metrics = new SimulationMetrics();
     private volatile Clock clock = Clock.system();
@@ -245,6 +252,21 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
      */
     public long getTickFailureCount() {
         return tickFailureCount.get();
+    }
+
+    /**
+     * Get the lifetime count of per-entity update-failure <em>events</em> (Luciferase-nqk13).
+     * {@code updateBubbleEntities} isolates a throwing entity (skips it and continues) so one bad entity
+     * cannot abort a bubble's tick; each such skip is counted here.
+     * <p>
+     * <b>This counts events, not distinct entities.</b> A single persistently-failing entity adds one count
+     * per tick (e.g. ~60/s at 60 Hz), so a large value may be one stuck entity over time, not many entities.
+     * Use it to detect THAT per-entity failures are occurring; consult the error log (which includes the
+     * failing {@code entity.id()}) to identify WHICH entity is stuck. Distinct from a whole-tick failure
+     * ({@link #getTickFailureCount()}), which the per-entity catch prevents from propagating.
+     */
+    public long getEntityUpdateFailureCount() {
+        return entityUpdateFailureCount.get();
     }
 
     /**
@@ -548,7 +570,12 @@ public class GridMultiBubbleSimulation implements AutoCloseable {
 
                 bubble.updateEntityPosition(entity.id(), newPosition);
             } catch (Exception e) {
-                log.error("Failed to update entity {}: {}", entity.id(), e.getMessage());
+                // Per-entity isolation (intentional): a throwing entity is skipped so it cannot abort the
+                // whole bubble's tick. Count it (Luciferase-nqk13) so the otherwise-silent swallow is
+                // observable via getEntityUpdateFailureCount().
+                long failures = entityUpdateFailureCount.incrementAndGet();
+                log.error("Failed to update entity {} (lifetime entity-update failures={}): {}",
+                          entity.id(), failures, e.getMessage(), e);
             }
         }
     }
