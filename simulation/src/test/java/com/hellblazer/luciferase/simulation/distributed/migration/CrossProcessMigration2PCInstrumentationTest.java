@@ -138,6 +138,11 @@ class CrossProcessMigration2PCInstrumentationTest {
 
         var migration = new CrossProcessMigration(new IdempotencyStore(), new MigrationMetrics(),
                                                   MigrationConfig.defaults(), wal);
+        // Deterministic clock (constant: delta-per-read 0) so the wall-clock 2PC timeout guards
+        // (100ms phase / 300ms total) can never fire under CI load and spuriously short-circuit the
+        // PREPARE→COMMIT path before COMMIT is recorded — this test asserts WAL contents, not timing
+        // (Luciferase-f5nj7). The total-timeout semantics are exercised separately by the .31 test.
+        migration.setClock(new TickingClock(1000L, 0L));
         var source = new Source(sourceId, snapshotFor(entityId, sourceId));
         var dest = new Dest(destId, true);
 
@@ -164,6 +169,12 @@ class CrossProcessMigration2PCInstrumentationTest {
 
         var migration = new CrossProcessMigration(new IdempotencyStore(), new MigrationMetrics(),
                                                   MigrationConfig.defaults(), wal);
+        // Deterministic clock (constant: delta-per-read 0) so the 2PC timeout guards never fire under
+        // CI load. Without it, a slow runner blows the 100ms/300ms budget and abort() takes the
+        // ABORT_TIMEOUT branch, which (correctly) leaves the txn for recovery WITHOUT writing ABORT —
+        // the exact flake this fixes (Luciferase-f5nj7). With the clock pinned, the clean
+        // COMMIT_FAILED → successful-rollback → walRecordAbort path is taken deterministically.
+        migration.setClock(new TickingClock(1000L, 0L));
         var source = new Source(sourceId, snapshotFor(entityId, sourceId));
         var dest = new Dest(destId, false); // COMMIT fails -> ABORT
 
@@ -178,6 +189,48 @@ class CrossProcessMigration2PCInstrumentationTest {
         assertTrue(incomplete.isEmpty(),
                    "An aborted migration must leave NO incomplete transaction in the WAL "
                    + "(PREPARE + ABORT must both have been recorded), got: " + incomplete);
+    }
+
+    @Test
+    void timedOutMigrationLeavesPrepareIncompleteForRecovery(@TempDir Path tempDir) throws Exception {
+        // Pins the production contract behind the f5nj7 flake: when the 2PC exceeds its timeout budget
+        // (forced deterministically here with a fast-advancing clock, mimicking a slow CI runner), the
+        // migration fails and DELIBERATELY leaves the PREPARE record incomplete — it does NOT write a
+        // false ABORT/COMMIT — so crash recovery (loadIncomplete) resolves the dangling transaction.
+        // This is exactly the state abortedMigrationWritesPrepareThenAbortToWal was accidentally landing
+        // in under load; making it explicit documents the behavior as intended, not a WAL bug, and proves
+        // the root cause (real/fast clock vs the 100ms/300ms budget → a timeout branch that skips ABORT).
+        var processId = UUID.randomUUID();
+        var wal = new TestWal(processId, tempDir);
+        var entityId = UUID.randomUUID().toString();
+        var sourceId = UUID.randomUUID();
+        var destId = UUID.randomUUID();
+
+        var migration = new CrossProcessMigration(new IdempotencyStore(), new MigrationMetrics(),
+                                                  MigrationConfig.defaults(), wal);
+        // 500ms per clock read >> 100ms phase budget → the PREPARE-phase timeout guard (CrossProcessMigration
+        // :768) fires right after PREPARE is durably written (:747) but before COMMIT is entered, completing
+        // the future via failAndUnlock("TIMEOUT") with no COMMIT/ABORT record. (The ABORT-phase timeout
+        // :891 is a sibling branch with the same PREPARE-only outcome; the contract pinned here — a timed-out
+        // 2PC leaves the txn incomplete for recovery — holds for any timeout branch.)
+        migration.setClock(new TickingClock(1000L, 500L));
+        var source = new Source(sourceId, snapshotFor(entityId, sourceId));
+        // dest outcome is never consulted: the PREPARE timeout fires before commit() reads it.
+        var dest = new Dest(destId, true);
+
+        var result = migration.migrate(entityId, source, dest).get(5, TimeUnit.SECONDS);
+        assertFalse(result.success(), "a migration that blows its timeout budget must fail");
+        wal.close();
+
+        var recovered = new TestWal(processId, tempDir);
+        var incomplete = recovered.loadIncomplete();
+        recovered.close();
+        assertFalse(incomplete.isEmpty(),
+                    "a timed-out 2PC must leave the PREPARE incomplete for crash recovery (no false ABORT)");
+        assertTrue(incomplete.stream().allMatch(t -> t.phase() == TransactionState.MigrationPhase.PREPARE),
+                   "the dangling transaction(s) must be in PREPARE phase, got: " + incomplete);
+        assertTrue(incomplete.stream().anyMatch(t -> entityId.equals(t.entityId())),
+                   "the incomplete transaction must be for our entity, got: " + incomplete);
     }
 
     @Test
