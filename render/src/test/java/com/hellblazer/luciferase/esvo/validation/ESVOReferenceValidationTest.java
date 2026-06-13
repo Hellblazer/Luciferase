@@ -213,7 +213,7 @@ public class ESVOReferenceValidationTest {
         log.info("");
         log.info("Fixed implementations:");
         log.info("  ✅ ESVONode.java: getChildNodeIndex() method");
-        log.info("  ✅ ESVOKernels shader code: OpenCL/GLSL/Metal kernels");  
+        log.info("  ✅ ESVOKernels shader code: OpenCL kernel");
         log.info("  ✅ ESVOLayoutOptimizer.java: findChildren() method");
         log.info("  ✅ esvo_raycast.cl: OpenCL kernel traversal");
         log.info("");
