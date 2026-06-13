@@ -129,19 +129,22 @@ class Phase43IntegrationTest {
         fixture.injectPartitionFailure(partition1, 0);
         Thread.sleep(50);
 
-        // Fail partition 2 after 100ms
-        fixture.injectPartitionFailure(partition2, 100);
+        // Fail partition 2 after 100ms, partition 3 after 200ms (cascading). Capture the injection
+        // futures so each partition's failure is deterministically awaited before its recovery starts,
+        // rather than racing a fixed sleep margin over the background injection under CI load
+        // (Luciferase-8brw9, same latent flake fixed in P441IntegrationTestFixtureTest).
+        var fail2 = fixture.injectPartitionFailure(partition2, 100);
+        var fail3 = fixture.injectPartitionFailure(partition3, 200);
 
-        // Fail partition 3 after 200ms
-        fixture.injectPartitionFailure(partition3, 200);
-
-        // Start recoveries for all three
+        // Start recoveries for all three, each only after its partition has actually failed.
         var result1Future = recovery1.recover(partition1, handler);
-        Thread.sleep(100); // Wait for first to start
+        Thread.sleep(100); // Stagger: let the first recovery get underway
 
+        fail2.get(5, TimeUnit.SECONDS);
         var result2Future = recovery2.recover(partition2, handler);
-        Thread.sleep(100); // Wait for second to start
+        Thread.sleep(100); // Stagger: let the second recovery get underway
 
+        fail3.get(5, TimeUnit.SECONDS);
         var result3Future = recovery3.recover(partition3, handler);
 
         // Then: All recoveries should complete

@@ -130,9 +130,14 @@ public class IntegrationTestFixture {
      *
      * @param partitionId partition UUID to fail
      * @param delayMs delay before failure in milliseconds (0 for immediate)
+     * @return a {@link Future} that completes once the failure has actually been injected and the
+     *         partition marked failed. For {@code delayMs == 0} this is an already-completed future.
+     *         Callers testing the delayed path should block on this (e.g. {@code .get(timeout, ...)})
+     *         instead of sleeping a fixed wall-clock interval — the injection runs on a background
+     *         thread, so a fixed sleep races the injection under load (Luciferase-8brw9).
      * @throws IllegalStateException if forest or handler not configured
      */
-    public void injectPartitionFailure(UUID partitionId, int delayMs) {
+    public Future<?> injectPartitionFailure(UUID partitionId, int delayMs) {
         if (currentForest == null) {
             throw new IllegalStateException("Forest not configured - call setupForestWithPartitions first");
         }
@@ -144,9 +149,11 @@ public class IntegrationTestFixture {
             // Immediate failure
             currentHandler.injectFailure(partitionId);
             currentForest.markPartitionFailed(partitionId);
+            return CompletableFuture.completedFuture(null);
         } else {
-            // Delayed failure
-            executorService.submit(() -> {
+            // Delayed failure — the returned Future lets callers await the actual injection
+            // deterministically rather than guessing a wall-clock margin over delayMs.
+            return executorService.submit(() -> {
                 try {
                     Thread.sleep(delayMs);
                     currentHandler.injectFailure(partitionId);
