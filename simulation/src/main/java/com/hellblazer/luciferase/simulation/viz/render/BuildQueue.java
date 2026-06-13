@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Deduplicating build dispatcher. At most one in-flight build per SpatialKey<?>.
@@ -60,6 +61,15 @@ public final class BuildQueue {
      */
     private final ConcurrentHashMap<SpatialKey<?>, RegionBuilder.BuiltKeyedRegion> pending =
         new ConcurrentHashMap<>();
+    /**
+     * Lifetime count of builds that completed exceptionally (Luciferase-8pygn). A failed build is
+     * swallowed — it produces no {@code pending} entry, so {@code deliverPending} never updates the
+     * cache for that key and the region stays stale until a later resubmit succeeds. Without a surfaced
+     * count, a persistently-failing region (e.g. an {@code IOException} in ESVO serialization under
+     * memory pressure) would silently never receive cache updates. Exposed via
+     * {@link #getTotalBuildFailures()} so callers/monitors can detect the condition.
+     */
+    private final AtomicLong totalBuildFailures = new AtomicLong(0);
 
     public BuildQueue(SpatialIndexFacade facade, DirtyTracker dirtyTracker,
                       RegionBuilder builder, BuildCompleteCallback callback) {
@@ -88,7 +98,12 @@ public final class BuildQueue {
                               if (result != null) {
                                   pending.put(k, result);
                               } else if (err != null) {
-                                  log.warn("Build failed for key {}: {}", k, err.getMessage());
+                                  // Swallowed failure: no pending entry → cache stays stale for this key
+                                  // until a later resubmit succeeds. Count it and log at error so the
+                                  // otherwise-silent staleness is observable (Luciferase-8pygn).
+                                  long failureCount = totalBuildFailures.incrementAndGet();
+                                  log.error("Build failed for key {} (cache left stale, lifetime failures={}): {}",
+                                            k, failureCount, err.getMessage(), err);
                               }
                               inFlight.remove(k);
                           })
@@ -128,6 +143,17 @@ public final class BuildQueue {
      */
     public boolean isInFlight(SpatialKey<?> key) {
         return inFlight.containsKey(key);
+    }
+
+    /**
+     * Lifetime count of builds that completed exceptionally (Luciferase-8pygn). A non-zero, growing
+     * value means region builds are failing and their cache entries are going stale — a monitor/supervisor
+     * can alarm on this rather than discovering the silent staleness only via missing visual updates.
+     *
+     * @return the number of failed builds since this queue was created
+     */
+    public long getTotalBuildFailures() {
+        return totalBuildFailures.get();
     }
 
     /**
