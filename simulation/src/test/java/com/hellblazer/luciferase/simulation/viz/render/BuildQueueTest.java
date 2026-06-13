@@ -75,4 +75,48 @@ class BuildQueueTest {
         }
         assertEquals(0, completedCount.get(), "stale build must be discarded");
     }
+
+    /**
+     * A failed build (the future completes exceptionally) must be counted via
+     * {@link BuildQueue#getTotalBuildFailures()} and must NOT update the cache — the region is left stale
+     * for a later resubmit, but the failure is now observable rather than silently swallowed
+     * (Luciferase-8pygn).
+     */
+    @Test
+    void failedBuildIsCountedAndLeavesCacheStale() throws Exception {
+        var facade = new OctreeSpatialIndexFacade(4, 8);
+        facade.put(1L, new Point3f(100, 100, 100));
+        var key = facade.keysContaining(new Point3f(100, 100, 100), 4, 4).iterator().next();
+
+        var tracker = new DirtyTracker();
+        tracker.bump(key);
+
+        var cacheUpdates = new AtomicInteger(0);
+        try (var builder = new FailingRegionBuilder()) {
+            var queue = new BuildQueue(facade, tracker, builder, (k, v, data) -> cacheUpdates.incrementAndGet());
+
+            queue.submit(key, RegionBuilder.KeyedBuildRequest.Priority.VISIBLE);
+            queue.awaitBuilds().get(5, TimeUnit.SECONDS);
+
+            assertEquals(1, queue.getTotalBuildFailures(),
+                         "a build that completes exceptionally must be counted, not silently swallowed");
+            assertEquals(0, cacheUpdates.get(),
+                         "a failed build must NOT update the cache (the region is left stale for resubmit)");
+        }
+    }
+
+    /** RegionBuilder whose every keyed build completes exceptionally — exercises the failure path. */
+    private static final class FailingRegionBuilder extends RegionBuilder {
+        FailingRegionBuilder() {
+            super(1, 10, 8, 64);
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<BuiltKeyedRegion> buildKeyed(
+                com.hellblazer.luciferase.lucien.SpatialKey<?> key,
+                SpatialIndexFacade facade, long buildVersion) {
+            return java.util.concurrent.CompletableFuture.failedFuture(
+                new java.io.IOException("test-injected build failure"));
+        }
+    }
 }
