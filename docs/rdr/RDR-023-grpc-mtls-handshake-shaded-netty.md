@@ -113,33 +113,54 @@ a legitimate member whose CN ≠ its dialed address would be wrongly rejected). 
 `GrpcSslContexts`) and B (non-shaded `grpc-netty` + tcnative) are **rejected** — both work but add
 shaded-coupling or a dependency for a problem that is purely a trust-manager configuration bug.
 
-> **Security note (must be in the gate review):** disabling hostname verification weakens TLS *in
-> isolation*; it is only safe because the `PeerVerifier` is the real, mandatory authentication gate.
-> The fix MUST keep the trust-any TLS layer paired with the interceptor (the existing `ServerAuth`
-> invariant) and the real-handshake test MUST include a `PeerVerifier`-rejected-peer → `UNAUTHENTICATED`
-> case so the auth gate is proven, not just the encryption.
+Issuing certs with a CN/SAN matching the dialed address (or setting `overrideAuthority` per-connection)
+would also fix the immediate handshake, but is **architecturally inapplicable**: a Delos/KERI member cert's
+subject encodes the member's *cryptographic identity* (KERI-derived), not its *network topology*, and the
+dialed IP/host is not a valid principal in the trust model (RDR-005: trust is "cert-DN-UID → member-id in
+view," not CA/hostname pinning). `overrideAuthority` would also require knowing the remote peer's cert CN
+before dialing — a chicken-and-egg problem when certs are provisioned on demand from the KERL. Hostname
+verification therefore has no meaningful semantics in this system regardless of implementation path.
+
+> **Security note (gate-reviewed 2026-06-13).** Disabling client hostname verification does **not** weaken
+> the *effective* posture: hostname verification against a trust-any cert was already nominal-only — a MITM
+> attacker can trivially present a self-signed cert with CN = the dialed address, which passed the old check
+> while failing no real TLS check. The genuine open gap is **client-side server authentication**, which is
+> **NOT implemented** (RDR-005: `mtlsChannel` is "encrypt + present my identity, NOT authenticate the
+> server"); that gap existed before Strategy C, is unchanged by it, is out of scope here, and remains
+> tracked under RDR-005. Strategy C is safe because the load-bearing invariant is the **client→server**
+> direction: the SERVER authenticates the CLIENT via the KERL-verified `PeerVerifier`. The fix MUST keep
+> trust-any TLS paired with the interceptor (the `ServerAuth` invariant), and the real-handshake test MUST
+> include a `PeerVerifier`-rejected-peer → `UNAUTHENTICATED` case so the client→server auth gate is proven,
+> not just encryption.
 
 ## Approach
 
 1. ~~Diagnose (CA-1)~~ — **done** (§Research Findings).
 2. **Implement Strategy C:** change `ACCEPT_ANY_CERT` in `GrpcCredentialFactory` to an
    `X509ExtendedTrustManager` with no-op endpoint-identification overloads (both client and server side).
-3. **Real-handshake test** in `common` — authorized round-trip succeeds AND a `PeerVerifier`-rejected peer
-   gets `UNAUTHENTICATED` (proves encryption + the auth gate). This is the artifact that proves the mTLS
-   transport works and can never silently regress.
+3. **Real-handshake test** in `common`, proving: (1) the TLS handshake completes (encryption); (2) the
+   **server authenticates the client** — an authorized client succeeds AND a `PeerVerifier`-rejected client
+   gets `UNAUTHENTICATED`. NB this proves only the **client→server** direction; client-side server
+   authentication is not implemented (RDR-005) and is explicitly not proven here. This is the artifact that
+   proves the mTLS transport + the client→server auth gate works and can never silently regress.
 4. **Unblock `l9dny`:** wire the Bubble-channel mTLS (the reverted prototype) now that the transport works;
    its test no longer needs `overrideAuthority` workarounds.
 5. **Confirm Ghost/Balance** consume the same fixed path (they already use `GrpcCredentialFactory`).
 
 ## Consequences
 
-- Closes the gap that the entire repo's gRPC mTLS is unproven; gives operators a real authenticated
-  transport instead of plaintext-opt-in.
+- Closes the gap that the entire repo's gRPC **client→server** mTLS auth was unproven; gives operators a
+  real encrypted + client-authenticated transport instead of plaintext-opt-in.
 - Unblocks `Luciferase-l9dny`.
-- Risk: a netty-flavor dependency change (strategy B) could destabilize the gRPC stack; strategy A avoids it.
+- Does **not** add client-side server authentication — that remains an open RDR-005 item; this RDR neither
+  improves nor regresses it (hostname verification against trust-any was never real server auth).
+- Risk: Strategy C deliberately disables client hostname verification; safe only while `PeerVerifier`
+  remains the mandatory client→server gate (enforced by the `ServerAuth` pairing invariant + the test).
 
 ## Validation
 
-- Real-handshake test green on the dev platform (macOS arm64, bundled tcnative).
+- Real-handshake test green on the dev platform (macOS arm64, bundled tcnative) AND green in CI (the
+  real-handshake test must run in CI — the green run is the verification that the CI runner's TLS provider
+  works; do not leave it dev-only).
+- The test proves client→server auth (authorized succeeds, rejected → `UNAUTHENTICATED`), not server→client.
 - No regression in existing Ghost/Balance gRPC tests.
-- CI green across modules (the real-handshake test must run in CI — verify the CI runner's TLS provider).
