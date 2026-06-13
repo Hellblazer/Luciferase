@@ -109,21 +109,34 @@ class StreamingE2ETest {
         var movedKeys = facade.keysContaining(new Point3f(501, 501, 501), 4, 4);
         dirtyTracker.bumpAll(movedKeys);
 
-        // Submit and await the build so cache reflects the new version.
-        // StreamingCycle only pushes RegionUpdate when cache.version() == currentVersion;
-        // without awaiting the build, the cycle would submit a build but not push.
+        // Submit a build so the cache reflects the new version: StreamingCycle only pushes a
+        // RegionUpdate once cache.version() == currentVersion; otherwise a tick (re)submits a build
+        // but pushes nothing.
         for (var k : movedKeys) {
             buildQueue.submit(k, RegionBuilder.KeyedBuildRequest.Priority.VISIBLE);
         }
-        buildQueue.awaitBuilds().get(5, TimeUnit.SECONDS);
 
-        // Run streaming cycle with frozen clock so deadline never expires under CI load
+        // Run streaming cycle with frozen clock so the per-tick deadline never expires under CI load.
         var frozenClock = new TestClock(1_000_000_000L);
         var cycle = new StreamingCycle(facade, dirtyTracker, cache, buildQueue, subscriptions, frozenClock);
         subscriptions.updateViewport("e2e-sess", TestFrustums.fullScene(), 4);
-        cycle.tick(200_000_000L);
 
-        var updateMsg = client.nextServerMessage(500, TimeUnit.MILLISECONDS);
+        // Drive the build→cache→push pipeline to completion rather than asserting on a single shot.
+        // A build can fail transiently under heavy CI load — buildKeyed runs on RegionBuilder's
+        // buildPool and doBuild/ESVO serialization can throw IOException (e.g. under memory pressure).
+        // BuildQueue.awaitBuilds() shields that exception (.exceptionally(e->null)), so the cache stays
+        // stale and the tick re-submits instead of pushing. The production design is retry-based — a
+        // later tick re-submits and a later awaitBuilds delivers — so re-await + re-tick a bounded
+        // number of times here so a transient build failure self-heals (Luciferase-5ezt5). Once a
+        // RegionUpdate is pushed, the subscription's known version advances, so an extra tick will not
+        // double-push. (Note: the per-region circuit breaker is on RegionBuilder.build(BuildRequest),
+        // NOT this buildKeyed path, so it is not a failure mode here.)
+        ServerMessage updateMsg = null;
+        for (int attempt = 0; attempt < 10 && !(updateMsg instanceof ServerMessage.RegionUpdate); attempt++) {
+            buildQueue.awaitBuilds().get(5, TimeUnit.SECONDS); // deliver any (re)submitted build into cache
+            cycle.tick(200_000_000L);
+            updateMsg = client.nextServerMessage(200, TimeUnit.MILLISECONDS);
+        }
         assertInstanceOf(ServerMessage.RegionUpdate.class, updateMsg,
             "moved entity should trigger REGION_UPDATE via streaming cycle");
     }
