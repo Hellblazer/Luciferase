@@ -25,10 +25,11 @@ import javax.vecmath.Point3f;
  * EntityUpdateEvent - Cross-Bubble Entity State Update (Phase 7B.1)
  *
  * Carries entity position/velocity updates for cross-bubble synchronization.
- * Serialized via custom binary format (EventSerializer) for network transmission.
+ * Consumed in-process by {@link com.hellblazer.luciferase.simulation.ghost.GhostStateManager};
+ * cross-process delivery rides the VON wire path ({@code Message.TransportGhost} via P2PGhostChannel),
+ * not a dedicated binary format.
  *
  * IMMUTABILITY: This is a record class - all fields are final and immutable.
- * No Java serialization - custom binary format ensures efficient wire protocol.
  *
  * DEAD RECKONING: Velocity field enables recipient bubbles to extrapolate
  * entity position between updates, reducing network traffic.
@@ -51,16 +52,9 @@ import javax.vecmath.Point3f;
  *     12345L,                               // simulation time
  *     67890L                                // lamport clock
  * );
- *
- * // Serialize for network transmission
- * var serializer = new EventSerializer();
- * var bytes = serializer.toBytes(event);
- *
- * // Deserialize on recipient bubble
- * var received = serializer.fromBytes(bytes);
  * </pre>
  *
- * PHASE 7B.1: Event type definitions and serialization
+ * PHASE 7B.1: Event type definitions
  * PHASE 7B.2: Delos transport prototype removed (Luciferase-j877j); cross-bubble delivery is P2PGhostChannel (VON-based)
  * PHASE 7B.3: Will enable dead reckoning in DistributedEntityTracker
  *
