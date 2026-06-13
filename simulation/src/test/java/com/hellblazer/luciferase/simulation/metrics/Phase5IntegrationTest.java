@@ -131,8 +131,12 @@ class Phase5IntegrationTest {
         assertThat(stats.avgLatencyNs()).isGreaterThan(0);
         assertThat(stats.p99LatencyNs()).isGreaterThan(0);
 
-        // For in-memory channel, latency should be minimal (<10ms)
-        assertThat(stats.p99LatencyMs()).isLessThan(10.0);
+        // With only 10 samples, p99 IS the max sample, so a single CI scheduler hiccup lands
+        // in the tail — a <10ms p99 bound flaked at 28.16ms under runner contention
+        // (Luciferase-d5afj). The average dilutes one hiccup ~10x (28ms -> ~3ms) but still
+        // fails on a uniform hot-path regression; p99 keeps only the 100ms system target.
+        assertThat(stats.avgLatencyMs()).isLessThan(10.0);
+        assertThat(stats.p99LatencyMs()).isLessThan(100.0);
 
         // Verify metric recorded
         var snapshot = metrics.getSnapshot();
@@ -245,9 +249,11 @@ class Phase5IntegrationTest {
         // Verify P99 latency is within expected range
         var stats = instrumentedChannel.getLatencyStats();
         assertThat(stats.p99LatencyMs()).isLessThan(100.0);  // Target: <100ms
-
-        // For in-memory, expect very low latency (<1ms)
-        assertThat(stats.p99LatencyMs()).isLessThan(1.0);
+        // Average bound replaces the former <1ms p99 assertion: with 100 samples, two CI
+        // scheduler hiccups push rank-99 p99 over a sub-ms bound (same class as
+        // Luciferase-d5afj), while the average dilutes them ~100x yet still catches a
+        // per-call regression in the sendBatch hot path.
+        assertThat(stats.avgLatencyMs()).isLessThan(5.0);
     }
 
     /**

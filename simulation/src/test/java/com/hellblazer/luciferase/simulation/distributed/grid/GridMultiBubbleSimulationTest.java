@@ -14,9 +14,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import javax.vecmath.Point3f;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -128,17 +130,21 @@ class GridMultiBubbleSimulationTest {
     }
 
     @Test
-    void testTickProgression() throws InterruptedException {
+    void testTickProgression() {
         var config = GridConfiguration.square(2, 100f);
         var sim = new GridMultiBubbleSimulation(config, 50, WorldBounds.DEFAULT);
 
         sim.start();
-        Thread.sleep(100); // Let a few ticks happen
-
-        assertTrue(sim.getTickCount() > 0, "Tick count should increase");
-
-        sim.stop();
-        sim.close();
+        try {
+            // Await instead of a fixed 100ms sleep: under CI runner contention the tick
+            // thread can miss the whole window (Luciferase-ez6ej — failed 3 of 4 batch-3 runs)
+            await().alias("tick count should increase")
+                   .atMost(Duration.ofSeconds(10))
+                   .until(() -> sim.getTickCount() > 0);
+        } finally {
+            sim.stop();
+            sim.close();
+        }
     }
 
     @Test
@@ -227,7 +233,7 @@ class GridMultiBubbleSimulationTest {
     }
 
     @Test
-    void testEntityCountStability() throws InterruptedException {
+    void testEntityCountStability() {
         var config = GridConfiguration.square(2, 100f);
         var sim = new GridMultiBubbleSimulation(config, 100, WorldBounds.DEFAULT);
 
@@ -235,8 +241,15 @@ class GridMultiBubbleSimulationTest {
         assertEquals(100, initialCount);
 
         sim.start();
-        Thread.sleep(200);
-        sim.stop();
+        try {
+            // Await real ticks rather than sleeping a fixed 200ms: a starved window would
+            // pass vacuously with zero ticks executed (Luciferase-ez6ej)
+            await().alias("at least 5 ticks should run")
+                   .atMost(Duration.ofSeconds(10))
+                   .until(() -> sim.getTickCount() >= 5);
+        } finally {
+            sim.stop();
+        }
 
         int finalCount = sim.getRealEntities().size();  // Count only real entities (no ghosts)
         assertEquals(initialCount, finalCount, "Entity count should remain stable");

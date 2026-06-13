@@ -200,6 +200,36 @@ assertTrue(p999Ms < 50.0, "P99.9 must be <50ms");
 - If CI finishes early: Verify system resources and consider stricter thresholds
 - After Phase 7B.5 optimization: Re-enable testLatencyDistribution with <25ms threshold
 
+#### 4. Phase5IntegrationTest (simulation module)
+
+**Location**: `simulation/src/test/java/.../metrics/Phase5IntegrationTest.java`
+
+**Test: testLatencyTrackingEndToEnd** (10 samples — p99 IS the max sample)
+```java
+assertThat(stats.avgLatencyMs()).isLessThan(10.0);   // Regression guard: avg dilutes one hiccup ~10x
+assertThat(stats.p99LatencyMs()).isLessThan(100.0);  // System target only (was <10ms p99, flaked)
+```
+
+**Test: testGhostLatencyUnder100ms** (100 samples — p99 = rank 99, ~2 bad samples to fail)
+```java
+assertThat(stats.p99LatencyMs()).isLessThan(100.0);  // Target: <100ms
+assertThat(stats.avgLatencyMs()).isLessThan(5.0);    // Replaces former <1ms p99 (flake-prone tail)
+```
+
+**Recent Fix** (Luciferase-d5afj):
+- Problem: `<10ms` p99 assertion on an InMemoryGhostChannel flaked at 28.16ms in CI batch-1 under runner contention (run 27443289525, on a portal-only PR — no simulation code changed, confirming contention not regression)
+- Solution: **average-based regression bounds** instead of tight p99 bounds. A single scheduler hiccup dominates a small-sample p99 (with 10 samples, p99 = max), but is diluted ~N× in the average — so the avg bound stays stable under CI contention while still failing on a uniform hot-path regression (e.g. accidental blocking call in `InstrumentedGhostChannel.sendBatch` or `LatencyTracker.record`). p99 assertions retain only the declared 100ms system target (`SimulationConfig.latencyAlertThresholdMs` default).
+- Same contention class as MultiBubbleLoadTest P99 (above), different remedy: avg bounds run everywhere (no CI-disabled strict variant needed) because the smoothed statistic is robust at these sample counts.
+
+**Threshold Values**:
+- testLatencyTrackingEndToEnd: avg <10ms, p99 <100ms (flake event would have passed: one 28ms spike over 10 samples → avg ≈ 2.8ms)
+- testGhostLatencyUnder100ms: avg <5ms, p99 <100ms (one 28ms spike over 100 samples → avg contribution ≈ 0.28ms)
+
+**When to Adjust**:
+- Not CI-disabled — tracking coverage and the avg regression guard run everywhere
+- If avg bounds ever flake in CI (would require sustained contention across most samples, not a single hiccup): re-diagnose before relaxing — that pattern looks like a real regression
+- Root-cause alternative: Clock injection (`InstrumentedGhostChannel.setClock`) would make latency deterministic; covered by the Clock-injection sweep (Luciferase-mt7hi)
+
 ---
 
 ## Flaky Test Handling
