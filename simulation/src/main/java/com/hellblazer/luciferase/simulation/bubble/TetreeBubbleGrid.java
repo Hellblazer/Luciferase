@@ -248,28 +248,45 @@ public class TetreeBubbleGrid {
      * Coordinates are placed directly into the Tetree absolute integer-coordinate space without
      * rescaling (RDR-003 / RDR-015 F5): a world coordinate {@code w} is the Tetree coordinate {@code w}.
      * <p>
-     * <b>Level selection.</b> The partition level {@code L} is the finest level whose cell-edge is no
-     * coarser than the requested granularity: {@code lengthAtLevel(L) <= WorldBounds.size() / cbrt(N)}.
+     * <b>Level selection.</b> The partition level {@code L} is the <em>coarsest</em> level whose cell-edge
+     * satisfies the requested granularity: {@code lengthAtLevel(L) <= WorldBounds.size() / cbrt(N)} (the
+     * selection loop scans levels coarse→fine and returns the first — i.e. smallest {@code L} / largest
+     * cell — that fits; finer levels also satisfy the bound but produce more cells).
      * {@code L} is clamped to {@code [1, MAX_REFINEMENT_LEVEL]} — never the L0 root.
      * <p>
+     * <b>{@code granularityHint} is a hint, NOT a target count.</b> The realized bubble count is the number
+     * of level-{@code L} tetrahedra whose cell AABB overlaps the world bounds (6 per covered cube), governed
+     * by the power-of-two level-edge grid, and routinely <em>far exceeds</em> the hint. Worked example
+     * (empirically verified): {@code WorldBounds(0,100)} with {@code granularityHint=8} gives
+     * {@code cellTarget = 100/cbrt(8) = 50}; the coarsest level with {@code lengthAtLevel(L) <= 50} is
+     * {@code L=16} ({@code 2^(21-16)=32}). On a 32-edge grid aligned at multiples of 32, the cubes whose
+     * {@code [origin, origin+32]} span overlaps {@code [0,100]} have origins {@code {0,32,64,96}} — 4 per
+     * axis, so {@code 4^3=64} cubes {@code × 6} tets = <b>384 bubbles, not 8</b> (~48× the hint). Each bubble
+     * owns a 100&nbsp;Hz {@code RealTimeController} timer thread + entity store + ghost channel, so a
+     * <em>larger</em> hint that lands on a coarser level is the lever for <em>fewer</em> bubbles — there is
+     * no way to request an exact count. Callers needing a specific resource budget should derive the hint
+     * from the realized-count relation above, or read the returned level.
+     * <p>
      * <b>Seeding + tiling.</b> Seeds from the level-{@code L} tet containing the world centre, then
-     * BFS over <b>same-level face neighbors</b>, including a neighbor iff its centroid lies inside the
-     * world bounds. Adjacency is confirmed by <b>involution reciprocity</b>
+     * BFS over <b>same-level face neighbors</b>, including a neighbor iff its cell AABB overlaps the world
+     * bounds (covering the boundary shell, not just cells whose centroid is interior). Adjacency is
+     * confirmed by <b>involution reciprocity</b>
      * ({@code faceNeighbor(faceNeighbor(t,f).face()).tet() == t}), never a shared-vertex count: the
      * Bey-SFC face neighbor is non-conforming (shares 0–3 vertices — see CLAUDE.md). The in-bounds
      * level-{@code L} tet set is finite, so BFS terminates.
      *
-     * @param targetBubbleCount granularity hint {@code N} (drives level selection; the realized count
-     *                          is the number of in-bounds level-{@code L} tets, which may exceed {@code N})
-     * @param worldBounds       the entity world domain to tile
-     * @param targetFrameMs     per-bubble frame-time budget
+     * @param granularityHint granularity hint {@code N} driving level selection — NOT a target count. The
+     *                        realized bubble count is the number of in-bounds level-{@code L} tets and
+     *                        routinely far exceeds {@code N} (see the worked example above).
+     * @param worldBounds     the entity world domain to tile
+     * @param targetFrameMs   per-bubble frame-time budget
      * @return the chosen partition level {@code L}
-     * @throws IllegalArgumentException if {@code targetBubbleCount <= 0} or {@code targetFrameMs <= 0}
+     * @throws IllegalArgumentException if {@code granularityHint <= 0} or {@code targetFrameMs <= 0}
      * @throws NullPointerException     if {@code worldBounds} is null
      */
-    public byte createBubbles(int targetBubbleCount, WorldBounds worldBounds, long targetFrameMs) {
-        if (targetBubbleCount <= 0) {
-            throw new IllegalArgumentException("Target bubble count must be positive, got: " + targetBubbleCount);
+    public byte createBubbles(int granularityHint, WorldBounds worldBounds, long targetFrameMs) {
+        if (granularityHint <= 0) {
+            throw new IllegalArgumentException("Granularity hint must be positive, got: " + granularityHint);
         }
         Objects.requireNonNull(worldBounds, "WorldBounds cannot be null");
         if (targetFrameMs <= 0) {
@@ -284,7 +301,7 @@ public class TetreeBubbleGrid {
                 + worldBounds.min());
         }
 
-        var level = choosePartitionLevel(worldBounds, targetBubbleCount);
+        var level = choosePartitionLevel(worldBounds, granularityHint);
 
         // Seed from the level-L tet containing the world centre.
         var centre = worldBounds.center();
@@ -514,13 +531,13 @@ public class TetreeBubbleGrid {
 
     /**
      * Choose the coarsest partition level whose cell-edge is no larger than
-     * {@code WorldBounds.size() / cbrt(targetBubbleCount)} (RDR-015 AC2) — i.e. cells are no coarser than the
+     * {@code WorldBounds.size() / cbrt(granularityHint)} (RDR-015 AC2) — i.e. cells are no coarser than the
      * requested granularity. Iterates from level 1 upward (coarse → fine) and returns the first level that
      * fits, so the partition uses the fewest cells satisfying the granularity bound. Clamped to
      * {@code [1, MAX_REFINEMENT_LEVEL]} so the partition is never the L0 root.
      */
-    private static byte choosePartitionLevel(WorldBounds worldBounds, int targetBubbleCount) {
-        double cellTarget = worldBounds.size() / Math.cbrt(targetBubbleCount);
+    private static byte choosePartitionLevel(WorldBounds worldBounds, int granularityHint) {
+        double cellTarget = worldBounds.size() / Math.cbrt(granularityHint);
         byte maxLevel = Constants.getMaxRefinementLevel();
         // lengthAtLevel(L) = 2^(maxLevel - L); want 2^(maxLevel - L) <= cellTarget.
         for (byte level = 1; level < maxLevel; level++) {
