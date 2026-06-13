@@ -13,6 +13,7 @@ import com.hellblazer.luciferase.lucien.distributed.migration.proto.MigrationRes
 
 // Domain event classes
 import com.hellblazer.luciferase.simulation.causality.EntityMigrationState;
+import com.hellblazer.luciferase.common.grpc.GrpcCredentialFactory;
 import com.hellblazer.luciferase.common.grpc.GrpcServerHardening;
 import com.hellblazer.luciferase.common.time.Clock;
 import com.hellblazer.luciferase.simulation.events.EntityDepartureEvent;
@@ -20,8 +21,11 @@ import com.hellblazer.luciferase.simulation.events.EntityRollbackEvent;
 import com.hellblazer.luciferase.simulation.events.ViewSynchronyAck;
 
 // gRPC
+import io.grpc.ChannelCredentials;
+import io.grpc.Grpc;
 import io.grpc.ManagedChannel;
 import io.grpc.Server;
+import io.grpc.ServerBuilder;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
@@ -93,6 +97,13 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
      */
     private volatile boolean allowPlaintext = false;
 
+    // mTLS + peer-identity binding (Luciferase-l9dny, RDR-023). When serverAuth / channelCredentials are set
+    // (via setCredentials), the channel uses mutual-TLS with a PeerAuthInterceptor instead of plaintext, and
+    // the allowPlaintext opt-in is bypassed on that side (credentials take precedence). Both sides should be
+    // configured together for a working mTLS node. Null = mTLS not configured for that side.
+    private volatile GrpcCredentialFactory.ServerAuth serverAuth;
+    private volatile ChannelCredentials channelCredentials;
+
     private volatile EntityDepartureListener departureListener;
     private volatile ViewSynchronyAckListener ackListener;
     private volatile EntityRollbackListener rollbackListener;
@@ -132,6 +143,42 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     }
 
     /**
+     * Configure mutual-TLS with peer-identity binding for migration RPCs (Luciferase-l9dny, RDR-023).
+     * <p>
+     * Must be called BEFORE {@link #initialize} (server) and before the first outbound send (client). When
+     * set, the server installs the {@link GrpcCredentialFactory.ServerAuth}'s (trust-any) mTLS credentials
+     * together with its {@code PeerAuthInterceptor} (which cryptographically verifies each peer's certificate
+     * identity via the injected {@code PeerVerifier} against the KERL), and outbound channels use the given
+     * mutual-TLS {@link ChannelCredentials}. mTLS takes precedence: the plaintext opt-in
+     * ({@link #setAllowPlaintext}) is bypassed on whichever side has credentials configured. Both sides
+     * should be set together for a working mTLS node.
+     * <p>
+     * Prefer {@link GrpcCredentialFactory#serverAuth(java.security.PrivateKey, java.security.cert.X509Certificate, com.hellblazer.luciferase.common.grpc.PeerVerifier)}
+     * to build {@code serverAuth} — it pairs the trust-any credentials with a verifying interceptor so bare
+     * credentials cannot be installed without authentication.
+     *
+     * @param serverAuth         server credentials + peer-auth interceptor, or {@code null} to leave the
+     *                           server on the plaintext-opt-in path
+     * @param channelCredentials outbound mutual-TLS channel credentials, or {@code null} to leave the client
+     *                           on the plaintext-opt-in path
+     */
+    public void setCredentials(GrpcCredentialFactory.ServerAuth serverAuth, ChannelCredentials channelCredentials) {
+        // Asymmetric config (exactly one side set) is a footgun: the node still fails LOUD — an mTLS server
+        // rejects a plaintext client, an mTLS client can't complete a handshake to a plaintext server — but
+        // the failure surfaces as a confusing transport-layer UNAVAILABLE far from here. Warn at config time
+        // so the misconfiguration is traceable. (No security weakening; both halves fail loud regardless.)
+        if ((serverAuth == null) != (channelCredentials == null)) {
+            log.warn("setCredentials: only one of serverAuth/channelCredentials is set (serverAuth={}, "
+                     + "channelCredentials={}) — asymmetric mTLS config; the unconfigured side will fall back "
+                     + "to the plaintext-opt-in gate and inbound/outbound RPCs will fail at the TLS layer. "
+                     + "Set both together for a working mTLS node.",
+                     serverAuth != null, channelCredentials != null);
+        }
+        this.serverAuth = serverAuth;
+        this.channelCredentials = channelCredentials;
+    }
+
+    /**
      * Set the clock for deterministic testing.
      *
      * @param clock Clock instance to use
@@ -144,28 +191,36 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
     public void initialize(UUID nodeId, String nodeAddress) {
         this.localNodeId = nodeId;
 
-        // Server-side plaintext gate (Luciferase-7wzml.200 I1).
-        // Mirror the client-side gate in getOrCreateChannel(): both directions must opt in.
-        //
-        // NOTE: TLS does not yet exist — this gate is a construction-time reminder that plaintext
-        // is the only transport, NOT runtime security enforcement. Real mTLS (with peer-identity
-        // binding) is tracked in Luciferase-l9dny. Do not interpret passing this gate as a
-        // security guarantee; it is an explicit acknowledgement that plaintext is intentional.
-        if (!allowPlaintext) {
-            throw new IllegalStateException(
-                "Server: plaintext transport requires explicit opt-in via setAllowPlaintext(true). "
-                + "Full mTLS with peer-identity binding is tracked in Luciferase-l9dny "
-                + "(coordinates with RDR-005/RDR-013 cert plumbing).");
-        }
-
         try {
             // Parse port from address (format: "host:port")
             var port = parsePort(nodeAddress);
 
-            // Build and start gRPC server on specified port (0 = dynamic)
-            var bubbleServerBuilder = NettyServerBuilder.forPort(port)
-                .addService(new BubbleMigrationServiceImpl())
-                .executor(executorService);
+            // Build and start the gRPC server. mTLS takes precedence over the plaintext opt-in: when a
+            // ServerAuth is configured (Luciferase-l9dny / RDR-023), install its (trust-any) mTLS credentials
+            // together with the PeerAuthInterceptor that cryptographically authenticates each peer's
+            // certificate identity. Otherwise fall back to the explicit plaintext opt-in.
+            ServerBuilder<?> bubbleServerBuilder;
+            var auth = this.serverAuth;
+            if (auth != null) {
+                bubbleServerBuilder = Grpc.newServerBuilderForPort(port, auth.credentials())
+                    .addService(new BubbleMigrationServiceImpl())
+                    .executor(executorService)
+                    .intercept(auth.interceptor());
+            } else {
+                // Server-side plaintext gate (Luciferase-7wzml.200 I1). Mirror the client-side gate in
+                // getOrCreateChannel(): both directions must opt in. Passing this gate is an explicit
+                // acknowledgement that plaintext is intentional, NOT a security guarantee — configure mTLS
+                // via setCredentials(...) for authenticated transport (Luciferase-l9dny).
+                if (!allowPlaintext) {
+                    throw new IllegalStateException(
+                        "Server: transport requires either mTLS (setCredentials(...)) or an explicit "
+                        + "plaintext opt-in via setAllowPlaintext(true). Full mTLS with peer-identity "
+                        + "binding is Luciferase-l9dny (RDR-023/RDR-005 cert plumbing).");
+                }
+                bubbleServerBuilder = NettyServerBuilder.forPort(port)
+                    .addService(new BubbleMigrationServiceImpl())
+                    .executor(executorService);
+            }
             // RDR-013 / Luciferase-06ujn: explicit inbound size + metadata bounds (DoS surface) — this is the
             // third production gRPC server (alongside Ghost), enumerated in RDR-005's inventory.
             GrpcServerHardening.applyInboundLimits(bubbleServerBuilder);
@@ -489,27 +544,32 @@ public class GrpcBubbleNetworkChannel implements BubbleNetworkChannel, AutoClose
                 throw new IllegalStateException("No address registered for node: " + nodeId);
             }
 
-            // Client-side plaintext gate (Luciferase-7wzml.200).
-            //
-            // NOTE: TLS does not yet exist — this gate is a construction-time reminder that
-            // plaintext is the only transport, NOT runtime security enforcement. Real mTLS
-            // (with peer-identity binding) is tracked in Luciferase-l9dny. Passing this gate
-            // is an explicit acknowledgement that plaintext is intentional, not a security
-            // guarantee.
-            if (!allowPlaintext) {
-                throw new IllegalStateException(
-                    "plaintext transport requires explicit opt-in: call setAllowPlaintext(true) "
-                    + "or use GrpcBubbleNetworkChannel(true). "
-                    + "Full mTLS with peer-identity binding is tracked in Luciferase-l9dny "
-                    + "(coordinates with RDR-005/RDR-013 cert plumbing).");
-            }
-
             var parts = address.split(":");
             var host = parts[0];
             var port = Integer.parseInt(parts[1]);
 
-            log.debug("Creating plaintext gRPC channel to {}:{} (opt-in; see Luciferase-l9dny for TLS roadmap)",
-                      host, port);
+            // mTLS takes precedence over the plaintext opt-in (Luciferase-l9dny / RDR-023): when outbound
+            // channel credentials are configured, build a mutual-TLS channel; the server's
+            // PeerAuthInterceptor then authenticates this client's certificate identity.
+            var creds = this.channelCredentials;
+            if (creds != null) {
+                log.debug("Creating mTLS gRPC channel to {}:{}", host, port);
+                return Grpc.newChannelBuilderForAddress(host, port, creds)
+                    .executor(executorService)
+                    .build();
+            }
+
+            // Client-side plaintext gate (Luciferase-7wzml.200). Passing this gate is an explicit
+            // acknowledgement that plaintext is intentional, NOT a security guarantee — configure mTLS via
+            // setCredentials(...) for authenticated transport (Luciferase-l9dny).
+            if (!allowPlaintext) {
+                throw new IllegalStateException(
+                    "transport requires either mTLS (setCredentials(...)) or an explicit plaintext "
+                    + "opt-in: call setAllowPlaintext(true) or use GrpcBubbleNetworkChannel(true). "
+                    + "Full mTLS with peer-identity binding is Luciferase-l9dny (RDR-023/RDR-005 cert plumbing).");
+            }
+
+            log.debug("Creating plaintext gRPC channel to {}:{} (opt-in)", host, port);
             return NettyChannelBuilder.forAddress(host, port)
                 .usePlaintext()
                 .executor(executorService)
