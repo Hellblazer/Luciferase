@@ -191,9 +191,12 @@ class P51IntegrationTest {
 
         // When: Inject concurrent failures
         injector.injectPartitionFailure(partition1, 0);
-        injector.injectPartitionFailure(partition3, 50); // Slight stagger
+        var fault3 = injector.injectPartitionFailure(partition3, 50); // Slight stagger
 
         var future1 = recovery1.recover(partition1, faultHandler);
+        // Deterministically wait for the staggered (background) failure of partition3 before recovering it,
+        // rather than racing a fixed margin over the 50ms delay (Luciferase-uockh).
+        injector.awaitCompletion(fault3).get(5, TimeUnit.SECONDS);
         var future3 = recovery3.recover(partition3, faultHandler);
 
         var result1 = future1.get(10, TimeUnit.SECONDS);
@@ -260,8 +263,9 @@ class P51IntegrationTest {
         );
         var faults = injector.injectCascadingFailures(failingPartitions, 200);
 
-        // Wait for cascade to complete
-        Thread.sleep(1000);
+        // Deterministically wait for the staggered cascade to actually complete, rather than a fixed
+        // 1s margin over the 200ms-stagger background injections (Luciferase-uockh).
+        injector.awaitAll(faults).get(10, TimeUnit.SECONDS);
 
         // Then: Validate system recovered
         var activePartitions = new HashSet<>(partitionIds);

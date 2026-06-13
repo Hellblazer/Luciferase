@@ -48,6 +48,11 @@ public class FaultInjector {
     private final ExecutorService executor;
     private final Map<String, Consumer<UUID>> partitionFailureHandlers;
     private final AtomicInteger faultCounter;
+    // Completion handle per fault (keyed by faultId) so callers can deterministically await a DELAYED
+    // injection instead of racing a fixed sleep over the background executor (Luciferase-uockh; same
+    // class of fix as the IntegrationTestFixture Future return in Luciferase-8brw9). Immediate (delay=0)
+    // faults complete synchronously; their entry is an already-completed future.
+    private final Map<Integer, CompletableFuture<Void>> faultCompletions = new ConcurrentHashMap<>();
 
     // Network fault state
     private volatile double packetLossRate = 0.0;
@@ -118,21 +123,57 @@ public class FaultInjector {
         injectedFaults.add(fault);
 
         if (delayMs == 0) {
-            // Immediate failure
+            // Immediate failure — completes synchronously on the caller thread.
             invokePartitionFailureHandlers(partitionId);
+            faultCompletions.put(faultId, CompletableFuture.completedFuture(null));
         } else {
-            // Delayed failure
-            executor.submit(() -> {
+            // Delayed failure — track the completion so callers can await the actual injection
+            // (awaitCompletion) rather than racing a fixed sleep over this background task (Luciferase-uockh).
+            var completion = CompletableFuture.runAsync(() -> {
                 try {
                     Thread.sleep(delayMs);
-                    invokePartitionFailureHandlers(partitionId);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    throw new CompletionException(e);
                 }
-            });
+                invokePartitionFailureHandlers(partitionId);
+            }, executor);
+            faultCompletions.put(faultId, completion);
         }
 
         return fault;
+    }
+
+    /**
+     * Completion handle for a previously-injected fault (Luciferase-uockh). For a DELAYED partition
+     * failure the actual handler invocation runs on a background executor; this lets a caller/test await
+     * that the failure has actually been applied — deterministically — instead of guessing a wall-clock
+     * margin over the delay (the background-race class fixed for IntegrationTestFixture in 8brw9).
+     * <p>
+     * For an immediate ({@code delayMs == 0}) fault the returned future is already complete. An unknown
+     * fault (not produced by this injector) yields an already-complete future rather than throwing.
+     *
+     * @param fault a fault returned by {@link #injectPartitionFailure}
+     * @return a future that completes once the fault's handlers have been invoked
+     */
+    public CompletableFuture<Void> awaitCompletion(InjectedFault fault) {
+        Objects.requireNonNull(fault, "fault cannot be null");
+        return faultCompletions.getOrDefault(fault.faultId(), CompletableFuture.completedFuture(null));
+    }
+
+    /**
+     * Completion handle for a batch of faults (e.g. the result of {@link #injectCascadingFailures} or
+     * {@link #injectBurstFailures}) — completes once every fault's handlers have been invoked. Lets a
+     * caller await a staggered/cascading set deterministically instead of sleeping a fixed margin over the
+     * total delay (Luciferase-uockh).
+     *
+     * @param faults faults returned by an inject* method
+     * @return a future that completes when all the given faults have completed
+     */
+    public CompletableFuture<Void> awaitAll(List<InjectedFault> faults) {
+        Objects.requireNonNull(faults, "faults cannot be null");
+        return CompletableFuture.allOf(
+            faults.stream().map(this::awaitCompletion).toArray(CompletableFuture[]::new));
     }
 
     /**
@@ -488,6 +529,9 @@ public class FaultInjector {
         clockDrifting = false;
         driftRateMs = 0;
         faultCounter.set(0);
+        // Must clear alongside faultCounter.set(0): otherwise the next fault reuses faultId=1 and
+        // awaitCompletion would alias a stale (already-done) future from the pre-reset run (Luciferase-uockh).
+        faultCompletions.clear();
     }
 
     /**
