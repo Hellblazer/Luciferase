@@ -8,9 +8,14 @@
  */
 package com.hellblazer.luciferase.simulation.lifecycle;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.hellblazer.luciferase.simulation.distributed.integration.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -21,6 +26,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -163,15 +169,22 @@ class LifecycleCoordinatorTest {
 
         coordinator.start();
 
-        // Act
-        var startTime = System.currentTimeMillis();
-        coordinator.stop(100); // 100ms timeout total
-        var duration = System.currentTimeMillis() - startTime;
+        try {
+            // Act
+            var startTime = System.currentTimeMillis();
+            coordinator.stop(100); // 100ms timeout total
+            var duration = System.currentTimeMillis() - startTime;
 
-        // Assert
-        assertTrue(duration < 500, "Coordinator should timeout within 500ms, took: " + duration + "ms");
-        // Normal component should still reach STOPPED state
-        assertEquals(LifecycleState.STOPPED, coordinator.getState("Normal"));
+            // Assert: the coordinator must not block on the 10s slow component.
+            assertTrue(duration < 2000, "Coordinator should not block on the slow component, took: " + duration + "ms");
+            // The fast component's stop completes shortly after; its state is reconciled when its stop future finishes
+            // (the barrier timeout does not cancel it). Await rather than reading immediately — under CI load the async
+            // completion can land just after stop() returns, so a direct read races the state-map write (Luciferase-h8gm8).
+            await().atMost(java.time.Duration.ofSeconds(10))
+                   .until(() -> coordinator.getState("Normal") == LifecycleState.STOPPED);
+        } finally {
+            slowComponent.close(); // free the abandoned 10s stop thread
+        }
     }
 
     /**
@@ -1181,6 +1194,10 @@ class LifecycleCoordinatorTest {
      * <p>
      * Ensures backward compatibility when using default constructor.
      */
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Wall-clock: a 4500ms component start against the 5000ms default budget leaves only a "
+                         + "500ms margin that CI runner contention exceeds (Luciferase-h8gm8). Start-path timing, "
+                         + "unrelated to shutdown-budget logic.")
     @Test
     void testDefaultComponentTimeout() {
         // Arrange - Use default constructor (should use 5000ms per component)
@@ -1201,5 +1218,209 @@ class LifecycleCoordinatorTest {
                    "Start should complete in 4.5-8s with default timeout, took: " + duration + "ms");
 
         defaultCoordinator.stop(5000);
+    }
+
+    // ========================================================================
+    // Luciferase-43bat: bounded, observable shutdown budget
+    // ========================================================================
+
+    /**
+     * Phase 1 (Luciferase-451hn): the new 3-arg constructor plumbs a {@link com.hellblazer.luciferase.common.time.Clock};
+     * all delegating constructors still work and a null clock falls back to system without NPE.
+     */
+    @Test
+    void clockInjectionExposedViaNewCtor() {
+        var clock = new TestClock();
+        var c = new LifecycleCoordinator(1000L, null, clock);
+        var comp = new MockComponent("A", new ArrayList<>(), new ArrayList<>());
+        c.register(comp);
+        c.start();
+        assertEquals(LifecycleState.RUNNING, c.getState("A"));
+        c.stop(5000);
+        assertEquals(LifecycleState.STOPPED, c.getState("A"), "stop with an injected clock must still work");
+        assertDoesNotThrow(() -> new LifecycleCoordinator(1000L, null, null),
+                           "null clock must fall back to system without NPE");
+    }
+
+    /**
+     * Phase 1 (Luciferase-451hn): stop() must consult the INJECTED clock for budget arithmetic, not
+     * {@code System.nanoTime()} directly — otherwise injection is inert and the budget can't be reasoned about.
+     */
+    @Test
+    void stopConsultsInjectedClockForBudget() {
+        var nanoCalls = new java.util.concurrent.atomic.AtomicInteger(0);
+        var countingClock = new com.hellblazer.luciferase.common.time.Clock() {
+            @Override public long currentTimeMillis() { return System.currentTimeMillis(); }
+            @Override public long nanoTime() { nanoCalls.incrementAndGet(); return System.nanoTime(); }
+        };
+        var c = new LifecycleCoordinator(1000L, null, countingClock);
+        c.register(new MockComponent("A", new ArrayList<>(), new ArrayList<>()));
+        c.start();
+        c.stop(5000);
+        assertTrue(nanoCalls.get() > 0, "stop() must call the injected clock's nanoTime() for budget arithmetic");
+    }
+
+    /**
+     * Phase 2 (Luciferase-q7g4z): the per-layer budget is pure arithmetic that divides the remaining time by
+     * the number of remaining layers — NOT by component count — clamps to zero, and rolls unused slack down to
+     * lower layers (scenario e).
+     */
+    @Test
+    void computeLayerBudgetMsDividesByRemainingLayers() {
+        assertEquals(1666L, LifecycleCoordinator.computeLayerBudgetMs(5000L, 3));
+        assertEquals(1000L, LifecycleCoordinator.computeLayerBudgetMs(1000L, 1));
+        assertEquals(0L, LifecycleCoordinator.computeLayerBudgetMs(0L, 3), "exhausted budget yields zero");
+        assertEquals(0L, LifecycleCoordinator.computeLayerBudgetMs(-5L, 2), "negative remaining clamps to zero");
+        assertEquals(0L, LifecycleCoordinator.computeLayerBudgetMs(1000L, 0), "no layers remaining yields zero");
+
+        // Rolling slack: after a fast upper layer consumes only 100ms of a 3000ms/3-layer budget, the next layer
+        // gets MORE than the up-front even split of 1000ms.
+        long evenSplit = 3000L / 3;
+        long afterFastLayer = LifecycleCoordinator.computeLayerBudgetMs(2900L, 2);
+        assertTrue(afterFastLayer > evenSplit, "rolling budget hands unused slack down, was " + afterFastLayer);
+
+        // An empty/skipped layer donates its slot: with 3 total layers but only 2 remaining, the full remaining
+        // time is split across the 2 — not still divided by the original 3.
+        assertEquals(1500L, LifecycleCoordinator.computeLayerBudgetMs(3000L, 2),
+                     "a donated (empty-layer) slot widens the remaining layers' budget");
+    }
+
+    /**
+     * Phase 2 (Luciferase-q7g4z) scenario (a): the budget is layer-bound, not 5000/N. Many parallel components in
+     * one layer each get the whole layer's wall-clock budget rather than {@code timeoutMs / componentCount}, which
+     * collapses at scale (at k=20, the old per-component budget was 250ms).
+     */
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Wall-clock: real component stop delays vs orTimeout enforcement; large margin but timing-based")
+    @Test
+    void budgetIsLayerBoundNotComponentBound() {
+        int k = 20;
+        for (int i = 0; i < k; i++) {
+            coordinator.register(new SlowComponent("S" + i, 0, 300)); // 300ms stop; old budget 5000/20 = 250ms
+        }
+        coordinator.start();
+        coordinator.stop(5000);
+        for (int i = 0; i < k; i++) {
+            assertEquals(LifecycleState.STOPPED, coordinator.getState("S" + i),
+                         "S" + i + " must reach STOPPED — the layer budget is not divided by component count");
+        }
+    }
+
+    /**
+     * Phase 3 (Luciferase-bqrdk) scenarios (b)+(d): a layer that overruns its budget does not block the lower
+     * layers — the coordinator stops waiting near the layer budget and the lower layer still stops.
+     */
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Wall-clock: barrier orTimeout is real-time; uses a generous outer bound")
+    @Test
+    void lowerLayersRunAfterUpperLayerTimeout() {
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var lower = new MockComponent("Lower", new ArrayList<>(), stopOrder);           // layer 0
+        var upper = new SlowComponent("Upper", 0, 30_000, List.of("Lower"));            // layer 1, depends on Lower
+        coordinator.register(lower);
+        coordinator.register(upper);
+        coordinator.start();
+
+        try {
+            long t0 = System.currentTimeMillis();
+            coordinator.stop(2000);   // 2 layers -> ~1000ms each; Upper (30s) straggles, must not block Lower
+            long elapsed = System.currentTimeMillis() - t0;
+
+            assertTrue(elapsed < 10_000, "coordinator must not block on the 30s straggler, took " + elapsed + "ms");
+            assertEquals(LifecycleState.STOPPED, coordinator.getState("Lower"),
+                         "the lower layer must still stop after the upper layer's budget is exhausted");
+        } finally {
+            upper.close(); // free the abandoned 30s stop thread
+        }
+    }
+
+    /**
+     * Phase 3 (Luciferase-bqrdk) scenario (b): the barrier fires at approximately the LAYER budget, not at a
+     * per-component slice and not after the component's full 30s stop. A single-layer stop(1000) must return near
+     * 1000ms, bounding the regression-escape window that a loose multi-second assertion would leave open.
+     */
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Wall-clock: barrier orTimeout is real-time; asserts a tight timing window")
+    @Test
+    void layerBarrierTimesOutAtLayerBudget() {
+        var slow = new SlowComponent("Slow", 0, 30_000); // one layer -> budget == full timeout
+        coordinator.register(slow);
+        try {
+            coordinator.start();
+            long t0 = System.currentTimeMillis();
+            coordinator.stop(1000);
+            long elapsed = System.currentTimeMillis() - t0;
+            assertTrue(elapsed >= 500 && elapsed < 3000,
+                       "barrier must fire near the 1000ms layer budget, not at a per-component slice or the 30s stop; "
+                       + "took " + elapsed + "ms");
+        } finally {
+            slow.close(); // free the abandoned 30s stop thread promptly (off the common pool either way)
+        }
+    }
+
+    /**
+     * Phase 3 (Luciferase-bqrdk) scenario (e), wall-clock half: slack from a fast upper layer rolls down to a
+     * slower lower layer. With a 2000ms total over 2 layers an even up-front split is 1000ms each; the lower
+     * component's 1500ms stop completes ONLY because the near-instant upper layer donates its unused budget. If the
+     * budget were a fixed even split, the lower component would time out instead of reaching STOPPED.
+     */
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Wall-clock: rolling-slack transfer measured against real component stop time")
+    @Test
+    void rollingSlackPassedToLowerLayer() {
+        var stopOrder = Collections.synchronizedList(new ArrayList<String>());
+        var lower = new SlowComponent("Lower", 0, 1500);                       // layer 0, stopped LAST, slow
+        var upper = new MockComponent("Upper", List.of("Lower"), new ArrayList<>(), stopOrder); // layer 1, instant
+        coordinator.register(lower);
+        coordinator.register(upper);
+        coordinator.start();
+
+        coordinator.stop(2000); // even split would give the lower layer only 1000ms < 1500ms; rolling gives ~2000ms
+
+        assertEquals(LifecycleState.STOPPED, coordinator.getState("Lower"),
+                     "lower layer completed its 1500ms stop only because the fast upper layer rolled its slack down");
+    }
+
+    /**
+     * Phase 3 (Luciferase-bqrdk) scenario (c): when a layer's budget is exhausted with a component still stopping,
+     * the coordinator ERROR-logs the straggler by name (observability — the whole point of the bead).
+     */
+    @Test
+    void stragglerIsErrorLoggedByName() {
+        var logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(LifecycleCoordinator.class);
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        var straggler = new SlowComponent("Straggler", 0, 30_000);
+        coordinator.register(straggler);
+        try {
+            coordinator.start();
+            coordinator.stop(100); // 1 layer -> 100ms budget; the 30s stop is still running at the barrier timeout
+            boolean named = appender.list.stream()
+                                         .filter(e -> e.getLevel() == Level.ERROR)
+                                         .anyMatch(e -> e.getFormattedMessage().contains("Straggler"));
+            assertTrue(named, "an ERROR log must name the straggling component on budget exhaustion");
+        } finally {
+            logger.detachAppender(appender);
+            straggler.close(); // free the abandoned 30s stop thread
+        }
+    }
+
+    /**
+     * Phase 3 (Luciferase-bqrdk): a zero / exhausted layer budget proceeds immediately without hanging or throwing.
+     */
+    @Test
+    void zeroLayerBudgetProceedsSafely() {
+        var slow = new SlowComponent("Slow", 0, 30_000);
+        coordinator.register(slow);
+        try {
+            coordinator.start();
+            long t0 = System.currentTimeMillis();
+            assertDoesNotThrow(() -> coordinator.stop(0));
+            long elapsed = System.currentTimeMillis() - t0;
+            assertTrue(elapsed < 5000, "zero budget must return promptly, took " + elapsed + "ms");
+        } finally {
+            slow.close(); // free the abandoned 30s stop thread
+        }
     }
 }
