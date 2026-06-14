@@ -88,6 +88,11 @@ public final class BuildQueue {
      */
     public void submit(SpatialKey<?> key, RegionBuilder.KeyedBuildRequest.Priority priority) {
         // TODO: wire priority into build executor ordering (Task 6.1 follow-up)
+        // INVARIANT (Luciferase-jifjt): builder.buildKeyed must complete on a pool thread, never
+        // synchronously on the caller. The whenComplete callback calls inFlight.remove(k); if the
+        // future were already complete (e.g. CompletableFuture.completedFuture in a test stub), that
+        // remove would run re-entrantly inside this computeIfAbsent — a forbidden ConcurrentHashMap
+        // self-mutation. Any synchronous/test build path must still resolve asynchronously (supplyAsync).
         inFlight.computeIfAbsent(key, k -> {
             var expectedVersion = dirtyTracker.version(k);
             return builder.buildKeyed(k, facade, expectedVersion)
