@@ -31,6 +31,7 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -41,6 +42,9 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     
+    // Lazily allocated. Safely published through the zBufferActivated volatile: activateZBuffer()
+    // writes this.zBuffer BEFORE this.zBufferActivated = true, so any thread that reads
+    // zBufferActivated==true (via isZBufferActive()) sees the fully-constructed zBuffer (Luciferase-b3uz3).
     private HierarchicalZBuffer zBuffer; // Now lazy-initialized
     private final DSOCConfiguration config;
     private final OcclusionStatistics statistics;
@@ -51,10 +55,13 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
     // Lazy initialization support
     private final int requestedBufferWidth;
     private final int requestedBufferHeight;
-    private int occluderCount = 0;
+    // renderOccluder runs concurrently (DsocController calls it under a READ lock), so occluderCount
+    // and the Z-buffer activation must be thread-safe or two threads can both activate the Z-buffer,
+    // the second discarding the first buffer's occluders (Luciferase-b3uz3).
+    private final AtomicInteger occluderCount = new AtomicInteger(0);
     private static final int MIN_OCCLUDERS_FOR_ACTIVATION = 3;
     private static final int MIN_ENTITIES_FOR_ZBUFFER = 100;
-    private boolean zBufferActivated = false;
+    private volatile boolean zBufferActivated = false;
     
     /**
      * Creates a hierarchical occlusion culler with lazy Z-buffer initialization
@@ -128,13 +135,20 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
      */
     public void renderOccluder(EntityBounds bounds) {
         if (bounds.volume() > config.getMinOccluderVolume()) {
-            occluderCount++;
-            
-            // Initialize Z-buffer when we have enough occluders
+            occluderCount.incrementAndGet();
+
+            // Initialize Z-buffer when we have enough occluders. Double-checked under the monitor so
+            // that exactly one thread activates it — otherwise a second activateZBuffer() would
+            // replace this.zBuffer and discard the occluders already rendered into the first
+            // instance (Luciferase-b3uz3).
             if (!zBufferActivated && shouldActivateZBuffer()) {
-                activateZBuffer();
+                synchronized (this) {
+                    if (!zBufferActivated && shouldActivateZBuffer()) {
+                        activateZBuffer();
+                    }
+                }
             }
-            
+
             if (isZBufferActive()) {
                 zBuffer.renderOccluder(bounds);
                 statistics.occludersRendered.incrementAndGet();
@@ -160,7 +174,7 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
         }
         
         // Reset occluder count for this frame
-        occluderCount = 0;
+        occluderCount.set(0);
     }
     
     /**
@@ -263,7 +277,7 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
      * Check if Z-buffer should be activated based on current conditions
      */
     private boolean shouldActivateZBuffer() {
-        return occluderCount >= MIN_OCCLUDERS_FOR_ACTIVATION;
+        return occluderCount.get() >= MIN_OCCLUDERS_FOR_ACTIVATION;
     }
     
     /**
@@ -275,7 +289,7 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
         }
         
         // Calculate optimal dimensions based on current scene characteristics
-        double occluderDensity = Math.min(1.0, occluderCount / 100.0); // Estimate density
+        double occluderDensity = Math.min(1.0, occluderCount.get() / 100.0); // Estimate density
         float sceneBounds = 1000.0f; // Default scene bounds - could be made configurable
         
         var optimalConfig = AdaptiveZBufferConfig.calculateOptimalDimensions(
@@ -313,8 +327,14 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
      * Force Z-buffer activation (for testing or manual control)
      */
     public void forceActivate() {
+        // Same exactly-once activation guard as renderOccluder (Luciferase-b3uz3): another activation
+        // path must not race renderOccluder and double-allocate the Z-buffer.
         if (!zBufferActivated) {
-            activateZBuffer();
+            synchronized (this) {
+                if (!zBufferActivated) {
+                    activateZBuffer();
+                }
+            }
         }
     }
 
