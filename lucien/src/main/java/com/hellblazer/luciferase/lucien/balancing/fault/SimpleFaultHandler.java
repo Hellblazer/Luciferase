@@ -414,10 +414,28 @@ public class SimpleFaultHandler implements FaultHandler {
                 "Recovery initiated"
             ));
 
+            // Honor the strategy's own precondition gate before attempting recovery, matching
+            // DefaultFaultHandler.initiateRecovery.
+            if (!recovery.canRecover(partitionId, this)) {
+                log.warn("Partition {} recovery declined by strategy {} (canRecover=false)",
+                    partitionId, recovery.getStrategyName());
+                return CompletableFuture.completedFuture(false);
+            }
+
             log.info("Partition {} initiating recovery (Phase 4.2)", partitionId);
 
-            // Delegate to recovery strategy
-            return recovery.initiateRecovery(partitionId);
+            // Delegate to the recovery strategy via recover(UUID, FaultHandler). The deprecated
+            // recovery.initiateRecovery(UUID) default always fails with UnsupportedOperationException,
+            // so the prior call meant NO recovery strategy could ever succeed through this handler.
+            // Mirror DefaultFaultHandler.initiateRecovery, which uses recover(...).success() and
+            // contains exceptions so the returned future never completes exceptionally to callers.
+            return recovery.recover(partitionId, this)
+                .thenApply(RecoveryResult::success)
+                .exceptionally(ex -> {
+                    log.error("Partition {} recovery threw via strategy {}: {}",
+                        partitionId, recovery.getStrategyName(), ex.getMessage(), ex);
+                    return false;
+                });
         } else {
             return CompletableFuture.completedFuture(false);
         }
