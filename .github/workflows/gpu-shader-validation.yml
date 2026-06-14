@@ -5,11 +5,17 @@ on:
     branches: [main, 'feature/**']
     paths:
       - 'render/src/main/resources/shaders/**'
+      # GL compute renderers + their tests run under the Mesa software-GL job (Luciferase-ai9tw),
+      # so Java changes to the GPU paths must trigger this workflow too — not just shader edits.
+      - 'render/src/main/java/**/gpu/**'
+      - 'render/src/test/java/**/gpu/**'
       - '.github/workflows/gpu-shader-validation.yml'
   pull_request:
     branches: [main]
     paths:
       - 'render/src/main/resources/shaders/**'
+      - 'render/src/main/java/**/gpu/**'
+      - 'render/src/test/java/**/gpu/**'
       - '.github/workflows/gpu-shader-validation.yml'
 
 jobs:
@@ -145,13 +151,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run ESVT GPU tests with Mesa
+      - name: Run GL compute tests under Mesa (gl-software — GATING)
         run: |
           export DISPLAY=:99.0
           Xvfb :99 -screen 0 1024x768x24 &
           sleep 2
 
-          # Try running GPU tests - they may skip if compute shaders unavailable
+          # Deterministic GL compute tests (SSBO size-accounting, etc.) tagged @Tag("gl-software").
+          # These exercise the real glBufferData / compute paths the dev hardware (Apple GL 4.1)
+          # cannot run, so they GATE here: a GL regression in the compute renderers fails CI
+          # instead of shipping review-only (Luciferase-ai9tw). Under Mesa's software GL 4.5 the
+          # tests run; if the software context cannot be created they self-skip via Assumptions
+          # (GLComputeTestSupport), so a missing context is a skip, not a false failure.
+          RUN_GPU_TESTS=true ./mvnw test -pl render -Dgroups=gl-software
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run ESVT GPU rendering test with Mesa (best-effort)
+        run: |
+          export DISPLAY=:99.0
+          Xvfb :99 -screen 0 1024x768x24 &
+          sleep 2
+
+          # Heavier rendering-parity test kept best-effort (|| true): software-GL pixel output can
+          # vary, so it stays informational rather than gating.
           RUN_GPU_TESTS=true ./mvnw test -pl render -Dtest=ESVTGPUIntegrationTest -q || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
