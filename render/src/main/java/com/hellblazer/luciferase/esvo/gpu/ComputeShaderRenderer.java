@@ -132,7 +132,13 @@ public final class ComputeShaderRenderer {
         int[] fps = data.getFarPointers();
         int byteCount = (fps != null && fps.length > 0) ? fps.length * Integer.BYTES : Integer.BYTES;
 
-        if (farPointerSSBO == null) {
+        // Recreate the tracked resource when the size changes (Luciferase-z2ysz): the glBufferData
+        // below re-orphans the GL allocation at the new size, but the UnifiedResourceManager-tracked
+        // BufferResource keeps its original sizeBytes unless recreated, drifting the accounting.
+        if (farPointerSSBO == null || farPointerSSBO.getSizeBytes() != byteCount) {
+            if (farPointerSSBO != null) {
+                farPointerSSBO.close();
+            }
             farPointerSSBO = resourceManager.createStorageBuffer(byteCount, "ESVOFarPointerSSBO");
         }
 
