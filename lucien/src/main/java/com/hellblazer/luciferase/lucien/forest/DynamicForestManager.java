@@ -176,6 +176,14 @@ public class DynamicForestManager<Key extends SpatialKey<Key>, ID extends Entity
         @Override
         public List<SplitSpecification> createSplits(TreeNode<Key, ID, Content> tree) {
             var bounds = tree.getGlobalBounds();
+            if (bounds == null) {
+                // No entity bounds yet -> no spatial extent to partition. globalBounds is expanded
+                // eagerly on every ForestEntityManager.insert, while entityCount is a lazily-refreshed
+                // cached stat; so in normal operation any tree reaching shouldSplit has already had
+                // entities inserted (which set globalBounds) and this branch is not hit. Retained as a
+                // null-safety barrier for direct/custom strategy callers (Luciferase-drc6r).
+                return List.of();
+            }
             var min = bounds.getMin();
             var max = bounds.getMax();
             
@@ -285,7 +293,15 @@ public class DynamicForestManager<Key extends SpatialKey<Key>, ID extends Entity
                                         TreeNode<Key, ID, Content> tree2) {
             var bounds1 = tree1.getGlobalBounds();
             var bounds2 = tree2.getGlobalBounds();
-            
+
+            // An empty tree (no entities) has null globalBounds and thus no spatial extent — it
+            // cannot be "spatially close" to anything. Underutilized selection (entityCount < min)
+            // includes such empty trees, so this is reachable; without the guard getMin() NPEs and
+            // the exception propagates out of checkAndMergeTrees (Luciferase-drc6r).
+            if (bounds1 == null || bounds2 == null) {
+                return false;
+            }
+
             // Check if bounds overlap or are adjacent
             var min1 = bounds1.getMin();
             var max1 = bounds1.getMax();
@@ -768,7 +784,11 @@ public class DynamicForestManager<Key extends SpatialKey<Key>, ID extends Entity
             var tree = forest.getTree(treeId);
             if (tree != null) {
                 var bounds = tree.getGlobalBounds();
-                if (containsPoint(bounds, position)) {
+                // Defensive null guard for consistency with the merge/split paths (Luciferase-drc6r).
+                // Not currently reachable — the sole caller (splitTree) passes octant trees whose
+                // bounds come from SplitSpecification (non-null by construction) — but a future caller
+                // passing a null-bounds tree would otherwise NPE inside containsPoint.
+                if (bounds != null && containsPoint(bounds, position)) {
                     // Prefer trees that tightly contain the position
                     var score = calculateContainmentScore(bounds, position);
                     if (score < bestScore) {
