@@ -156,9 +156,10 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
 
     /**
      * Returns the number of raw cl_mem handles currently tracked by the base class.
-     * Package-private — for unit-test assertions only.
+     * {@code protected} — for test assertions, including subclass tests in other packages that need to
+     * verify their release paths untrack handles (Luciferase-qe8p0 double-free regression guard).
      */
-    int trackedRawHandleCount() {
+    protected int trackedRawHandleCount() {
         return trackedRawHandles.size();
     }
 
