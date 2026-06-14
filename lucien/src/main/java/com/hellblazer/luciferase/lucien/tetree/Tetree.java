@@ -1462,13 +1462,11 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     protected TetreeKey<? extends TetreeKey<?>> calculateSpatialIndex(Point3f position, byte level) {
         var tet = locate(position, level);
 
-        // Fast path for shallow levels (0-5) using pre-computed lookup tables
-        if (level <= 5) {
-            TetreeKey<?> cached = TetreeLevelCache.getShallowLevelKey(tet.x(), tet.y(), tet.z(), level, tet.type());
-            if (cached != null) {
-                return cached;
-            }
-        }
+        // All return paths below must yield a key equal()/compareTo-consistent with tet.tmIndex()
+        // (the spatial keys back a ConcurrentSkipListMap). LazyTetreeKey resolves to tmIndex on
+        // demand. The shallow-level fast-path cache that used to sit here was removed (Luciferase-lof72):
+        // its init only ever populated origin cells, so it returned tmIndex(origin) or null -> the
+        // same tmIndex() path taken below.
 
         // Use lazy evaluation if enabled
         if (useLazyEvaluation) {
