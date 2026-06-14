@@ -556,10 +556,12 @@ public class DynamicForestManager<Key extends SpatialKey<Key>, ID extends Entity
                     // Find best matching split
                     var bestTree = findBestTreeForPosition(position, newTreeIds);
                     if (bestTree != null) {
-                        // Update entity manager to move entity
-                        entityManager.remove(entityId);
+                        // Read content and bounds BEFORE removing the entity: remove() deletes the
+                        // entity from the source spatial index, after which getEntity/getEntityBounds
+                        // return null and the entity would be re-inserted with null content (silent loss).
                         var content = tree.getSpatialIndex().getEntity(entityId);
                         var bounds = tree.getSpatialIndex().getEntityBounds(entityId);
+                        entityManager.remove(entityId);
                         entityManager.insert(entityId, content, position, bounds);
                         migratedCount++;
                     }
