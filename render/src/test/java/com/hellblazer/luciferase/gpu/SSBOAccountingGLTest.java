@@ -23,11 +23,16 @@ import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
 import com.hellblazer.luciferase.esvt.gpu.ESVTComputeRenderer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.lwjgl.system.MemoryStack;
 
 import java.lang.reflect.Field;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.lwjgl.opengl.GL15.glBindBuffer;
+import static org.lwjgl.opengl.GL15.glGetBufferSubData;
+import static org.lwjgl.opengl.GL43.GL_SHADER_STORAGE_BUFFER;
 
 /**
  * GL SSBO size-accounting regression tests, run under the Mesa software GL context (Luciferase-ai9tw).
@@ -130,6 +135,10 @@ class SSBOAccountingGLTest extends GLComputeTestSupport {
                 renderer.uploadData(esvtWithContours(64));    // 256 bytes
                 assertEquals(256L, trackedSsboBytes(renderer, "contourSSBO"),
                         "z9qq4/z2ysz: contour SSBO tracked size must follow the re-upload GROW");
+                // Value-level: the binding-6 buffer must hold exactly what contoursToByteBuffer()
+                // produced (encoding contract), not just be the right size. Read it back via GL.
+                assertArrayEquals(sentinelContours(64), readbackContourInts(renderer, 64),
+                        "z9qq4: contour SSBO contents must round-trip the uploaded int stream (std430 int[])");
 
                 renderer.uploadData(esvtWithContours(2));     // 8 bytes
                 assertEquals(8L, trackedSsboBytes(renderer, "contourSSBO"),
@@ -150,10 +159,36 @@ class SSBOAccountingGLTest extends GLComputeTestSupport {
         return new ESVTData(nodes, new int[0], new int[count], 0, 3, 1, 0);
     }
 
-    /** Minimal ESVTData carrying a contour table of {@code count} entries (no far pointers). */
+    /** Minimal ESVTData carrying a contour table of {@code count} distinct sentinel entries. */
     private static ESVTData esvtWithContours(int count) {
         var nodes = new ESVTNodeUnified[] { new ESVTNodeUnified() };
-        return new ESVTData(nodes, new int[count], new int[0], 0, 3, 1, 0);
+        return new ESVTData(nodes, sentinelContours(count), new int[0], 0, 3, 1, 0);
+    }
+
+    /** Distinct, non-zero contour values so a buffer read-back is a meaningful round-trip check. */
+    private static int[] sentinelContours(int count) {
+        var c = new int[count];
+        for (int i = 0; i < count; i++) {
+            c[i] = (i + 1) * 0x01010101;
+        }
+        return c;
+    }
+
+    /** Read {@code count} ints back from the renderer's contour SSBO via glGetBufferSubData. */
+    private static int[] readbackContourInts(Object renderer, int count) throws Exception {
+        Field field = renderer.getClass().getDeclaredField("contourSSBO");
+        field.setAccessible(true);
+        var ssbo = field.get(renderer);
+        assertNotNull(ssbo, "contourSSBO must be allocated after uploadData");
+        int glId = ((Number) ssbo.getClass().getMethod("getOpenGLId").invoke(ssbo)).intValue();
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, glId);
+        var out = new int[count];
+        try (var stack = MemoryStack.stackPush()) {
+            var ib = stack.mallocInt(count);
+            glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0L, ib);
+            ib.get(out);
+        }
+        return out;
     }
 
     /** Read the renderer's private {@code farPointerSSBO} tracked size via reflection. */

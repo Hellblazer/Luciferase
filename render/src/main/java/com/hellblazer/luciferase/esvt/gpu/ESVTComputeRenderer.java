@@ -206,6 +206,9 @@ public final class ESVTComputeRenderer {
         // is data-driven (contourCount * 4 bytes), so apply the same z2ysz recreate-on-size-change
         // guard as the far-pointer SSBO; upload a 4-byte placeholder when the build has no contours
         // so the shader's readonly ContourBuffer binding slot is always valid.
+        // NOTE: producer-pending (Luciferase-r8jrw) — ESVTBuilder currently emits empty contours, so
+        // this path binds the placeholder in live renders until a contour producer exists. The
+        // encoding contract is verified (matches the OpenCL path + the CPU ESVTTraversal indexing).
         boolean hasContours = data.hasContours();
         int contourBytes = hasContours ? data.contourSizeInBytes() : Integer.BYTES;
         if (contourSSBO == null || contourSSBO.getSizeBytes() != contourBytes) {
