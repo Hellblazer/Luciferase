@@ -495,6 +495,118 @@ class PhaseA2FaultTolerantDistributedForestTest {
     }
 
     /**
+     * Regression for Luciferase-0z68i: triggerRecovery() (invoked automatically when a partition
+     * fails) ran the recovery strategy but never called faultHandler.notifyRecoveryComplete(), so a
+     * successfully-recovered partition stayed FAILED forever and its success metric was never
+     * recorded. This asserts the FAILED -> HEALTHY transition actually happens (event-driven, so it
+     * is deterministic: under the bug the HEALTHY event never fires and the latch times out).
+     */
+    @Test
+    void testAutomaticRecoveryRestoresPartitionToHealthy() throws Exception {
+        var partitions = new ArrayList<UUID>();
+        for (int i = 0; i < 5; i++) {
+            var partitionId = UUID.randomUUID();
+            partitions.add(partitionId);
+            faultHandler.registerRecovery(partitionId, TestRecoveryStrategy.success("recovery-" + i));
+            faultHandler.markHealthy(partitionId);
+        }
+        var topology = createTestTopology(5, partitions.toArray(UUID[]::new));
+        var testForest = createTestDistributedForest();
+        ftForest = new FaultTolerantDistributedForest<>(
+            testForest,
+            faultHandler,
+            recoveryLock,
+            new DefaultParallelBalancer<>(BalanceConfiguration.defaultConfig()),
+            mockGhostManager,
+            topology,
+            partitions.get(0),
+            FaultConfiguration.defaultConfig(),
+            tracker
+        );
+        ftForest.start();
+
+        var failed = partitions.get(2);
+        var recoveredLatch = new CountDownLatch(1);
+        faultHandler.subscribeToChanges(event -> {
+            if (event.partitionId().equals(failed)
+                && event.newStatus() == PartitionStatus.HEALTHY
+                && event.oldStatus() == PartitionStatus.FAILED) {
+                recoveredLatch.countDown();
+            }
+        });
+
+        // Fail the partition; quorum stays (4/5), so the forest auto-triggers recovery.
+        faultHandler.reportBarrierTimeout(failed); // HEALTHY -> SUSPECTED
+        faultHandler.reportBarrierTimeout(failed); // SUSPECTED -> FAILED (auto-triggers recovery)
+
+        assertTrue(recoveredLatch.await(5, TimeUnit.SECONDS),
+            "successful recovery must restore the failed partition to HEALTHY (Luciferase-0z68i)");
+        assertEquals(PartitionStatus.HEALTHY, faultHandler.checkHealth(failed),
+            "partition status must be HEALTHY after recovery completes");
+        assertTrue(faultHandler.getMetrics(failed).successfulRecoveries() >= 1,
+            "a successful recovery must be recorded in the partition metrics");
+    }
+
+    /**
+     * Regression (Luciferase-0z68i follow-up): a permanently-failing recovery must NOT spin forever.
+     * The fix that wires notifyRecoveryComplete also guards SimpleFaultHandler against emitting a
+     * FAILED -> FAILED no-op event; without that guard, a failed recovery re-enters
+     * handlePartitionFailure -> scheduleRecoveryAsync and loops unbounded.
+     */
+    @Test
+    void testFailedRecoveryDoesNotLoop() throws Exception {
+        var partitions = new ArrayList<UUID>();
+        TestRecoveryStrategy failingRecovery = null;
+        for (int i = 0; i < 5; i++) {
+            var partitionId = UUID.randomUUID();
+            partitions.add(partitionId);
+            var recovery = (i == 2) ? TestRecoveryStrategy.failure("always-fails")
+                                    : TestRecoveryStrategy.success("ok-" + i);
+            if (i == 2) {
+                failingRecovery = recovery;
+            }
+            faultHandler.registerRecovery(partitionId, recovery);
+            faultHandler.markHealthy(partitionId);
+        }
+        var topology = createTestTopology(5, partitions.toArray(UUID[]::new));
+        var testForest = createTestDistributedForest();
+        ftForest = new FaultTolerantDistributedForest<>(
+            testForest,
+            faultHandler,
+            recoveryLock,
+            new DefaultParallelBalancer<>(BalanceConfiguration.defaultConfig()),
+            mockGhostManager,
+            topology,
+            partitions.get(0),
+            FaultConfiguration.defaultConfig(),
+            tracker
+        );
+        ftForest.start();
+
+        var failed = partitions.get(2);
+
+        faultHandler.reportBarrierTimeout(failed); // HEALTHY -> SUSPECTED
+        faultHandler.reportBarrierTimeout(failed); // SUSPECTED -> FAILED (auto-triggers recovery once)
+
+        // Poll until the first recovery attempt has run.
+        var start = System.nanoTime();
+        while (failingRecovery.getAttemptCount() < 1 && (System.nanoTime() - start) < 5_000_000_000L) {
+            Thread.sleep(10);
+        }
+        assertTrue(failingRecovery.getAttemptCount() >= 1, "recovery should be attempted at least once");
+
+        // Give any re-trigger loop ample time to manifest (a loop on the single-thread recovery
+        // executor with 0ms delay would rack up hundreds of attempts). The assertion is an upper
+        // bound, so it is robust to scheduling speed.
+        Thread.sleep(500);
+
+        assertEquals(1, failingRecovery.getAttemptCount(),
+            "a permanently-failing recovery must be attempted exactly once, not loop (Luciferase-0z68i)");
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(failed),
+            "partition remains FAILED after a failed recovery");
+    }
+
+    /**
      * Test 4: Verify quorum calculation.
      *
      * <p>Validates that quorum is correctly calculated as majority (> 50%).
