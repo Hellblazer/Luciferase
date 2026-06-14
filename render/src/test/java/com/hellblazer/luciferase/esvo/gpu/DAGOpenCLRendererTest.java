@@ -297,6 +297,59 @@ class DAGOpenCLRendererTest {
         // If a real GPU is present, any valid vendor value is acceptable.
     }
 
+    // ==================== ie6v8: actual-device capability query ====================
+
+    /**
+     * ie6v8: once the renderer's OpenCLContext is initialized, detectGPUCapabilities() must query
+     * the renderer's ACTUAL device (context.getDevice()) — not GPUVendorDetector's global first-GPU
+     * scan. Asserts the returned caps equal getCapabilitiesForDevice(actualDevice) and that a real
+     * device yields valid (not UNKNOWN) caps. GPU-gated: requires a live cl_device_id.
+     *
+     * <p><b>Verification limit (honest disclosure):</b> on a single-GPU / unified-memory host
+     * (e.g. Apple Silicon, the only hardware this is run on) the global first-GPU scan and
+     * context.getDevice() resolve to the SAME physical device, so this test validates the
+     * return-value contract but CANNOT distinguish the per-device path from the reverted global-scan
+     * path — both would pass here. The per-device-vs-global divergence is only observable on a
+     * genuine multi-GPU / multi-platform host, which is not available in CI or on the dev machine.
+     * The device==0 guard ({@code GPUVendorDetectorTest#testGetCapabilitiesForDeviceZeroGuard}) is
+     * the CI-runnable structural check of the new API.
+     */
+    @Test
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
+    @DisplayName("ie6v8: detectGPUCapabilities queries the renderer's actual device, not the global first GPU")
+    void testDetectGPUCapabilitiesUsesActualDevice() throws Exception {
+        // NB: like the other GPU tests in this class, we do NOT dispose() — the OpenCLContext is a
+        // refcounted process singleton these tests share; disposing it to refcount 0 would tear it
+        // down for sibling tests that upload without re-acquiring.
+        renderer.initialize();
+
+        // Read the renderer's actual OpenCL device id from the base context field.
+        Field contextField = renderer.getClass().getSuperclass().getDeclaredField("context");
+        contextField.setAccessible(true);
+        var context = contextField.get(renderer);
+        var getDevice = context.getClass().getMethod("getDevice");
+        long actualDevice = (long) getDevice.invoke(context);
+        assertNotEquals(0L, actualDevice, "an initialized context must expose a real cl_device_id");
+
+        Method detect = renderer.getClass().getDeclaredMethod("detectGPUCapabilities");
+        detect.setAccessible(true);
+        var caps = (com.hellblazer.luciferase.sparse.gpu.GPUCapabilities) detect.invoke(renderer);
+        assertNotEquals(GPUVendor.UNKNOWN, caps.vendor(),
+            "ie6v8: with a live device the renderer must report valid (non-UNKNOWN) capabilities");
+
+        // The returned caps must be the ones derived from the renderer's ACTUAL device, proving
+        // the per-device path is taken rather than the global getCapabilities() scan.
+        var actualDeviceCaps = GPUVendorDetector.getInstance().getCapabilitiesForDevice(actualDevice);
+        assertTrue(actualDeviceCaps.isValid(), "the actual device must itself report valid caps");
+        var expectedVendor = GPUVendor.fromVendorString(actualDeviceCaps.vendorString());
+        assertEquals(expectedVendor, caps.vendor(),
+            "ie6v8: detected vendor must match the renderer's actual device, not the first global GPU");
+        assertEquals(actualDeviceCaps.deviceName(), caps.model(),
+            "ie6v8: detected device name must match the renderer's actual device");
+        assertEquals(actualDeviceCaps.computeUnits(), caps.computeUnits(),
+            "ie6v8: detected compute units must come from the renderer's actual device");
+    }
+
     // ==================== Helper Methods ====================
 
     private ESVOOctreeData createTestOctree() {

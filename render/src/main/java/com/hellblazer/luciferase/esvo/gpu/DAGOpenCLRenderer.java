@@ -844,17 +844,38 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
      * If no device is available (headless / no-GPU environment) returns an
      * honest generic fallback with UNKNOWN vendor — never a hardcoded NVIDIA stub.
      *
-     * <p><b>KNOWN LIMITATION (Luciferase-ie6v8):</b> {@link GPUVendorDetector#getInstance()}
-     * is a JVM singleton that queries the <em>first</em> GPU/platform found globally, not
-     * necessarily this renderer's actual device.  On multi-GPU or multi-platform systems the
-     * detected vendor, wavefront size, compute units, and local memory may not match the
-     * device used at {@code initialize()}, resulting in incorrect workgroup tuning.
-     * The single-GPU common case is correct; the UNKNOWN fallback when no device is present
-     * is honest.  Full fix requires passing this renderer's {@code cl_device_id} to a
-     * non-singleton query path — deferred to Luciferase-ie6v8.
+     * <p><b>Device selection (Luciferase-ie6v8):</b> when this renderer's {@link #context} is
+     * initialized, capabilities are queried for the renderer's <em>actual</em> device
+     * ({@code context.getDevice()} — the {@code cl_device_id} its {@code OpenCLContext} selected and
+     * runs kernels on) via {@link GPUVendorDetector#getCapabilitiesForDevice(long)}, so tuning
+     * matches the real device on multi-GPU / multi-platform hosts rather than
+     * {@link GPUVendorDetector#getInstance()}'s global first-GPU scan. Before the context is
+     * initialized (e.g. {@code optimizeForDevice()} called pre-{@code initialize()}) it falls back to
+     * the global scan (correct on a single-GPU host, but best-effort on multi-GPU — it may not match
+     * the device this renderer will run on; detect AFTER initialize() for device-accurate tuning),
+     * and to the honest UNKNOWN generic fallback when no device is present — never a hardcoded NVIDIA
+     * stub.
      */
     private com.hellblazer.luciferase.sparse.gpu.GPUCapabilities detectGPUCapabilities() {
-        var detected = GPUVendorDetector.getInstance().getCapabilities();
+        // Prefer this renderer's actual device over the global first-GPU scan (Luciferase-ie6v8).
+        var detected = GPUCapabilities.none();
+        if (context != null && context.isInitialized()) {
+            try {
+                detected = GPUVendorDetector.getInstance().getCapabilitiesForDevice(context.getDevice());
+            } catch (IllegalStateException e) {
+                // isInitialized() does not assert device != 0; getDevice() throws if the context is
+                // only partially initialized. Treat as "no device" and fall through to the scan.
+                log.debug("Context device unavailable despite isInitialized(); falling back to scan: {}",
+                          e.getMessage());
+            }
+        }
+        if (!detected.isValid()) {
+            // No initialized context/device for this renderer yet (e.g. optimizeForDevice() called
+            // before initialize()). Fall back to the global first-GPU scan: correct on a single-GPU
+            // host, but best-effort on multi-GPU — it may not match the device this renderer will
+            // run on. Callers needing device-accurate tuning must detect AFTER initialize().
+            detected = GPUVendorDetector.getInstance().getCapabilities();
+        }
         if (detected.isValid()) {
             // Map esvo.gpu.GPUVendor to sparse.gpu.GPUVendor via the vendor string.
             var sparseVendor = GPUVendor.fromVendorString(detected.vendorString());
