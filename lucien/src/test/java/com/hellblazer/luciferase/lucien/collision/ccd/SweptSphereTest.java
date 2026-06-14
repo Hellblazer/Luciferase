@@ -100,6 +100,69 @@ public class SweptSphereTest {
     }
     
     @Test
+    void testSweptSphereParallelToTriangleEmbedded_faceContactNoNaN() {
+        // Regression for Luciferase-uojsv: a sphere moving parallel to the triangle plane while
+        // tangent/embedded drove (sphereRadius - startDist)/velocityDotNormal = 0/0 = NaN. The NaN
+        // was absorbed downstream (isPointInTriangle(NaN) is false), so rather than a NaN escaping,
+        // the legitimate t=0 face contact was MISLOCATED to a later edge contact (old code returned
+        // t~=0.0999 here). The sphere center projects onto (0,0,0), inside the triangle, so the
+        // correct answer is a face contact at t=0 with a finite contact point.
+        var sphereStart = new Point3f(0, -1, 0); // startDist == +radius on the normal side
+        var velocity = new Vector3f(10, 0, 0);   // parallel to the Y=0 plane
+        float radius = 1.0f;
+        var v0 = new Point3f(-2, 0, -2);
+        var v1 = new Point3f(2, 0, -2);
+        var v2 = new Point3f(0, 0, 2);
+
+        var result = SweptSphere.sweptSphereVsTriangle(sphereStart, velocity, radius, v0, v1, v2);
+
+        assertTrue(result.collides(), "embedded sphere over the triangle is a face contact");
+        assertTrue(Float.isFinite(result.timeOfImpact()), "TOI must be finite, not NaN/Inf");
+        assertEquals(0.0f, result.timeOfImpact(), EPSILON, "contact is at the start of the sweep");
+        var cp = result.contactPoint();
+        assertTrue(Float.isFinite(cp.x) && Float.isFinite(cp.y) && Float.isFinite(cp.z),
+            "contact point must be finite, not NaN");
+    }
+
+    @Test
+    void testSweptSphereParallelToTriangleEmbedded_contactPointOnSphereSurface() {
+        // Embedded sub-case (|startDist| < radius), distinct from the tangent case above. Pins that
+        // the parallel branch reports the contact point on the SPHERE SURFACE (center - radius*normal),
+        // matching the non-parallel branch's convention, not the foot-of-perpendicular on the plane.
+        var sphereStart = new Point3f(0, -0.3f, 0); // startDist = 0.3 < radius
+        var velocity = new Vector3f(10, 0, 0);
+        float radius = 1.0f;
+        var v0 = new Point3f(-2, 0, -2);
+        var v1 = new Point3f(2, 0, -2);
+        var v2 = new Point3f(0, 0, 2);
+
+        var result = SweptSphere.sweptSphereVsTriangle(sphereStart, velocity, radius, v0, v1, v2);
+
+        assertTrue(result.collides(), "embedded sphere over the triangle is a face contact");
+        assertEquals(0.0f, result.timeOfImpact(), EPSILON);
+        // normal is (0,-1,0); center - radius*normal = (0,-0.3,0) - 1*(0,-1,0) = (0,0.7,0)
+        assertEquals(0.7f, result.contactPoint().y, EPSILON,
+            "contact point must be on the sphere surface, not the foot-of-perpendicular (0,0,0)");
+        var cp = result.contactPoint();
+        assertTrue(Float.isFinite(cp.x) && Float.isFinite(cp.y) && Float.isFinite(cp.z));
+    }
+
+    @Test
+    void testSweptSphereParallelToTriangleFar_misses() {
+        // Parallel to the plane but farther than the radius: never touches -> no collision (and no NaN).
+        var sphereStart = new Point3f(0, -5, 0);
+        var velocity = new Vector3f(10, 0, 0);
+        float radius = 1.0f;
+        var v0 = new Point3f(-2, 0, -2);
+        var v1 = new Point3f(2, 0, -2);
+        var v2 = new Point3f(0, 0, 2);
+
+        var result = SweptSphere.sweptSphereVsTriangle(sphereStart, velocity, radius, v0, v1, v2);
+
+        assertFalse(result.collides(), "parallel sphere beyond radius must not collide");
+    }
+
+    @Test
     void testSweptSphereVsCapsule() {
         // Sphere hitting vertical capsule
         var sphereStart = new Point3f(-5, 0, 0);
