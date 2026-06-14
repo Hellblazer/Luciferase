@@ -454,12 +454,18 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
             throw new IllegalArgumentException("DAG must use absolute addressing");
         }
 
-        // Release old buffers if exist
+        // Release old buffers if exist (re-upload). Untrack + reset to 0 to match the dispose path: the old
+        // handle was tracked by createRawBuffer; releasing without untracking would leave a freed handle in
+        // trackedRawHandles for dispose() to double-free (Luciferase-qe8p0).
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
+            untrackRawHandle(clNodeBuffer);
+            clNodeBuffer = 0;
         }
         if (clDummyChildPointersBuffer != 0) {
             clReleaseMemObject(clDummyChildPointersBuffer);
+            untrackRawHandle(clDummyChildPointersBuffer);
+            clDummyChildPointersBuffer = 0;
         }
 
         // Store node count for kernel arguments (Phase 4.2.2a)
@@ -691,16 +697,27 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
         return (colorValue << 24) | (colorValue << 16) | (colorValue << 8) | 0xFF;
     }
 
+    /** Test-only (Luciferase-qe8p0): tracked raw cl_mem handle count, for double-free regression assertions. */
+    int trackedRawHandleCountForTest() {
+        return trackedRawHandleCount();
+    }
+
     @Override
     protected void disposeTypeSpecificBuffers() {
+        // These buffers are allocated via createRawBuffer (uploadDataBuffers), which TRACKS them in the
+        // base class's trackedRawHandles. Releasing here without untrackRawHandle leaves the handle tracked,
+        // so dispose()'s defensive release loop frees it AGAIN — a double-free that aborts the native OpenCL
+        // driver (Luciferase-qe8p0: exit 133 on init+upload+dispose). Untrack immediately after release.
         if (clNodeBuffer != 0) {
             clReleaseMemObject(clNodeBuffer);
+            untrackRawHandle(clNodeBuffer);
             clNodeBuffer = 0;
         }
 
         // Phase 4.2.2a: Release dummy childPointers buffer
         if (clDummyChildPointersBuffer != 0) {
             clReleaseMemObject(clDummyChildPointersBuffer);
+            untrackRawHandle(clDummyChildPointersBuffer);
             clDummyChildPointersBuffer = 0;
         }
 

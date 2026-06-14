@@ -210,6 +210,34 @@ class DynamicKernelSelectionTest {
     }
 
     /**
+     * Re-upload then dispose must not double-free the node/childPointers buffers (Luciferase-qe8p0).
+     * uploadDataBuffers releases the previous tracked buffers on a re-upload; it must also untrack them, or
+     * dispose()'s defensive release loop frees the stale handle again — a native OpenCL abort (exit 133).
+     */
+    @Test
+    @DisplayName("Re-upload then dispose does not double-free (qe8p0)")
+    void testReuploadThenDisposeDoesNotDoubleFree() {
+        renderer.initialize();
+        renderer.uploadData(testDAG);
+        // node + dummy-childPointers buffers tracked.
+        assertEquals(2, renderer.trackedRawHandleCountForTest(),
+                     "upload tracks the node + dummy-childPointers buffers");
+
+        assertDoesNotThrow(() -> renderer.uploadData(testDAG), "re-upload must release+untrack the old buffers");
+        // Structural invariant: re-upload must untrack the OLD pair (count stays 2, not 4) — otherwise the
+        // stale freed handles remain tracked for dispose() to double-free.
+        assertEquals(2, renderer.trackedRawHandleCountForTest(),
+                     "re-upload must untrack old buffers (count stays 2, not 4) — else dispose double-frees");
+
+        assertDoesNotThrow(() -> renderer.dispose(),
+                          "dispose after re-upload must not double-free tracked buffers");
+        // dispose must leave NO tracked handles (each released exactly once).
+        assertEquals(0, renderer.trackedRawHandleCountForTest(),
+                     "dispose must untrack every released buffer (no handle left for a second free)");
+        assertFalse(renderer.isInitialized(), "renderer must be disposed");
+    }
+
+    /**
      * Test batch kernel initialization failure handling
      */
     @Test
