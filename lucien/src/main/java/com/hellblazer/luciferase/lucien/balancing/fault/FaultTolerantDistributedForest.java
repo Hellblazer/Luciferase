@@ -269,15 +269,28 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
                     return success;
 
                 } finally {
-                    // Always release lock and exit recovery mode
-                    exitRecoveryMode();
-                    recoveryLock.releaseRecoveryLock(failedPartitionId);
+                    try {
+                        // Complete the two-phase recovery protocol: initiateRecovery() above only runs
+                        // the strategy and (for the handlers) records the attempt/counters; the
+                        // partition status transition (FAILED -> HEALTHY on success) lives in
+                        // notifyRecoveryComplete. Without this call the partition stayed FAILED forever
+                        // after a successful recovery and the success/failure metric was never recorded
+                        // (Luciferase-0z68i). The two methods touch disjoint state for both
+                        // SimpleFaultHandler and DefaultFaultHandler, so there is no double-counting.
+                        faultHandler.notifyRecoveryComplete(failedPartitionId, success);
+                    } finally {
+                        // Always release the recovery lock and exit recovery mode, even if the
+                        // completion notification throws — otherwise the recovery semaphore permit
+                        // leaks and all future recoveries block forever.
+                        exitRecoveryMode();
+                        recoveryLock.releaseRecoveryLock(failedPartitionId);
 
-                    var duration = clock.currentTimeMillis() - startTime;
-                    statsAccumulator.recordRecoveryAttempt(duration, success);
+                        var duration = clock.currentTimeMillis() - startTime;
+                        statsAccumulator.recordRecoveryAttempt(duration, success);
 
-                    log.info("Recovery for partition {} {} in {}ms",
-                        failedPartitionId, success ? "succeeded" : "failed", duration);
+                        log.info("Recovery for partition {} {} in {}ms",
+                            failedPartitionId, success ? "succeeded" : "failed", duration);
+                    }
                 }
 
             } catch (Exception e) {
@@ -464,8 +477,13 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
             log.info("Partition {} status updated: {} -> {} (previous tracked: {})",
                 event.partitionId(), event.oldStatus(), event.newStatus(), previousStatus);
 
-            if (event.newStatus() == PartitionStatus.FAILED) {
-                // Quorum check and recovery trigger are ATOMIC (inside stateLock)
+            if (event.newStatus() == PartitionStatus.FAILED
+                && event.oldStatus() != PartitionStatus.FAILED) {
+                // Only act on a GENUINE transition into failure. A FAILED -> FAILED event — emitted
+                // e.g. by SimpleFaultHandler.initiateRecovery ("Recovery initiated", same status) or
+                // by a failed recovery completion — must not re-trigger recovery, otherwise a
+                // permanently-failing partition loops unbounded on the recovery executor
+                // (Luciferase-0z68i). Quorum check and recovery trigger are ATOMIC (inside stateLock).
                 handlePartitionFailure(event.partitionId());
             } else if (event.newStatus() == PartitionStatus.HEALTHY
                        && (event.oldStatus() == PartitionStatus.SUSPECTED
