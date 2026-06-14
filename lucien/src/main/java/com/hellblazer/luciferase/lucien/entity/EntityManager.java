@@ -52,8 +52,11 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
     // MUST always be milliseconds — never frame numbers (small ints) — to keep velocity math correct.
     private volatile Clock clock = Clock.system();
 
-    // Flag to enable automatic dynamics updates
-    private boolean autoDynamicsEnabled = false;
+    // Flag to enable automatic dynamics updates. volatile: setAutoDynamicsEnabled (via
+    // AbstractSpatialIndex.enableDSOC) writes it without holding the index lock, while the read
+    // sites (createOrUpdateEntity / updateEntityPosition) run under the write lock — without
+    // volatile the JMM permits a stale read across that unsynchronized write (Luciferase-3rvaj).
+    private volatile boolean autoDynamicsEnabled = false;
 
     /**
      * Create an entity manager with thread-safe storage
