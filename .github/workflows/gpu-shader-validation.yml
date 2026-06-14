@@ -8,6 +8,9 @@ on:
       # GL compute renderers + their tests run under the Mesa software-GL job (Luciferase-ai9tw),
       # so Java changes to the GPU paths must trigger this workflow too — not just shader edits.
       - 'render/src/main/java/**/gpu/**'
+      # Data layers the GL tests drive (ESVOOctreeData.getFarPointers, ESVTData.farPointers, nodes).
+      - 'render/src/main/java/**/esvo/core/**'
+      - 'render/src/main/java/**/esvt/core/**'
       - 'render/src/test/java/**/gpu/**'
       - '.github/workflows/gpu-shader-validation.yml'
   pull_request:
@@ -15,6 +18,8 @@ on:
     paths:
       - 'render/src/main/resources/shaders/**'
       - 'render/src/main/java/**/gpu/**'
+      - 'render/src/main/java/**/esvo/core/**'
+      - 'render/src/main/java/**/esvt/core/**'
       - 'render/src/test/java/**/gpu/**'
       - '.github/workflows/gpu-shader-validation.yml'
 
@@ -154,25 +159,42 @@ jobs:
       - name: Run GL compute tests under Mesa (gl-software — GATING)
         run: |
           export DISPLAY=:99.0
-          Xvfb :99 -screen 0 1024x768x24 &
+          if ! pgrep -x Xvfb >/dev/null; then Xvfb :99 -screen 0 1024x768x24 & fi
           sleep 2
 
           # Deterministic GL compute tests (SSBO size-accounting, etc.) tagged @Tag("gl-software").
           # These exercise the real glBufferData / compute paths the dev hardware (Apple GL 4.1)
           # cannot run, so they GATE here: a GL regression in the compute renderers fails CI
-          # instead of shipping review-only (Luciferase-ai9tw). Under Mesa's software GL 4.5 the
-          # tests run; if the software context cannot be created they self-skip via Assumptions
-          # (GLComputeTestSupport), so a missing context is a skip, not a false failure.
+          # instead of shipping review-only (Luciferase-ai9tw).
           # -am builds the in-reactor upstream modules (common, lucien, ...): this is a standalone
           # job with no prior install step, so without -am render's SNAPSHOT deps fail to resolve.
           RUN_GPU_TESTS=true ./mvnw test -pl render -am -Dgroups=gl-software
+
+          # Gate-integrity guard (Luciferase-ai9tw): Surefire returns BUILD SUCCESS for 0 tests
+          # (no @Tag match) AND counts an Assumptions-skip as run-but-skipped, so a missing Mesa
+          # context or a lost gl-software tag would let this "gate" pass without verifying anything.
+          # A gate that silently self-disables is worse than honest best-effort — fail unless at
+          # least one gl-software test ACTUALLY executed (tests - skipped >= 1).
+          tests=0; skipped=0
+          shopt -s nullglob
+          for f in render/target/surefire-reports/TEST-*.xml; do
+            t=$(grep -oP 'tests="\K[0-9]+' "$f" | head -1)
+            s=$(grep -oP 'skipped="\K[0-9]+' "$f" | head -1)
+            tests=$((tests + ${t:-0})); skipped=$((skipped + ${s:-0}))
+          done
+          executed=$((tests - skipped))
+          echo "gl-software gate: tests=$tests skipped=$skipped executed=$executed"
+          if [ "$executed" -lt 1 ]; then
+            echo "::error::gl-software gate verified nothing (executed=0) — Mesa GL context missing or @Tag('gl-software') lost. Failing instead of silently passing."
+            exit 1
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run ESVT GPU rendering test with Mesa (best-effort)
         run: |
           export DISPLAY=:99.0
-          Xvfb :99 -screen 0 1024x768x24 &
+          if ! pgrep -x Xvfb >/dev/null; then Xvfb :99 -screen 0 1024x768x24 & fi
           sleep 2
 
           # Heavier rendering-parity test kept best-effort (|| true): software-GL pixel output can

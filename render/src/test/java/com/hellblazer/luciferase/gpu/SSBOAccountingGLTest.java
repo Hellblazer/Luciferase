@@ -18,6 +18,9 @@ package com.hellblazer.luciferase.gpu;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.gpu.ComputeShaderRenderer;
+import com.hellblazer.luciferase.esvt.core.ESVTData;
+import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.esvt.gpu.ESVTComputeRenderer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -76,9 +79,45 @@ class SSBOAccountingGLTest extends GLComputeTestSupport {
         });
     }
 
-    /** Read the renderer's private far-pointer SSBO tracked size via reflection. */
-    private static long trackedFarPointerBytes(ComputeShaderRenderer renderer) throws Exception {
-        Field field = ComputeShaderRenderer.class.getDeclaredField("farPointerSSBO");
+    /**
+     * z2ysz: ESVTComputeRenderer (the sibling of ComputeShaderRenderer) carries the identical
+     * far-pointer SSBO recreate-on-size-change fix; verify it under software GL too so a regression
+     * in either parallel implementation fails the gate.
+     */
+    @Test
+    @DisplayName("z2ysz: far-pointer SSBO tracked size follows re-upload resize (ESVTComputeRenderer)")
+    void esvtFarPointerSsboTrackedSizeFollowsResize() throws Exception {
+        runWithGLContext(() -> {
+            var renderer = new ESVTComputeRenderer(64, 64);
+            try {
+                renderer.initialize();
+
+                renderer.uploadData(esvtWithFarPointers(4));     // 16 bytes
+                assertEquals(16L, trackedFarPointerBytes(renderer),
+                        "tracked size must match the first upload's far-pointer byte count");
+
+                renderer.uploadData(esvtWithFarPointers(64));    // 256 bytes
+                assertEquals(256L, trackedFarPointerBytes(renderer),
+                        "z2ysz: tracked size must follow the re-upload GROW (ESVTComputeRenderer)");
+
+                renderer.uploadData(esvtWithFarPointers(1));     // 4 bytes
+                assertEquals(4L, trackedFarPointerBytes(renderer),
+                        "z2ysz: tracked size must follow the re-upload SHRINK (ESVTComputeRenderer)");
+            } finally {
+                renderer.dispose();
+            }
+        });
+    }
+
+    /** Minimal ESVTData carrying a far-pointer table of {@code count} entries. */
+    private static ESVTData esvtWithFarPointers(int count) {
+        var nodes = new ESVTNodeUnified[] { new ESVTNodeUnified() };
+        return new ESVTData(nodes, new int[0], new int[count], 0, 3, 1, 0);
+    }
+
+    /** Read the renderer's private {@code farPointerSSBO} tracked size via reflection. */
+    private static long trackedFarPointerBytes(Object renderer) throws Exception {
+        Field field = renderer.getClass().getDeclaredField("farPointerSSBO");
         field.setAccessible(true);
         var ssbo = field.get(renderer);
         assertNotNull(ssbo, "farPointerSSBO must be allocated after uploadData");
