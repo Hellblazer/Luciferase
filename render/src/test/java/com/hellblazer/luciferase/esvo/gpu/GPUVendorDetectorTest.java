@@ -74,6 +74,18 @@ class GPUVendorDetectorTest {
         assertNotNull(capabilities.deviceName(), "Device name in capabilities should not be null");
     }
 
+    @Test
+    @DisplayName("ie6v8: getCapabilitiesForDevice(0) returns none() without touching OpenCL")
+    void testGetCapabilitiesForDeviceZeroGuard() {
+        // CI-runnable (no GPU): the per-device entry point must short-circuit an invalid (0)
+        // cl_device_id to none(), never attempting a live OpenCL query. Locks the guard that
+        // protects detectGPUCapabilities' actual-device path (Luciferase-ie6v8).
+        var detector = GPUVendorDetector.getInstance();
+        var caps = detector.getCapabilitiesForDevice(0L);
+        assertNotNull(caps, "getCapabilitiesForDevice must never return null");
+        assertFalse(caps.isValid(), "device id 0 must yield invalid (none) capabilities");
+    }
+
     // ==================== GPU Hardware Tests (Conditional) ====================
 
     @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")

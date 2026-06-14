@@ -108,6 +108,24 @@ public class GPUVendorDetector {
     }
 
     /**
+     * Query capabilities for a specific OpenCL device id, instead of the global first-GPU scan
+     * that {@link #getCapabilities()} caches at construction. Callers that already hold their
+     * actual {@code cl_device_id} (e.g. a renderer's {@code OpenCLContext.getDevice()}) use this so
+     * the detected vendor / compute-units / memory match the device they truly run on, not an
+     * unrelated first-found GPU on a multi-GPU or multi-platform host (Luciferase-ie6v8).
+     *
+     * @param device a valid OpenCL {@code cl_device_id}; {@code 0} yields {@link GPUCapabilities#none()}
+     * @return capabilities for that device, or {@link GPUCapabilities#none()} if {@code device == 0}
+     *         or the query fails
+     */
+    public GPUCapabilities getCapabilitiesForDevice(long device) {
+        if (device == 0L) {
+            return GPUCapabilities.none();
+        }
+        return queryDeviceCapabilities(device);
+    }
+
+    /**
      * Detect GPU vendor and capabilities from OpenCL
      */
     private GPUCapabilities detectGPU() {
