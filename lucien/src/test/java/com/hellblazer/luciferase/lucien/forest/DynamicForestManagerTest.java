@@ -209,6 +209,45 @@ public class DynamicForestManagerTest {
         assertTrue(totalEntities >= 98,
             "Spatial-index entity count after lossy split should be >= 98, but had " + totalEntities);
     }
+
+    @Test
+    void testSplitTreePreservesEntityContent() {
+        // Regression for Luciferase-22i71: splitTree() previously read entity content/bounds AFTER
+        // removing the entity from the source index, re-inserting null content (silent data loss).
+        // Count-only assertions (testSplitTree) did not catch it; this asserts content survives.
+        var originalTree = forest.getAllTrees().get(0);
+
+        var rng = new java.util.Random(42L);
+        for (int i = 0; i < 100; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f((float) (rng.nextDouble() * 100), (float) (rng.nextDouble() * 100),
+                                  (float) (rng.nextDouble() * 100));
+            originalTree.getSpatialIndex().insert(id, pos, (byte) 10, "Entity " + i);
+            entityManager.insert(id, "Entity " + i, pos, new EntityBounds(pos, pos));
+        }
+        originalTree.refreshStatistics();
+
+        assertTrue(dynamicManager.splitTree(originalTree));
+
+        // Scope: this pins the use-after-remove bug (content read AFTER remove -> null re-insert),
+        // which corrupted EVERY migrated entity's content (~98 nulls). It deliberately tolerates the
+        // separate, pre-existing >=98 boundary-drop behavior documented in testSplitTree (entities
+        // whose position finds no best octant are orphaned when the source tree is removed). So:
+        // every entity that SURVIVED the split must carry its original, non-null content; under the
+        // old bug the survivors would all read null content and this count would collapse to ~0.
+        var survivorsWithIntactContent = 0;
+        for (int i = 0; i < 100; i++) {
+            var content = entityManager.getEntityContent(new LongEntityID(i));
+            if (content != null) {
+                assertEquals("Entity " + i, content,
+                    "Entity " + i + " survived the split but its content was corrupted");
+                survivorsWithIntactContent++;
+            }
+        }
+        assertTrue(survivorsWithIntactContent >= 98,
+            "At least 98 entities must survive the split with intact content (use-after-remove "
+                + "regression Luciferase-22i71), but only " + survivorsWithIntactContent + " did");
+    }
     
     @Test
     void testMergeTrees() {
