@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tests for P2PGhostChannel - P2P ghost synchronization over Transport.
@@ -454,6 +455,116 @@ class P2PGhostChannelTest {
         assertThat(received.version()).isEqualTo(7L);
     }
 
+    @Test
+    void testCustomContentCodecRoundTripsNonEntityTypeContent() throws Exception {
+        // Replace the default (codec-less) channels with codec-equipped ones on the same bubbles.
+        // The codec round-trips String content — a stand-in for any non-EntityType payload that the
+        // old code silently dropped to null on cross-process delivery (Luciferase-8kgil).
+        channel1.close();
+        channel2.close();
+        P2PGhostChannel.ContentCodec<Object> stringCodec = new P2PGhostChannel.ContentCodec<>() {
+            @Override
+            public String serialize(Object content) {
+                return (String) content;
+            }
+
+            @Override
+            public Object deserialize(String contentClass, String contentValue) {
+                return contentValue;
+            }
+        };
+        channel1 = new P2PGhostChannel<>(bubble1, StringEntityID::new, stringCodec);
+        channel2 = new P2PGhostChannel<>(bubble2, StringEntityID::new, stringCodec);
+
+        var ghost = new SimulationGhostEntity<>(
+            new GhostEntityHalo<StringEntityID, Object>(
+                new StringEntityID("ghost-str"), "payload-42",
+                new Point3f(51.5f, 51.5f, 50.5f),
+                new EntityBounds(new Point3f(51.5f, 51.5f, 50.5f), 0.5f),
+                "tree-" + bubble1.id()),
+            bubble1.id(), 1L, 9L, 3L);
+
+        var receivedGhosts = new AtomicReference<List<SimulationGhostEntity<StringEntityID, Object>>>();
+        var receiveLatch = new CountDownLatch(1);
+        channel2.onReceive((fromId, received) -> {
+            receivedGhosts.set(new ArrayList<>(received));
+            receiveLatch.countDown();
+        });
+
+        channel1.sendBatch(bubble2.id(), List.of(ghost));
+
+        assertThat(receiveLatch.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(receivedGhosts.get().get(0).content())
+            .as("Custom-codec content must round-trip, not be silently nulled")
+            .isEqualTo("payload-42");
+    }
+
+    @Test
+    void testUnregisteredContentFailsLoudOnSend() {
+        // A default channel (no codec) must fail loud on non-null, non-EntityType content rather
+        // than silently dropping it to null on the wire (Luciferase-8kgil).
+        var pos = new Point3f(51.0f, 51.0f, 50.0f);
+        var ghost = new SimulationGhostEntity<>(
+            new GhostEntityHalo<StringEntityID, Object>(
+                new StringEntityID("ghost-obj"), new Object(), pos,
+                new EntityBounds(pos, 0.5f), "tree-" + bubble1.id()),
+            bubble1.id(), 1L, 1L, 1L);
+
+        assertThatThrownBy(() -> channel1.sendBatch(bubble2.id(), List.of(ghost)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("No ContentCodec");
+    }
+
+    @Test
+    void testReceiverWithoutCodecDropsUndecodableGhostLoudlyButDeliversRest() throws Exception {
+        // Sender has a String codec; receiver (channel2, default) has none. A throw on the receive
+        // side would be swallowed at WARN by Bubble.emitEvent — so the channel instead drops only
+        // the un-decodable ghost (loud ERROR + counter) and still delivers the EntityType ghost in
+        // the same batch. This pins that the fix did not trade per-ghost null loss for whole-batch
+        // silent loss (Luciferase-8kgil).
+        channel1.close();
+        P2PGhostChannel.ContentCodec<Object> stringCodec = new P2PGhostChannel.ContentCodec<>() {
+            @Override
+            public String serialize(Object content) {
+                return (String) content;
+            }
+
+            @Override
+            public Object deserialize(String contentClass, String contentValue) {
+                return contentValue;
+            }
+        };
+        channel1 = new P2PGhostChannel<>(bubble1, StringEntityID::new, stringCodec);
+
+        var entityTypeGhost = createGhostWithEntityType("g-et", new Point3f(51f, 51f, 50f),
+            com.hellblazer.luciferase.simulation.entity.EntityType.PREY, 1L, 1L);
+        var pos = new Point3f(52f, 52f, 50f);
+        var stringGhost = new SimulationGhostEntity<>(
+            new GhostEntityHalo<StringEntityID, Object>(
+                new StringEntityID("g-str"), "payload", pos, new EntityBounds(pos, 0.5f),
+                "tree-" + bubble1.id()),
+            bubble1.id(), 1L, 1L, 1L);
+
+        var received = new AtomicReference<List<SimulationGhostEntity<StringEntityID, Object>>>();
+        var latch = new CountDownLatch(1);
+        channel2.onReceive((from, gs) -> {
+            received.set(new ArrayList<>(gs));
+            latch.countDown();
+        });
+
+        channel1.sendBatch(bubble2.id(), List.of(entityTypeGhost, stringGhost));
+
+        assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(received.get())
+            .as("the decodable EntityType ghost must still be delivered (per-ghost isolation)")
+            .hasSize(1);
+        assertThat(received.get().get(0).content())
+            .isEqualTo(com.hellblazer.luciferase.simulation.entity.EntityType.PREY);
+        assertThat(channel2.droppedGhostCount())
+            .as("the un-decodable String ghost must be counted, not silently lost")
+            .isEqualTo(1L);
+    }
+
     // ========== Helper Methods ==========
 
     private SimulationGhostEntity<StringEntityID, Object> createGhost(String entityId, Point3f position) {
@@ -465,8 +576,11 @@ class P2PGhostChannelTest {
     ) {
         var id = new StringEntityID(entityId);
         var bounds = new EntityBounds(position, 0.5f);
+        // null content: these tests exercise position/velocity/epoch/version/count, not content.
+        // (Previously `new Object()` — an unserializable placeholder that the channel silently
+        // dropped to null on the wire; the fail-loud fix for Luciferase-8kgil now rejects it.)
         var ghost = new GhostEntityHalo<StringEntityID, Object>(
-            id, new Object(), position, bounds, "tree-" + bubble1.id()
+            id, null, position, bounds, "tree-" + bubble1.id()
         );
         return new SimulationGhostEntity<>(
             ghost, bubble1.id(), 1L, epoch, version

@@ -86,8 +86,8 @@ class BubbleGhostManagerP2PIntegrationTest {
         bubble2 = new Bubble(id2, SPATIAL_LEVEL, TARGET_FRAME_MS, transport2);
 
         // Add entities so bubbles have positions
-        bubble1.addEntity("entity-1", new Point3f(50.0f, 50.0f, 50.0f), new Object());
-        bubble2.addEntity("entity-2", new Point3f(55.0f, 55.0f, 50.0f), new Object());
+        bubble1.addEntity("entity-1", new Point3f(50.0f, 50.0f, 50.0f), com.hellblazer.luciferase.simulation.entity.EntityType.PREY);
+        bubble2.addEntity("entity-2", new Point3f(55.0f, 55.0f, 50.0f), com.hellblazer.luciferase.simulation.entity.EntityType.PREY);
 
         // Establish neighbor relationship
         bubble1.addNeighbor(bubble2.id());
@@ -142,7 +142,7 @@ class BubbleGhostManagerP2PIntegrationTest {
         // Given: Entity near boundary on bubble1
         var entityId = new StringEntityID("boundary-entity");
         var position = new Point3f(52.0f, 52.0f, 50.0f);
-        var content = new Object();
+        var content = com.hellblazer.luciferase.simulation.entity.EntityType.PREY;
 
         // When: Notify manager and complete bucket
         var receiveLatch = new CountDownLatch(1);
@@ -169,7 +169,7 @@ class BubbleGhostManagerP2PIntegrationTest {
 
         var entityId = new StringEntityID("same-server-entity");
         var position = new Point3f(52.0f, 52.0f, 50.0f);
-        var content = new Object();
+        var content = com.hellblazer.luciferase.simulation.entity.EntityType.PREY;
 
         // When: Notify manager (should be bypassed)
         manager1.notifyEntityNearBoundary(entityId, position, content, bubble2.id(), 1L);
@@ -200,7 +200,7 @@ class BubbleGhostManagerP2PIntegrationTest {
         // When: Notify for all entities, then complete bucket
         for (var entity : entities) {
             var position = new Point3f(52.0f + entities.indexOf(entity) * 0.1f, 52.0f, 50.0f);
-            manager1.notifyEntityNearBoundary(entity, position, new Object(), bubble2.id(), 1L);
+            manager1.notifyEntityNearBoundary(entity, position, com.hellblazer.luciferase.simulation.entity.EntityType.PREY, bubble2.id(), 1L);
         }
         manager1.onBucketComplete(1L);
 
@@ -219,7 +219,7 @@ class BubbleGhostManagerP2PIntegrationTest {
         channel2.onReceive((fromId, ghosts) -> receiveLatch.countDown());
 
         // When: Send ghost
-        manager1.notifyEntityNearBoundary(entityId, position, new Object(), bubble2.id(), 1L);
+        manager1.notifyEntityNearBoundary(entityId, position, com.hellblazer.luciferase.simulation.entity.EntityType.PREY, bubble2.id(), 1L);
         manager1.onBucketComplete(1L);
         receiveLatch.await(2, TimeUnit.SECONDS);
 
@@ -239,7 +239,7 @@ class BubbleGhostManagerP2PIntegrationTest {
         channel2.onReceive((fromId, ghosts) -> receiveLatch.countDown());
 
         // When: Send ghost
-        manager1.notifyEntityNearBoundary(entityId, position, new Object(), bubble2.id(), 1L);
+        manager1.notifyEntityNearBoundary(entityId, position, com.hellblazer.luciferase.simulation.entity.EntityType.PREY, bubble2.id(), 1L);
         manager1.onBucketComplete(1L);
         receiveLatch.await(2, TimeUnit.SECONDS);
 
@@ -285,8 +285,8 @@ class BubbleGhostManagerP2PIntegrationTest {
         });
 
         // When: Both managers send ghosts
-        manager1.notifyEntityNearBoundary(entity1, new Point3f(52.0f, 52.0f, 50.0f), new Object(), bubble2.id(), 1L);
-        manager2.notifyEntityNearBoundary(entity2, new Point3f(48.0f, 48.0f, 50.0f), new Object(), bubble1.id(), 1L);
+        manager1.notifyEntityNearBoundary(entity1, new Point3f(52.0f, 52.0f, 50.0f), com.hellblazer.luciferase.simulation.entity.EntityType.PREY, bubble2.id(), 1L);
+        manager2.notifyEntityNearBoundary(entity2, new Point3f(48.0f, 48.0f, 50.0f), com.hellblazer.luciferase.simulation.entity.EntityType.PREY, bubble1.id(), 1L);
         manager1.onBucketComplete(1L);
         manager2.onBucketComplete(1L);
 
@@ -316,7 +316,7 @@ class BubbleGhostManagerP2PIntegrationTest {
             for (int i = 0; i < 50; i++) {
                 var id = new StringEntityID("perf-" + iter + "-" + i);
                 var position = new Point3f(52.0f + i * 0.01f, 52.0f, 50.0f);
-                manager1.notifyEntityNearBoundary(id, position, new Object(), bubble2.id(), (long) iter);
+                manager1.notifyEntityNearBoundary(id, position, com.hellblazer.luciferase.simulation.entity.EntityType.PREY, bubble2.id(), (long) iter);
             }
             manager1.onBucketComplete((long) iter);
         };
@@ -352,7 +352,7 @@ class BubbleGhostManagerP2PIntegrationTest {
         var id3 = UUID.randomUUID();
         var transport3 = registry.register(id3);
         var bubble3 = new Bubble(id3, SPATIAL_LEVEL, TARGET_FRAME_MS, transport3);
-        bubble3.addEntity("entity-3", new Point3f(45.0f, 45.0f, 50.0f), new Object());
+        bubble3.addEntity("entity-3", new Point3f(45.0f, 45.0f, 50.0f), com.hellblazer.luciferase.simulation.entity.EntityType.PREY);
 
         // Same server as bubble1
         serverRegistry.registerBubble(bubble3.id(), server1Id);
@@ -377,10 +377,10 @@ class BubbleGhostManagerP2PIntegrationTest {
             var position = new Point3f(52.0f, 52.0f, 50.0f);
 
             // To bubble2 (different server) - should transmit
-            manager1.notifyEntityNearBoundary(entity, position, new Object(), bubble2.id(), 1L);
+            manager1.notifyEntityNearBoundary(entity, position, com.hellblazer.luciferase.simulation.entity.EntityType.PREY, bubble2.id(), 1L);
 
             // To bubble3 (same server) - should bypass
-            manager1.notifyEntityNearBoundary(entity, position, new Object(), bubble3.id(), 1L);
+            manager1.notifyEntityNearBoundary(entity, position, com.hellblazer.luciferase.simulation.entity.EntityType.PREY, bubble3.id(), 1L);
 
             manager1.onBucketComplete(1L);
             Thread.sleep(500); // Allow time for any transmission

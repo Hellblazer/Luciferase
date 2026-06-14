@@ -137,11 +137,65 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
     private final Function<String, ID> idFactory;
 
     /**
+     * Pluggable codec for serializing arbitrary {@code Content} payloads onto the ghost wire
+     * schema. The channel handles {@code null} and {@link com.hellblazer.luciferase.simulation.entity.EntityType}
+     * natively. Supply a codec via {@link #P2PGhostChannel(Bubble, Function, ContentCodec)} to
+     * round-trip any other content type. Without a codec, a non-null, non-EntityType content fails
+     * loud (see {@link #serializeContent}/{@link #deserializeContent}) rather than being silently
+     * dropped to {@code null} on the wire (Luciferase-8kgil).
+     */
+    private final ContentCodec<Content> contentCodec;
+
+    /**
+     * Count of inbound ghosts dropped because their content could not be decoded (no matching
+     * {@link ContentCodec} on this receiver). Surfaced for observability so a misconfigured
+     * receiver is visible beyond the per-drop ERROR log rather than failing silently (Luciferase-8kgil).
+     */
+    private final java.util.concurrent.atomic.AtomicLong droppedGhostCount = new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * Bidirectional codec for content types beyond {@code null}/{@code EntityType}. The wire carries
+     * both {@code content.getClass().getName()} and the {@link #serialize} result, so
+     * {@link #deserialize} receives the originating class name to dispatch on.
+     *
+     * @param <Content> entity content type
+     */
+    public interface ContentCodec<Content> {
+        /**
+         * Serialize content to its wire string form.
+         *
+         * @param content the (non-null, non-EntityType) content to serialize
+         * @return the wire string; must be round-trippable by {@link #deserialize}
+         */
+        String serialize(Content content);
+
+        /**
+         * Reconstruct content from the wire class name and value produced by {@link #serialize}.
+         *
+         * @param contentClass the originating {@code content.getClass().getName()}
+         * @param contentValue the value produced by {@link #serialize}
+         * @return the reconstructed content
+         */
+        Content deserialize(String contentClass, String contentValue);
+    }
+
+    /**
      * Set the clock source for deterministic testing.
      */
     public void setClock(Clock clock) {
         this.clock = clock;
         this.factory = new MessageFactory(clock);
+    }
+
+    /**
+     * Number of inbound ghosts dropped because their content could not be decoded (no matching
+     * {@link ContentCodec} on this receiver). A non-zero value signals codec misconfiguration or
+     * cross-version content skew (Luciferase-8kgil).
+     *
+     * @return total dropped-ghost count since construction
+     */
+    public long droppedGhostCount() {
+        return droppedGhostCount.get();
     }
 
     /**
@@ -184,8 +238,27 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
      *                  serialized entity-id string (must match the sender's ID type)
      */
     public P2PGhostChannel(Bubble vonBubble, Function<String, ID> idFactory) {
+        this(vonBubble, idFactory, null);
+    }
+
+    /**
+     * Create P2P ghost channel with an explicit entity-id deserializer and a content codec for
+     * content types beyond {@code null}/{@code EntityType}. Both peers must be constructed with a
+     * codec that round-trips the same content types. A sender without a codec fails loud (throws
+     * from {@link #sendBatch}); a receiver without a matching codec logs an ERROR, increments
+     * {@link #droppedGhostCount()}, and drops only the un-decodable ghost — never silently nulling
+     * content nor dropping the whole batch (Luciferase-8kgil).
+     *
+     * @param vonBubble    Bubble for P2P transport
+     * @param idFactory    Reconstructs the caller's concrete {@code ID} from a ghost's serialized
+     *                     entity-id string (must match the sender's ID type)
+     * @param contentCodec Codec for non-null, non-EntityType content; {@code null} to support only
+     *                     {@code null}/{@code EntityType} content (fail-loud on any other type)
+     */
+    public P2PGhostChannel(Bubble vonBubble, Function<String, ID> idFactory, ContentCodec<Content> contentCodec) {
         this.vonBubble = Objects.requireNonNull(vonBubble, "vonBubble must not be null");
         this.idFactory = Objects.requireNonNull(idFactory, "idFactory must not be null");
+        this.contentCodec = contentCodec;
         this.factory = new MessageFactory(clock);
         this.pendingBatches = new ConcurrentHashMap<>();
         this.handlers = new CopyOnWriteArrayList<>();
@@ -312,10 +385,21 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
             return;
         }
 
-        // Convert from transport format
+        // Convert from transport format. Deserialization is isolated per ghost: a single
+        // un-decodable ghost (e.g. a content type with no registered ContentCodec) must neither
+        // (a) silently drop to null content nor (b) abort the whole batch. Note that throwing here
+        // would be swallowed at WARN by Bubble.emitEvent's listener catch — so we fail loud at ERROR
+        // and a counter, and still deliver the decodable ghosts in the batch (Luciferase-8kgil).
         var ghosts = new ArrayList<SimulationGhostEntity<ID, Content>>(transportGhosts.size());
         for (var tg : transportGhosts) {
-            ghosts.add(fromTransportGhost(tg, sourceId, event.bucket()));
+            try {
+                ghosts.add(fromTransportGhost(tg, sourceId, event.bucket()));
+            } catch (RuntimeException e) {
+                droppedGhostCount.incrementAndGet();
+                log.error("Dropping un-decodable ghost from {} (entityId={}): {}. Register a matching "
+                          + "ContentCodec on this receiver to decode it (Luciferase-8kgil).",
+                          sourceId, tg.entityId(), e.getMessage());
+            }
         }
 
         // Notify all handlers
@@ -373,10 +457,17 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
             return entityType.name();
         }
 
-        // Future: Add support for other Content types here
-        // For now, return null for unsupported types
-        log.warn("Unsupported content type for serialization: {}", content.getClass().getName());
-        return null;
+        // Any other type requires an injected codec. Fail loud rather than silently dropping the
+        // content to null on the wire, which previously corrupted every non-EntityType ghost on
+        // cross-process delivery (Luciferase-8kgil).
+        if (contentCodec != null) {
+            return contentCodec.serialize(content);
+        }
+        throw new IllegalStateException(
+            "No ContentCodec registered for ghost content type " + content.getClass().getName()
+            + "; cross-process ghost delivery would silently drop it to null. Construct "
+            + "P2PGhostChannel(Bubble, idFactory, ContentCodec) to serialize this type "
+            + "(Luciferase-8kgil).");
     }
 
     /**
@@ -450,8 +541,14 @@ public class P2PGhostChannel<ID extends EntityID, Content> implements GhostChann
             }
         }
 
-        // Future: Add support for other Content types here
-        log.warn("Unsupported content type for deserialization: {}", contentClass);
-        return null;
+        // Any other type requires an injected codec. Fail loud rather than silently dropping the
+        // content to null, which corrupted every non-EntityType ghost on receipt (Luciferase-8kgil).
+        if (contentCodec != null) {
+            return contentCodec.deserialize(contentClass, contentValue);
+        }
+        throw new IllegalStateException(
+            "No ContentCodec registered to deserialize ghost content of type " + contentClass
+            + "; the received ghost would carry null content. Construct P2PGhostChannel(Bubble, "
+            + "idFactory, ContentCodec) on the receiver to reconstruct this type (Luciferase-8kgil).");
     }
 }
