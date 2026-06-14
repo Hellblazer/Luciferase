@@ -16,10 +16,7 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import javafx.application.Application;
 import javafx.application.Platform;
-import javafx.stage.Stage;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 
@@ -54,84 +51,69 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class JavaFXTestBase {
 
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
-    private static final CountDownLatch initLatch = new CountDownLatch(1);
 
     /**
-     * Launcher application for JavaFX initialization.
-     * This is required to properly start the JavaFX toolkit.
+     * Initialize the JavaFX toolkit before any tests run, exactly once per JVM (surefire fork).
+     *
+     * <p>The toolkit is started via {@link Platform#startup(Runnable)} and {@code implicitExit} is
+     * disabled so it stays alive for the ENTIRE fork. It is deliberately <b>never</b> torn down with
+     * {@link Platform#exit()} (Luciferase-tugep): JavaFX cannot be restarted within a JVM once
+     * exited, so a per-class {@code @AfterAll Platform.exit()} would kill the toolkit for every
+     * later FX test class in the same fork — a subsequent re-init (e.g. {@code new JFXPanel()} or
+     * {@code Platform.startup}) then deadlocks in {@code QuantumRenderer.createResourceFactory},
+     * wedging the fork at 0% CPU. The daemon FX thread dies with the JVM at fork exit instead.</p>
+     *
+     * <p>{@code IllegalStateException} from {@code startup()} (toolkit already started by another
+     * FX test in this fork) is benign — we adopt the running toolkit. Skipped in CI where the
+     * {@code javafx} tag is excluded and no display is available.</p>
      */
-    public static class TestApplication extends Application {
-        @Override
-        public void start(Stage primaryStage) {
-            // Don't show the stage
-            initLatch.countDown();
-        }
+    @BeforeAll
+    public static void initializeJavaFX() {
+        ensureStarted();
     }
 
     /**
-     * Initialize JavaFX toolkit before any tests run.
-     * This is called once per test class.
-     *
-     * Note: Skipped in CI environments where xvfb may not provide sufficient display support.
+     * Idempotently start the shared JavaFX toolkit for this fork. Safe to call from any FX test
+     * class's {@code @BeforeAll}; the single shared start-and-never-exit lifecycle is the fix for
+     * the suite-context FX wedge (Luciferase-tugep). Public so non-{@code JavaFXTestBase} FX tests
+     * can route through the same path instead of their own divergent init/exit idioms.
      */
-    @BeforeAll
-    public static void initializeJavaFX() throws Exception {
-        // Skip JavaFX initialization in CI (xvfb may timeout on Application.launch)
+    public static void ensureStarted() {
+        // Skip JavaFX initialization in CI (the javafx tag is excluded there; no display available).
         if ("true".equals(System.getenv("CI"))) {
-            System.out.println("Skipping JavaFX initialization in CI environment");
             initialized.set(true);
             return;
         }
-
-        if (initialized.compareAndSet(false, true)) {
-            // Check if we're running in headless mode
-            if (Boolean.getBoolean("testfx.headless")) {
-                System.setProperty("java.awt.headless", "true");
-                System.setProperty("testfx.robot", "glass");
-                System.setProperty("testfx.headless", "true");
-                System.setProperty("prism.order", "sw");
-                System.setProperty("prism.text", "t2k");
-                System.setProperty("glass.platform", "Monocle");
-                System.setProperty("monocle.platform", "Headless");
-            }
-
-            // Launch JavaFX toolkit on a separate thread with timeout protection
-            Thread fxThread = new Thread(() -> {
-                try {
-                    Application.launch(TestApplication.class);
-                } catch (Exception e) {
-                    System.err.println("Failed to launch JavaFX: " + e.getMessage());
-                    e.printStackTrace();
-                    // Signal initialization complete even on failure
-                    initLatch.countDown();
-                }
-            });
-            fxThread.setDaemon(true);
-            fxThread.start();
-
-            // Wait for initialization with shorter timeout (5s)
-            if (!initLatch.await(5, TimeUnit.SECONDS)) {
-                System.err.println("JavaFX initialization timeout - tests may fail or be skipped");
-                // Don't throw - let tests handle the failure gracefully
-            }
-
-            // Give the toolkit a moment to fully initialize
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+        if (!initialized.compareAndSet(false, true)) {
+            return;
         }
-    }
-
-    /**
-     * Shutdown JavaFX toolkit after all tests complete.
-     * Note: This may not be called in all test scenarios due to JUnit lifecycle.
-     */
-    @AfterAll
-    public static void shutdownJavaFX() {
-        if (initialized.get()) {
-            Platform.exit();
+        if (Boolean.getBoolean("testfx.headless")) {
+            System.setProperty("java.awt.headless", "true");
+            System.setProperty("testfx.robot", "glass");
+            System.setProperty("testfx.headless", "true");
+            System.setProperty("prism.order", "sw");
+            System.setProperty("prism.text", "t2k");
+            System.setProperty("glass.platform", "Monocle");
+            System.setProperty("monocle.platform", "Headless");
+        }
+        // Never auto-exit: keep the toolkit alive for the whole fork (see method javadoc). Set
+        // BEFORE startup so the policy is in force the instant the toolkit comes up — the startup
+        // runnable fires on the FX thread asynchronously and could otherwise observe the default
+        // implicitExit=true (stageless toolkit) before we flip it.
+        Platform.setImplicitExit(false);
+        var latch = new CountDownLatch(1);
+        try {
+            Platform.startup(latch::countDown);
+        } catch (IllegalStateException alreadyRunning) {
+            // Toolkit already started by another FX test in this fork — adopt it.
+            latch.countDown();
+        }
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                System.err.println("JavaFX initialization timeout - tests may fail or be skipped");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
