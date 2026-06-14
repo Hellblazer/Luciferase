@@ -163,7 +163,9 @@ jobs:
           # instead of shipping review-only (Luciferase-ai9tw). Under Mesa's software GL 4.5 the
           # tests run; if the software context cannot be created they self-skip via Assumptions
           # (GLComputeTestSupport), so a missing context is a skip, not a false failure.
-          RUN_GPU_TESTS=true ./mvnw test -pl render -Dgroups=gl-software
+          # -am builds the in-reactor upstream modules (common, lucien, ...): this is a standalone
+          # job with no prior install step, so without -am render's SNAPSHOT deps fail to resolve.
+          RUN_GPU_TESTS=true ./mvnw test -pl render -am -Dgroups=gl-software
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -175,6 +177,6 @@ jobs:
 
           # Heavier rendering-parity test kept best-effort (|| true): software-GL pixel output can
           # vary, so it stays informational rather than gating.
-          RUN_GPU_TESTS=true ./mvnw test -pl render -Dtest=ESVTGPUIntegrationTest -q || true
+          RUN_GPU_TESTS=true ./mvnw test -pl render -am -Dtest=ESVTGPUIntegrationTest -q || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
