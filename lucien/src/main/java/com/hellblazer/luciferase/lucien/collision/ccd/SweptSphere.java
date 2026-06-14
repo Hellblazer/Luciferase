@@ -147,12 +147,40 @@ public class SweptSphere {
         float velocityDotNormal = sphereVelocity.dot(triangleNormal);
         
         if (Math.abs(velocityDotNormal) < EPSILON) {
-            // Moving parallel to plane
+            // Moving parallel to the plane: the sphere never crosses it, so the plane-crossing time
+            // computed below divides by ~0 and yields NaN/Inf. That bad t then either (a) is rejected
+            // as t>1 -> the genuine parallel-embedded face contact is silently missed, or (b) for the
+            // exact 0/0 tangent case falls through (NaN escapes the t<0||t>1 guard since NaN compares
+            // false) to the edge/vertex checks, mislocating the contact to a later time. Handle the
+            // parallel case completely and correctly here instead (Luciferase-uojsv).
             if (Math.abs(startDist) > sphereRadius) {
+                // Too far from the plane to ever touch it.
                 return ContinuousCollisionResult.noCollision();
             }
+            // Within plane-contact distance for the whole sweep. If the sphere center already projects
+            // into the triangle, that is a face contact at t=0; otherwise the sphere may still graze a
+            // triangle edge or vertex during the sweep, so defer to those swept checks.
+            var projectedAtStart = new Point3f(sphereStart);
+            var toPlaneStart = new Vector3f(triangleNormal);
+            toPlaneStart.scale(startDist); // closest point on the plane to the sphere center
+            projectedAtStart.sub(toPlaneStart);
+            if (isPointInTriangle(projectedAtStart, v0, v1, v2)) {
+                // Contact point on the sphere surface, using the same convention as the non-parallel
+                // branch below (center - sphereRadius * normal) so CCD consumers see a consistent
+                // contact point regardless of which branch produced it.
+                var contactPoint = new Point3f(sphereStart);
+                var toSurface = new Vector3f(triangleNormal);
+                toSurface.scale(-sphereRadius);
+                contactPoint.add(toSurface);
+                return ContinuousCollisionResult.collision(0.0f, contactPoint, triangleNormal, 0.0f);
+            }
+            var parallelEdge = checkTriangleEdges(sphereStart, sphereVelocity, sphereRadius, v0, v1, v2);
+            if (parallelEdge.collides()) {
+                return parallelEdge;
+            }
+            return checkTriangleVertices(sphereStart, sphereVelocity, sphereRadius, v0, v1, v2);
         }
-        
+
         // Time when sphere touches plane
         float t = (sphereRadius - startDist) / velocityDotNormal;
         if (velocityDotNormal > 0) {
