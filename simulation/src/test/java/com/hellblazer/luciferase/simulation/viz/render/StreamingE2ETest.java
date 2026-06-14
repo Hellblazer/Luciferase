@@ -124,20 +124,28 @@ class StreamingE2ETest {
         // Drive the build→cache→push pipeline to completion rather than asserting on a single shot.
         // A build can fail transiently under heavy CI load — buildKeyed runs on RegionBuilder's
         // buildPool and doBuild/ESVO serialization can throw IOException (e.g. under memory pressure).
-        // BuildQueue.awaitBuilds() shields that exception (.exceptionally(e->null)), so the cache stays
-        // stale and the tick re-submits instead of pushing. The production design is retry-based — a
-        // later tick re-submits and a later awaitBuilds delivers — so re-await + re-tick a bounded
-        // number of times here so a transient build failure self-heals (Luciferase-5ezt5). Once a
-        // RegionUpdate is pushed, the subscription's known version advances, so an extra tick will not
-        // double-push. (Note: the per-region circuit breaker is on RegionBuilder.build(BuildRequest),
-        // NOT this buildKeyed path, so it is not a failure mode here.)
+        // BuildQueue swallows that exception (.exceptionally, counted in totalBuildFailures), so the
+        // cache stays stale and the next tick re-submits instead of pushing. The production design is
+        // retry-based (retries indefinitely); the test just needs a budget large enough to outlast a
+        // run of consecutive transient failures. Luciferase-jifjt: a 10-attempt budget occasionally
+        // ran out under test-batch-1's parallel memory pressure (assertion saw null — builds completed
+        // exceptionally every attempt, not a logic bug), so raise it to 40 and widen the per-attempt
+        // receive window. Once a RegionUpdate is pushed the subscription's known version advances, so a
+        // later tick will not double-push; a later attempt's receive simply drains the queued message.
+        // The build-failure count is surfaced in the assertion so a genuine never-builds logic bug
+        // stays distinguishable from infra flake (Luciferase-8pygn getTotalBuildFailures).
+        // Worst case: 40 * (2s await + 500ms receive) = 100s; normal path: 1-3 attempts. The 2s await
+        // is ~20x the sub-100ms in-memory ESVO build even under load, and a genuine build hang throws
+        // TimeoutException (loud abort) rather than silently continuing — so the budget is for
+        // consecutive transient build FAILURES, not slow builds.
         ServerMessage updateMsg = null;
-        for (int attempt = 0; attempt < 10 && !(updateMsg instanceof ServerMessage.RegionUpdate); attempt++) {
-            buildQueue.awaitBuilds().get(5, TimeUnit.SECONDS); // deliver any (re)submitted build into cache
+        for (int attempt = 0; attempt < 40 && !(updateMsg instanceof ServerMessage.RegionUpdate); attempt++) {
+            buildQueue.awaitBuilds().get(2, TimeUnit.SECONDS); // deliver any (re)submitted build into cache
             cycle.tick(200_000_000L);
-            updateMsg = client.nextServerMessage(200, TimeUnit.MILLISECONDS);
+            updateMsg = client.nextServerMessage(500, TimeUnit.MILLISECONDS);
         }
         assertInstanceOf(ServerMessage.RegionUpdate.class, updateMsg,
-            "moved entity should trigger REGION_UPDATE via streaming cycle");
+            "moved entity should trigger REGION_UPDATE via streaming cycle (lifetime build failures="
+            + buildQueue.getTotalBuildFailures() + ")");
     }
 }
