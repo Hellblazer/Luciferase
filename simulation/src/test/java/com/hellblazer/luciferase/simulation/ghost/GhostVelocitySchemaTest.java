@@ -145,7 +145,7 @@ class GhostVelocitySchemaTest {
         var entityId = new StringEntityID("vel-entity");
         var position = new Point3f(1f, 2f, 3f);
         var vel = new Vector3f(5f, -3f, 1f);
-        var ghostEntity = new GhostEntityHalo<>(entityId, (Object) "content", position,
+        var ghostEntity = new GhostEntityHalo<>(entityId, (Object) com.hellblazer.luciferase.simulation.entity.EntityType.PREY, position,
                                                 new EntityBounds(position, 0.5f), "tree-X");
 
         var sourceBubbleId = UUID.randomUUID();
@@ -173,7 +173,7 @@ class GhostVelocitySchemaTest {
 
         var entityId = new StringEntityID("zero-vel-entity");
         var position = new Point3f(1f, 2f, 3f);
-        var ghostEntity = new GhostEntityHalo<>(entityId, (Object) "content", position,
+        var ghostEntity = new GhostEntityHalo<>(entityId, (Object) com.hellblazer.luciferase.simulation.entity.EntityType.PREY, position,
                                                 new EntityBounds(position, 0.5f), "tree-Z");
 
         var sourceBubbleId = UUID.randomUUID();
@@ -265,7 +265,7 @@ class GhostVelocitySchemaTest {
     private SimulationGhostEntity<StringEntityID, Object> createGhostWithVelocity(
         String id, Point3f position, Vector3f velocity) {
         var entityId = new StringEntityID(id);
-        var halo = new GhostEntityHalo<>(entityId, (Object) "content", position,
+        var halo = new GhostEntityHalo<>(entityId, (Object) com.hellblazer.luciferase.simulation.entity.EntityType.PREY, position,
                                          new EntityBounds(position, 0.5f), "tree-test");
         return new SimulationGhostEntity<>(halo, bubble1.id(), 100L, 1L, 1L, velocity);
     }

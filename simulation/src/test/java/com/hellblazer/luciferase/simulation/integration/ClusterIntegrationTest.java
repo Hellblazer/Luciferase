@@ -609,8 +609,11 @@ public class ClusterIntegrationTest {
     ) {
         var id = new StringEntityID(entityId);
         var bounds = new com.hellblazer.luciferase.lucien.entity.EntityBounds(position, 0.5f);
+        // EntityType content (the production content type) round-trips via the channel's native
+        // path; a bare `new Object()` is unserializable and now fails loud (Luciferase-8kgil).
         var ghost = new com.hellblazer.luciferase.lucien.forest.ghost.GhostEntityHalo<StringEntityID, Object>(
-            id, new Object(), position, bounds, "tree-" + sourceBubbleId
+            id, (Object) com.hellblazer.luciferase.simulation.entity.EntityType.PREY, position, bounds,
+            "tree-" + sourceBubbleId
         );
         return new SimulationGhostEntity<>(ghost, sourceBubbleId, 1L, 1L, 1L);
     }
