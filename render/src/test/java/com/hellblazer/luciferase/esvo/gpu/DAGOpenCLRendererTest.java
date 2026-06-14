@@ -100,26 +100,24 @@ class DAGOpenCLRendererTest {
     @Test
     @DisplayName("Upload DAG data to GPU buffers")
     void testUploadDAGDataToGPU() {
-        // TDD: Test GPU buffer allocation and data upload
+        // Luciferase-7f77k: uploadDataBuffers allocates CL buffers, so the renderer must be
+        // initialized first (the prior version called it on an uninitialized renderer and failed
+        // with "OpenCL context not initialized"). GPU-gated: needs a real OpenCL context.
+        renderer.initialize();
         assertDoesNotThrow(() -> {
             renderer.uploadDataBuffers(testDAG);
             // Verify upload succeeded (no exception means success)
         });
     }
 
-    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
-    @Test
-    @DisplayName("Reject non-DAG data (wrong addressing mode)")
-    void testRejectNonDAGData() {
-        // TDD: Verify GPU renderer only accepts DAG data with absolute addressing
-        // Create an SVO (which uses relative addressing) and try to upload
-        assertThrows(IllegalArgumentException.class, () -> {
-            // Directly create a DAG-compatible object but with wrong addressing
-            // For now, we verify the renderer validates addressing mode
-            renderer.uploadDataBuffers(testDAG); // This should work
-            assertTrue(testDAG.getAddressingMode() == PointerAddressingMode.ABSOLUTE);
-        });
-    }
+    // Luciferase-7f77k: removed the former testRejectNonDAGData. It was misconceived (it wrapped a
+    // VALID absolute-addressed testDAG upload in assertThrows(IllegalArgumentException), which never
+    // throws). The addressing guard it meant to test (DAGOpenCLRenderer.uploadDataBuffers — reject
+    // non-ABSOLUTE) is unreachable via the type contract: DAGOctreeData.getAddressingMode() defaults
+    // to ABSOLUTE and no implementation overrides it. The guard remains as defensive production code;
+    // testing unreachable code through a fabricated mock provides no coverage of any real path and is
+    // not worth a Mockito dependency (YAGNI). Restore a real test if a non-ABSOLUTE DAGOctreeData
+    // implementation is ever introduced.
 
     // ==================== DAG Structure Tests ====================
 
@@ -162,11 +160,12 @@ class DAGOpenCLRendererTest {
     @Test
     @DisplayName("GPU traversal works on NVIDIA hardware")
     void testNvidiaOpenCL() {
-        // TDD: Test NVIDIA GPU execution
-        renderer.uploadDataBuffers(testDAG);
+        // Luciferase-7f77k: initialize() before any upload — uploadDataBuffers allocates CL buffers
+        // and needs the context. The prior order (uploadDataBuffers before initialize) only passed
+        // when a sibling test had already initialized the shared OpenCLContext singleton — flaky.
+        renderer.initialize();
         assertDoesNotThrow(() -> {
-            // Renderer is initialized - data uploaded - ready for frame rendering
-            renderer.initialize();
+            renderer.uploadDataBuffers(testDAG);
             renderer.uploadData(testDAG);
         });
     }
@@ -175,10 +174,10 @@ class DAGOpenCLRendererTest {
     @Test
     @DisplayName("GPU traversal works on AMD hardware")
     void testAmdOpenCL() {
-        // TDD: Test AMD GPU execution
-        renderer.uploadDataBuffers(testDAG);
+        // Luciferase-7f77k: initialize() before any upload (see testNvidiaOpenCL).
+        renderer.initialize();
         assertDoesNotThrow(() -> {
-            renderer.initialize();
+            renderer.uploadDataBuffers(testDAG);
             renderer.uploadData(testDAG);
         });
     }
@@ -187,10 +186,10 @@ class DAGOpenCLRendererTest {
     @Test
     @DisplayName("GPU traversal works on Intel hardware")
     void testIntelOpenCL() {
-        // TDD: Test Intel GPU execution
-        renderer.uploadDataBuffers(testDAG);
+        // Luciferase-7f77k: initialize() before any upload (see testNvidiaOpenCL).
+        renderer.initialize();
         assertDoesNotThrow(() -> {
-            renderer.initialize();
+            renderer.uploadDataBuffers(testDAG);
             renderer.uploadData(testDAG);
         });
     }
