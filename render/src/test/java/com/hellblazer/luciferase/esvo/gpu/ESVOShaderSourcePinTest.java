@@ -197,6 +197,28 @@ class ESVOShaderSourcePinTest {
     }
 
     /**
+     * Pin: the contour intersection block must stay stripped (Luciferase-yyx35).
+     *
+     * <p>The former block was unreachable (no Java producer uploads contour data — OctreeBuilder
+     * emits contourMask=0) AND structurally wrong vs the CUDA reference (it read contour values
+     * node-absolute from {@code nodes[]} while Raycast.inl reads them parent-relative from the raw
+     * int stream). It was stripped rather than left as a latent trap. This pin fails if the wrong
+     * contour code is re-introduced; real contour support must be designed afresh (see yyx35).
+     */
+    @Test
+    void raycast_contourBlock_stripped() {
+        assertFalse(compSource.contains("uint contourMask ="),
+                "raycast.comp must not reintroduce the stripped contour block (no 'uint contourMask =') — "
+                + "it was unreachable and structurally wrong; see Luciferase-yyx35");
+        assertFalse(compSource.contains("octree.nodes[contourPtr"),
+                "raycast.comp must not reintroduce the contour data read (no 'octree.nodes[contourPtr') — "
+                + "the node-absolute read was wrong vs the CUDA parent-relative reference; see Luciferase-yyx35");
+        assertFalse(compSource.contains("popc8("),
+                "raycast.comp must not retain popc8() — it was a contour-only helper, dead after the strip; "
+                + "the descend path uses bitCount on the childmask (see Luciferase-yyx35)");
+    }
+
+    /**
      * Pin 5: FarPointerBuffer SSBO declaration must be present.
      *
      * <p>Pre-fix: no FarPointerBuffer SSBO in raycast.comp.

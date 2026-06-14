@@ -96,14 +96,6 @@ Ray generateRay(ivec2 pixel) {
 }
 
 /**
- * CRITICAL: popc8 - Population count for lower 8 bits ONLY
- * This must match the Java implementation exactly for child indexing
- */
-uint popc8(uint mask) {
-    return bitCount(mask & 0xFFu);
-}
-
-/**
  * Main ray casting function with ALL CRITICAL BUG FIXES APPLIED
  * 
  * BUG FIX #1: POP Operation Double-Stack-Read
@@ -171,8 +163,12 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
             child_descriptor = octree.nodes[parentIdx];
         }
         uint childDesc = child_descriptor.x;
-        uint contourDesc = child_descriptor.y;
-        
+        // child_descriptor.y holds the contour descriptor. It is loaded with the uvec2 node fetch
+        // above but left undecoded: the contour path was stripped (Luciferase-yyx35 — it was
+        // unreachable and decoded node-absolute, wrong vs the CUDA parent-relative reference).
+        // Decode .y correctly (parent-relative, from a real contour data section) if contours are
+        // ever implemented — see raycast_esvt.comp's ContourBuffer for the right pattern.
+
         // Extract node data (bit layout must match Java ESVONodeUnified exactly):
         //   bits 0-7  = leafmask  (1 = child IS a leaf)  — Java getLeafMask()
         //   bits 8-15 = childmask (1 = child exists)     — Java getChildMask()
@@ -218,39 +214,14 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
             float ty_center = halfScale * ty_coef + ty_corner;
             float tz_center = halfScale * tz_coef + tz_corner;
             
-            // CONTOUR INTERSECTION for sub-voxel surface refinement
-            // VERIFIED (Luciferase-7stji): units/source mismatch vs the CUDA reference —
-            // the reference reads contour values PARENT-RELATIVE from the raw int stream;
-            // this reads node-absolute from nodes[]. No current Java producer uploads
-            // contour data for this renderer (OctreeBuilder emits contourMask=0), so this
-            // branch is unreachable today. Tracked: Luciferase-yyx35.
-            uint contourMask = (contourDesc & 0xFFu) << childShift;
-            if ((contourMask & 0x80u) != 0u) {
-                // Extract contour data pointer
-                uint contourPtr = contourDesc >> 8;
-                uint contourOffset = popc8(contourMask & 0x7Fu);
-                int contourValue = int(octree.nodes[contourPtr + contourOffset].x);
-                
-                // Decode contour parameters using bit shifting
-                float cthick = float(uint(contourValue)) * scale_exp2 * 0.75;
-                float cpos = float(contourValue << 7) * scale_exp2 * 1.5;
-                
-                // Normal components via left shift and dot product
-                float cdirx = float(contourValue << 14) * ray.direction.x;
-                float cdiry = float(contourValue << 20) * ray.direction.y;
-                float cdirz = float(contourValue << 26) * ray.direction.z;
-                
-                float cdot = cdirx + cdiry + cdirz;
-                if (abs(cdot) > 0.001) {
-                    float tcoef = 1.0 / cdot;
-                    float tavg = (tx_center * cdirx + ty_center * cdiry + tz_center * cdirz + cpos) * tcoef;
-                    float tdiff = cthick * abs(tcoef);
-                    
-                    t_min = max(t_min, tavg - tdiff);
-                    tv_max = min(tv_max, tavg + tdiff);
-                }
-            }
-            
+            // CONTOUR INTERSECTION: removed (Luciferase-yyx35). The former contour block was both
+            // unreachable (no Java producer uploads contour data — OctreeBuilder emits contourMask=0,
+            // so the contourMask gate never fired) and structurally wrong vs the CUDA reference
+            // (Raycast.inl:205-208 reads contour values PARENT-RELATIVE from the raw int stream;
+            // this read node-absolute from nodes[]). Stripped rather than left as a latent trap for
+            // any future contour wiring. To add real contour support, a contour data section must be
+            // produced into the node SSBO and decoded parent-relative — see Luciferase-yyx35.
+
             if (t_min <= tv_max) {
                 // Java leafmask polarity (bit 7 of shifted descriptor = leafmask bit for
                 // this slot, 1 = leaf): a set bit means the child is a LEAF voxel — hit.
@@ -286,8 +257,8 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
                 // Add per-child sparse offset: count existing children BEFORE this slot.
                 // Java packs ALL existing children consecutively (ESVONodeUnified.getChildOffset
                 // counts childmask bits below the slot). The CUDA reference instead packs only
-                // non-leaf children and counts its non-leaf mask — do NOT use the shifted-mask
-                // popc8 idiom here. Fix: Luciferase-7stji (Luciferase-0bn1q).
+                // non-leaf children and counts its non-leaf mask — do NOT use a shifted-mask
+                // lower-8-bits popcount idiom here. Fix: Luciferase-7stji (Luciferase-0bn1q).
                 uint childSlot = 7u - uint(childShift);
                 ofs += uint(bitCount(childMask8 & ((1u << childSlot) - 1u)));
                 // parentIdx is node-unit: add ofs directly (no *2u stride).
