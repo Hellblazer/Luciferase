@@ -4,10 +4,9 @@
 package com.hellblazer.luciferase.portal.esvt;
 
 import com.hellblazer.luciferase.geometry.Point3i;
+import com.hellblazer.luciferase.portal.JavaFXTestBase;
 import com.hellblazer.luciferase.portal.esvt.bridge.ESVTBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTNodeMeshRenderer;
-import javafx.application.Platform;
-import javafx.embed.swing.JFXPanel;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.shape.MeshView;
@@ -16,8 +15,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,21 +27,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class ESVTRenderPipelineTest {
 
     @BeforeAll
-    static void initJavaFX() throws InterruptedException {
-        // Skip JavaFX initialization in CI (xvfb may hang on JFXPanel initialization)
-        if ("true".equals(System.getenv("CI"))) {
-            System.out.println("Skipping JavaFX initialization in CI environment");
-            return;
-        }
-
-        CountDownLatch latch = new CountDownLatch(1);
-        try {
-            new JFXPanel();
-            Platform.runLater(latch::countDown);
-            latch.await(5, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            System.out.println("JavaFX init: " + e.getMessage());
-        }
+    static void initJavaFX() {
+        // Route through the shared, start-once / never-exit FX bootstrap (Luciferase-tugep). The
+        // previous `new JFXPanel()` re-initialized the toolkit independently; in a full-suite fork
+        // where another FX test had already run Platform.exit(), that restart deadlocked the FX
+        // thread in QuantumRenderer.createResourceFactory and wedged the fork. ensureStarted()
+        // adopts the living toolkit and never tears it down. (Also skips in CI internally.)
+        JavaFXTestBase.ensureStarted();
     }
 
     @Test
