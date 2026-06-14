@@ -168,7 +168,11 @@ jobs:
           # instead of shipping review-only (Luciferase-ai9tw).
           # -am builds the in-reactor upstream modules (common, lucien, ...): this is a standalone
           # job with no prior install step, so without -am render's SNAPSHOT deps fail to resolve.
-          RUN_GPU_TESTS=true ./mvnw test -pl render -am -Dgroups=gl-software
+          # render.forkCount=1: serialize the GL test classes into ONE JVM. render defaults to
+          # forkCount=2, which runs gl-software classes in parallel forks that race on LWJGL native
+          # extraction (UnsatisfiedLinkError: liblwjgl_opengl.so / NoClassDefFoundError: org.lwjgl.
+          # opengl.GL). One fork loads the GL natives once — no cross-fork race.
+          RUN_GPU_TESTS=true ./mvnw test -pl render -am -Dgroups=gl-software -Drender.forkCount=1
 
           # Gate-integrity guard (Luciferase-ai9tw): Surefire returns BUILD SUCCESS for 0 tests
           # (no @Tag match) AND counts an Assumptions-skip as run-but-skipped, so a missing Mesa
