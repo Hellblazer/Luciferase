@@ -66,7 +66,7 @@ public final class ESVTComputeRenderer {
     public static final int RENDER_FLAGS_UBO_BINDING = 3;
     public static final int COARSE_OUTPUT_BINDING = 4;
     public static final int COARSE_INPUT_BINDING = 5;
-    // CONTOUR_BUFFER_BINDING = 6 is defined in the shader but not yet wired in Java
+    public static final int CONTOUR_BUFFER_BINDING = 6;       // wired Luciferase-z9qq4
     public static final int FAR_POINTER_BUFFER_BINDING = 7;
 
     // Beam optimization constants
@@ -91,6 +91,10 @@ public final class ESVTComputeRenderer {
     // Far-pointer SSBO (binding 7). Always bound — contains a 4-byte placeholder
     // when no far pointers are present so the shader binding slot is always valid.
     private BufferResource farPointerSSBO;
+
+    // Contour SSBO (binding 6, Luciferase-z9qq4). Always bound — 4-byte placeholder when the build
+    // has no contour data, so the shader's ContourBuffer binding slot is always valid.
+    private BufferResource contourSSBO;
 
     // Camera UBO size: 4 matrices (4x4) + 2 vec4 (position+nearPlane, direction+farPlane)
     private static final int CAMERA_UBO_SIZE = 64 * 4 + 16 * 2;
@@ -197,6 +201,53 @@ public final class ESVTComputeRenderer {
 
         log.debug("Uploaded {} far-pointer entries ({} bytes) to SSBO binding {}",
                   fps != null ? fps.length : 0, byteCount, FAR_POINTER_BUFFER_BINDING);
+
+        // Contour data → ContourBuffer SSBO at binding 6 (Luciferase-z9qq4). The contour table size
+        // is data-driven (contourCount * 4 bytes), so apply the same z2ysz recreate-on-size-change
+        // guard as the far-pointer SSBO; upload a 4-byte placeholder when the build has no contours
+        // so the shader's readonly ContourBuffer binding slot is always valid.
+        // NOTE: producer-pending (Luciferase-r8jrw) — ESVTBuilder currently emits empty contours, so
+        // this path binds the placeholder in live renders until a contour producer exists. The
+        // encoding contract is verified (matches the OpenCL path + the CPU ESVTTraversal indexing).
+        boolean hasContours = data.hasContours();
+        int contourBytes = hasContours ? data.contourSizeInBytes() : Integer.BYTES;
+        if (contourSSBO == null || contourSSBO.getSizeBytes() != contourBytes) {
+            if (contourSSBO != null) {
+                contourSSBO.close();
+            }
+            contourSSBO = resourceManager.createStorageBuffer(contourBytes, "ESVTContourSSBO");
+        }
+        ByteBuffer contourBuf;
+        if (hasContours) {
+            contourBuf = data.contoursToByteBuffer();
+        } else {
+            contourBuf = ByteBuffer.allocateDirect(Integer.BYTES).order(ByteOrder.nativeOrder());
+            contourBuf.putInt(0);
+            contourBuf.flip();
+        }
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, contourSSBO.getOpenGLId());
+        glBufferData(GL_SHADER_STORAGE_BUFFER, contourBuf, GL_STATIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, CONTOUR_BUFFER_BINDING, contourSSBO.getOpenGLId());
+
+        log.debug("Uploaded {} contour entries ({} bytes) to SSBO binding {}",
+                  hasContours ? data.contourCount() : 0, contourBytes, CONTOUR_BUFFER_BINDING);
+    }
+
+    /**
+     * Ensure the contour SSBO is bound at {@link #CONTOUR_BUFFER_BINDING} for a render, creating a
+     * 4-byte placeholder if {@code uploadData} has not run yet (Luciferase-z9qq4) — mirrors the
+     * far-pointer placeholder so the shader's ContourBuffer slot is always valid.
+     */
+    private void ensureContourBoundWithPlaceholder() {
+        if (contourSSBO == null) {
+            contourSSBO = resourceManager.createStorageBuffer(Integer.BYTES, "ESVTContourSSBOPlaceholder");
+            ByteBuffer placeholder = ByteBuffer.allocateDirect(Integer.BYTES).order(ByteOrder.nativeOrder());
+            placeholder.putInt(0);
+            placeholder.flip();
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, contourSSBO.getOpenGLId());
+            glBufferData(GL_SHADER_STORAGE_BUFFER, placeholder, GL_STATIC_DRAW);
+        }
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, CONTOUR_BUFFER_BINDING, contourSSBO.getOpenGLId());
     }
 
     /**
@@ -233,6 +284,9 @@ public final class ESVTComputeRenderer {
             glBufferData(GL_SHADER_STORAGE_BUFFER, placeholder, GL_STATIC_DRAW);
         }
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, FAR_POINTER_BUFFER_BINDING, farPointerSSBO.getOpenGLId());
+
+        // Bind contour SSBO (binding 6) — placeholder if uploadData() has not run (Luciferase-z9qq4).
+        ensureContourBoundWithPlaceholder();
 
         // Update camera uniforms
         updateCameraUniforms(viewMatrix, projMatrix, objectToWorld, tetreeToObject);
@@ -330,6 +384,9 @@ public final class ESVTComputeRenderer {
             glBufferData(GL_SHADER_STORAGE_BUFFER, placeholder, GL_STATIC_DRAW);
         }
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, FAR_POINTER_BUFFER_BINDING, farPointerSSBO.getOpenGLId());
+
+        // Bind contour SSBO (binding 6) — placeholder if uploadData() has not run (Luciferase-z9qq4).
+        ensureContourBoundWithPlaceholder();
 
         // Update camera uniforms
         updateCameraUniforms(viewMatrix, projMatrix, objectToWorld, tetreeToObject);
@@ -575,6 +632,11 @@ public final class ESVTComputeRenderer {
             if (farPointerSSBO != null) {
                 farPointerSSBO.close();
                 farPointerSSBO = null;
+            }
+
+            if (contourSSBO != null) {
+                contourSSBO.close();
+                contourSSBO = null;
             }
         } catch (Exception e) {
             log.error("Error disposing GPU resources", e);
