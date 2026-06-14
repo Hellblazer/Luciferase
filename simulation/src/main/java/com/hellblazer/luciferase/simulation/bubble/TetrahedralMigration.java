@@ -362,6 +362,13 @@ public class TetrahedralMigration {
             return true;
 
         } catch (Exception e) {
+            // Any failure acquiring the mutation locks or executing phases 1-2 (lookup / add) lands
+            // here. Previously this returned false silently, making migration failures invisible and
+            // indistinguishable from a legitimate not-found/skip — log at WARN with context so they
+            // are observable (Luciferase-9jea5). The inner rollback catch above already logs the
+            // duplicate-state case at ERROR.
+            log.warn("Migration failed unexpectedly for entity {} ({} -> {})",
+                     entityId, srcBubble.id(), dstBubble.id(), e);
             return false;
         }
     }
