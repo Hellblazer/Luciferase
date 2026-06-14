@@ -449,7 +449,9 @@ public class DAGOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, D
 
     @Override
     protected void uploadDataBuffers(DAGOctreeData data) {
-        // Validate absolute addressing
+        // Validate absolute addressing. Defensive: currently unreachable via the type contract —
+        // DAGOctreeData.getAddressingMode() defaults to ABSOLUTE and no implementation overrides it
+        // (Luciferase-7f77k). Kept to fail loudly if a non-ABSOLUTE DAGOctreeData is ever introduced.
         if (data.getAddressingMode() != PointerAddressingMode.ABSOLUTE) {
             throw new IllegalArgumentException("DAG must use absolute addressing");
         }
