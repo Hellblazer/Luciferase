@@ -19,8 +19,6 @@ package com.hellblazer.luciferase.lucien.tetree;
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -86,10 +84,6 @@ public final class TetreeLevelCache {
     private static final AtomicReferenceArray<Holder<Byte>> PARENT_TYPE_CACHE      =
     new AtomicReferenceArray<>(PARENT_TYPE_CACHE_SIZE);
 
-    // Shallow level pre-computation tables for levels 0-5 (most frequent operations)
-    private static final int                        MAX_SHALLOW_LEVEL   = 5;
-    private static final Map<Integer, TetreeKey<?>> SHALLOW_LEVEL_CACHE = new HashMap<>();
-
     // Cache statistics for monitoring (Luciferase-7wzml.133).
     // Plain static long fields incremented from concurrent read paths caused torn reads and lost updates.
     // LongAdder provides wait-free, scalable increments with no false-sharing on hot paths, while
@@ -104,7 +98,6 @@ public final class TetreeLevelCache {
     static {
         initializeLevelTables();
         initializeTypeCaches();
-        initializeShallowLevelCache();
         // AtomicReferenceArrays initialise their elements to null — no extra fill needed.
     }
 
@@ -436,31 +429,6 @@ public final class TetreeLevelCache {
     }
 
     /**
-     * Get a pre-computed ExtendedTetreeKey for shallow levels (0-5). This provides O(1) access instead of O(level)
-     * tmIndex computation for the most common operations.
-     *
-     * @param x     x coordinate
-     * @param y     y coordinate
-     * @param z     z coordinate
-     * @param level hierarchical level
-     * @param type  tetrahedron type
-     * @return pre-computed ExtendedTetreeKey or null if not in shallow level cache
-     */
-    public static TetreeKey<?> getShallowLevelKey(int x, int y, int z, byte level, byte type) {
-        if (level > MAX_SHALLOW_LEVEL) {
-            return null; // Not in shallow level range
-        }
-
-        int cellSize = Constants.lengthAtLevel(level);
-        int gridX = x / cellSize;
-        int gridY = y / cellSize;
-        int gridZ = z / cellSize;
-
-        int key = packShallowKey(gridX, gridY, gridZ, level, type);
-        return SHALLOW_LEVEL_CACHE.get(key);
-    }
-
-    /**
      * Get the type at a different level using cached transitions. Converts O(level) loop to O(1) lookup.
      */
     public static byte getTypeAtLevel(byte startType, byte startLevel, byte targetLevel) {
@@ -500,40 +468,6 @@ public final class TetreeLevelCache {
         }
     }
 
-    /**
-     * Initialize shallow level cache for levels 0-5. Pre-computes all possible tetrahedra for these levels to enable
-     * O(1) lookups instead of O(level) tmIndex computation.
-     */
-    private static void initializeShallowLevelCache() {
-        // Pre-compute all possible tetrahedra for levels 0-5
-        for (byte level = 0; level <= MAX_SHALLOW_LEVEL; level++) {
-            int cellSize = Constants.lengthAtLevel(level);
-            int maxCoord = Constants.MAX_COORD / cellSize;
-
-            for (int x = 0; x <= maxCoord; x += cellSize) {
-                for (int y = 0; y <= maxCoord; y += cellSize) {
-                    for (int z = 0; z <= maxCoord; z += cellSize) {
-                        for (byte type = 0; type <= 5; type++) {
-                            Tet tet = new Tet(x, y, z, level, type);
-                            int key = packShallowKey(x / cellSize, y / cellSize, z / cellSize, level, type);
-                            TetreeKey<?> tetreeKey = tet.tmIndex();
-                            SHALLOW_LEVEL_CACHE.put(key, tetreeKey);
-                            if (level == 0) {
-                                break;
-                            }
-                        }
-                        if (level == 0) {
-                            break;
-                        }
-                    }
-                    if (level == 0) {
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
     private static void initializeTypeCaches() {
         // Initialize type transition cache
         // Pack: startType (8 bits) | startLevel (8 bits) | endLevel (8 bits)
@@ -546,15 +480,6 @@ public final class TetreeLevelCache {
                 }
             }
         }
-    }
-
-    /**
-     * Pack coordinates and parameters into a compact key for shallow level lookup. Uses grid coordinates (already
-     * divided by cell size) for efficiency.
-     */
-    private static int packShallowKey(int gridX, int gridY, int gridZ, int level, int type) {
-        // Pack into 32-bit integer: gridX(10 bits) | gridY(10 bits) | gridZ(10 bits) | level(3 bits) | type(3 bits)
-        return (gridX << 16) | (gridY << 13) | (gridZ << 10) | (level << 3) | type;
     }
 
     private static int packTypeTransition(int startType, int startLevel, int endLevel) {
