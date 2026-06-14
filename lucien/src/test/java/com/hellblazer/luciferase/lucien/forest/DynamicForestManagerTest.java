@@ -248,7 +248,21 @@ public class DynamicForestManagerTest {
             "At least 98 entities must survive the split with intact content (use-after-remove "
                 + "regression Luciferase-22i71), but only " + survivorsWithIntactContent + " did");
     }
-    
+
+    @Test
+    void testCheckAndMergeToleratesNullBoundsTree() {
+        // Regression for Luciferase-drc6r: a tree created without entity bounds has null
+        // globalBounds and is "underutilized" (entityCount 0 < min), so it reaches
+        // UnderutilizedMergeStrategy.areSpatiallyClose, which dereferenced getGlobalBounds() and
+        // NPE'd — the exception propagated out of checkAndMergeTrees (it is called before the
+        // mergeTrees try/catch). The initial tree (with bounds) is paired against these.
+        dynamicManager.addTree(TreeMetadata.TreeType.OCTREE, "null-bounds-1", null);
+        dynamicManager.addTree(TreeMetadata.TreeType.OCTREE, "null-bounds-2", null);
+
+        assertDoesNotThrow(() -> dynamicManager.checkAndMergeTrees(),
+            "merge candidate scan must tolerate trees with null globalBounds");
+    }
+
     @Test
     void testMergeTrees() {
         // Create adjacent trees with few entities
