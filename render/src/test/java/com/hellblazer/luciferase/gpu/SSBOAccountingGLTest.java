@@ -109,18 +109,64 @@ class SSBOAccountingGLTest extends GLComputeTestSupport {
         });
     }
 
+    /**
+     * z9qq4: ESVTComputeRenderer now wires the ContourBuffer SSBO (binding 6). Its size is
+     * data-driven (contourCount * 4), so it uses the z2ysz recreate-on-size-change guard; with no
+     * contours a 4-byte placeholder keeps the readonly binding slot valid. Verify upload, grow,
+     * shrink, and the placeholder under software GL.
+     */
+    @Test
+    @DisplayName("z9qq4: contour SSBO (binding 6) tracks data-driven size + placeholder (ESVTComputeRenderer)")
+    void esvtContourSsboTracksData() throws Exception {
+        runWithGLContext(() -> {
+            var renderer = new ESVTComputeRenderer(64, 64);
+            try {
+                renderer.initialize();
+
+                renderer.uploadData(esvtWithContours(8));     // 32 bytes
+                assertEquals(32L, trackedSsboBytes(renderer, "contourSSBO"),
+                        "contour SSBO tracked size must match contourCount * 4 on first upload");
+
+                renderer.uploadData(esvtWithContours(64));    // 256 bytes
+                assertEquals(256L, trackedSsboBytes(renderer, "contourSSBO"),
+                        "z9qq4/z2ysz: contour SSBO tracked size must follow the re-upload GROW");
+
+                renderer.uploadData(esvtWithContours(2));     // 8 bytes
+                assertEquals(8L, trackedSsboBytes(renderer, "contourSSBO"),
+                        "z9qq4/z2ysz: contour SSBO tracked size must follow the re-upload SHRINK");
+
+                renderer.uploadData(esvtWithFarPointers(1));  // no contours -> 4-byte placeholder
+                assertEquals(4L, trackedSsboBytes(renderer, "contourSSBO"),
+                        "z9qq4: a build with no contours must bind a 4-byte placeholder, not stay at 8 bytes");
+            } finally {
+                renderer.dispose();
+            }
+        });
+    }
+
     /** Minimal ESVTData carrying a far-pointer table of {@code count} entries. */
     private static ESVTData esvtWithFarPointers(int count) {
         var nodes = new ESVTNodeUnified[] { new ESVTNodeUnified() };
         return new ESVTData(nodes, new int[0], new int[count], 0, 3, 1, 0);
     }
 
+    /** Minimal ESVTData carrying a contour table of {@code count} entries (no far pointers). */
+    private static ESVTData esvtWithContours(int count) {
+        var nodes = new ESVTNodeUnified[] { new ESVTNodeUnified() };
+        return new ESVTData(nodes, new int[count], new int[0], 0, 3, 1, 0);
+    }
+
     /** Read the renderer's private {@code farPointerSSBO} tracked size via reflection. */
     private static long trackedFarPointerBytes(Object renderer) throws Exception {
-        Field field = renderer.getClass().getDeclaredField("farPointerSSBO");
+        return trackedSsboBytes(renderer, "farPointerSSBO");
+    }
+
+    /** Read a renderer's private {@link org.lwjgl}-backed SSBO field's tracked size via reflection. */
+    private static long trackedSsboBytes(Object renderer, String fieldName) throws Exception {
+        Field field = renderer.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         var ssbo = field.get(renderer);
-        assertNotNull(ssbo, "farPointerSSBO must be allocated after uploadData");
+        assertNotNull(ssbo, fieldName + " must be allocated after uploadData");
         var getSizeBytes = ssbo.getClass().getMethod("getSizeBytes");
         return ((Number) getSizeBytes.invoke(ssbo)).longValue();
     }
