@@ -607,6 +607,96 @@ class PhaseA2FaultTolerantDistributedForestTest {
     }
 
     /**
+     * Luciferase-ca07y: when autoRecoveryEnabled=false the forest must NOT auto-invoke recovery on
+     * a partition failure (recovery is then caller-driven via triggerRecovery()).
+     */
+    @Test
+    void testAutoRecoveryDisabledDoesNotScheduleRecovery() throws Exception {
+        var config = FaultConfiguration.defaultConfig().withAutoRecovery(false);
+        var partitions = new ArrayList<UUID>();
+        var recovery = TestRecoveryStrategy.success("should-not-run");
+        for (int i = 0; i < 5; i++) {
+            var p = UUID.randomUUID();
+            partitions.add(p);
+            faultHandler.registerRecovery(p, i == 2 ? recovery : TestRecoveryStrategy.success("ok-" + i));
+            faultHandler.markHealthy(p);
+        }
+        var topology = createTestTopology(5, partitions.toArray(UUID[]::new));
+        ftForest = new FaultTolerantDistributedForest<>(createTestDistributedForest(), faultHandler,
+            recoveryLock, new DefaultParallelBalancer<>(BalanceConfiguration.defaultConfig()),
+            mockGhostManager, topology, partitions.get(0), config, tracker);
+        ftForest.start();
+
+        var failed = partitions.get(2);
+        faultHandler.reportBarrierTimeout(failed); // HEALTHY -> SUSPECTED
+        faultHandler.reportBarrierTimeout(failed); // SUSPECTED -> FAILED
+
+        Thread.sleep(400); // generous window for any (incorrect) async recovery to have run
+        // Non-vacuity guard: confirm the failure events were actually processed (so a 0 attempt count
+        // reflects the gate, not undelivered events).
+        assertEquals(PartitionStatus.FAILED, faultHandler.checkHealth(failed),
+            "partition must actually be FAILED (events delivered)");
+        assertEquals(0, recovery.getAttemptCount(),
+            "autoRecoveryEnabled=false must not auto-invoke recovery (Luciferase-ca07y)");
+    }
+
+    /**
+     * Luciferase-ca07y: a permanently-failing recovery must be retried at most maxRecoveryRetries
+     * times (then give up), not retried forever. Retries are drained opportunistically when another
+     * partition recovers, so we pump a healthy partition's failure+recovery to drive them.
+     */
+    @Test
+    void testRecoveryRetriesBoundedByMaxRecoveryRetries() throws Exception {
+        int maxRetries = 2;
+        var config = FaultConfiguration.defaultConfig().withMaxRetries(maxRetries);
+        var partitions = new ArrayList<UUID>();
+        var failing = TestRecoveryStrategy.failure("always-fails");
+        for (int i = 0; i < 5; i++) {
+            var p = UUID.randomUUID();
+            partitions.add(p);
+            faultHandler.registerRecovery(p, i == 2 ? failing : TestRecoveryStrategy.success("ok-" + i));
+            faultHandler.markHealthy(p);
+        }
+        var topology = createTestTopology(5, partitions.toArray(UUID[]::new));
+        ftForest = new FaultTolerantDistributedForest<>(createTestDistributedForest(), faultHandler,
+            recoveryLock, new DefaultParallelBalancer<>(BalanceConfiguration.defaultConfig()),
+            mockGhostManager, topology, partitions.get(0), config, tracker);
+        ftForest.start();
+
+        var failed = partitions.get(2);
+        var pump = partitions.get(3);
+
+        // Initial failure -> attempt 1 (fails), queued for retry.
+        faultHandler.reportBarrierTimeout(failed);
+        faultHandler.reportBarrierTimeout(failed);
+        awaitAtLeast(() -> failing.getAttemptCount(), 1);
+
+        // Pump healthy-partition failures+recoveries; each successful recovery drains the queue and
+        // retries the failing partition. With <= semantics, maxRetries=2 means initial + 2 retries =
+        // 3 total attempts, then give up and dequeue. Pump more than enough times.
+        for (int i = 0; i < maxRetries + 4; i++) {
+            faultHandler.markHealthy(pump);
+            faultHandler.reportBarrierTimeout(pump);
+            faultHandler.reportBarrierTimeout(pump);
+            Thread.sleep(120);
+        }
+
+        int expectedTotal = maxRetries + 1; // initial attempt + maxRetries retries
+        awaitAtLeast(failing::getAttemptCount, expectedTotal);
+        assertEquals(expectedTotal, failing.getAttemptCount(),
+            "failing recovery must be attempted initial + maxRecoveryRetries times then give up "
+                + "(Luciferase-ca07y)");
+    }
+
+    private static void awaitAtLeast(java.util.function.IntSupplier value, int target) throws Exception {
+        var start = System.nanoTime();
+        while (value.getAsInt() < target && (System.nanoTime() - start) < 5_000_000_000L) {
+            Thread.sleep(10);
+        }
+        assertTrue(value.getAsInt() >= target, "expected at least " + target + " but was " + value.getAsInt());
+    }
+
+    /**
      * Test 4: Verify quorum calculation.
      *
      * <p>Validates that quorum is correctly calculated as majority (> 50%).
