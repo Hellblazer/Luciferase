@@ -59,7 +59,6 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     
     // Performance optimization flags
     private boolean useLazyEvaluation = false;
-    private boolean useThreadLocalCache = false;
     private boolean autoLazyForBulk = false;
 
     /**
@@ -623,15 +622,6 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
         } finally {
             lock.readLock().unlock();
         }
-    }
-
-    /**
-     * Get thread-local cache statistics.
-     *
-     * @return statistics string if thread-local caching is enabled, empty string otherwise
-     */
-    public String getThreadLocalCacheStatistics() {
-        return useThreadLocalCache ? ThreadLocalTetreeCache.getGlobalStatistics() : "";
     }
 
     /**
@@ -1462,20 +1452,14 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey<?>>, ID, Content> {
     protected TetreeKey<? extends TetreeKey<?>> calculateSpatialIndex(Point3f position, byte level) {
         var tet = locate(position, level);
 
-        // All return paths below must yield a key equal()/compareTo-consistent with tet.tmIndex()
-        // (the spatial keys back a ConcurrentSkipListMap). LazyTetreeKey resolves to tmIndex on
-        // demand. The shallow-level fast-path cache that used to sit here was removed (Luciferase-lof72):
-        // its init only ever populated origin cells, so it returned tmIndex(origin) or null -> the
-        // same tmIndex() path taken below.
+        // Both return paths must yield a key equal()/compareTo-consistent with tet.tmIndex() (the
+        // spatial keys back a ConcurrentSkipListMap). LazyTetreeKey resolves to tmIndex on demand.
+        // The shallow-level fast-path cache that used to sit here was removed (Luciferase-lof72), as
+        // was the never-enabled thread-local cache path (Luciferase-i7mr0).
 
         // Use lazy evaluation if enabled
         if (useLazyEvaluation) {
             return new LazyTetreeKey(tet);
-        }
-
-        // Use thread-local cache if enabled
-        if (useThreadLocalCache) {
-            return ThreadLocalTetreeCache.getTetreeKey(tet);
         }
 
         return tet.tmIndex();

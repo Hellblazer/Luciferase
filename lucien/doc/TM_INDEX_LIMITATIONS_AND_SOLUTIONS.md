@@ -95,7 +95,6 @@ Each of the 6 tetrahedral types has different vertex arrangements:
 - `TetreeLevelCache`: 7 specialized sub-caches, >90% hit rate
 - Parent caching: 17.3x speedup for `parent()` calls
 - `TetreeRegionCache`: Pre-computes entire spatial regions
-- `ThreadLocalTetreeCache`: Eliminates contention
 
 **Performance Gains:**
 

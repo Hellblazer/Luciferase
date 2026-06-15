@@ -60,7 +60,7 @@ com.hellblazer.luciferase.lucien/
 │   ├── Core: Tetree, Tet, TetrahedralGeometry, TetrahedralSearchBase
 │   ├── Keys: TetreeKey, CompactTetreeKey, LazyTetreeKey
 │   ├── Indexing: TmIndex, SimpleTMIndex
-│   ├── Caching: TetreeLevelCache, TetreeRegionCache, SpatialLocalityCache, ThreadLocalTetreeCache
+│   ├── Caching: TetreeLevelCache, TetreeRegionCache, SpatialLocalityCache
 │   ├── Utilities: TetreeBits, TetreeConnectivity, TetreeFamily, TetreeHelper, 
 │   │              TetreeIterator, TetreeLUT, TetreeNeighborFinder
 │   ├── Subdivision: BeySubdivision, TetreeSubdivisionStrategy
@@ -634,7 +634,7 @@ Performance optimizations (7):
 
 - **TetreeLevelCache** - O(1) level extraction and parent caching
 - **TetreeRegionCache** - Regional caching for queries
-- **SpatialLocalityCache**, **ThreadLocalTetreeCache** - Thread-local optimizations
+- **SpatialLocalityCache** - Thread-local optimizations
 - **TetreeMetrics** - Performance monitoring
 - **TetOptimized** - Optimized tetrahedron operations
 
