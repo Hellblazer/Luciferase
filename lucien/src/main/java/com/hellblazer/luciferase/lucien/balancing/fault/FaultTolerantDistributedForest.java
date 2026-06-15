@@ -80,6 +80,11 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
     // Partitions queued here when no immediate quorum but potential quorum exists
     private final Queue<UUID> recoveryQueue = new ConcurrentLinkedQueue<>();
 
+    // Per-partition count of failed recovery attempts, used to bound retries at
+    // configuration.maxRecoveryRetries() and give up (escalate) rather than retry forever
+    // (Luciferase-ca07y). Cleared on a successful recovery or on give-up.
+    private final Map<UUID, Integer> recoveryAttempts = new ConcurrentHashMap<>();
+
     // Optional callback for testing
     private Consumer<UUID> recoveryCallback;
 
@@ -434,6 +439,11 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
             Thread.currentThread().interrupt();
         }
 
+        // Drop any in-flight retry bookkeeping so a stopped forest does not retain partition entries
+        // (Luciferase-ca07y).
+        recoveryQueue.clear();
+        recoveryAttempts.clear();
+
         log.info("FaultTolerantDistributedForest stopped");
     }
 
@@ -500,24 +510,41 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
         int totalCount = topology.totalPartitions();
         int inProgressCount = recoveryLock.getInProgressRecoveryCount();
 
+        // Honor the autoRecoveryEnabled config (Luciferase-ca07y): when disabled, the SCHEDULING /
+        // QUEUEING of automatic recovery is skipped (callers drive recovery explicitly via
+        // triggerRecovery()). Quorum-loss detection + escalation (STATE 3) still fires unconditionally
+        // — disabling auto-recovery must not make a critically-degraded cluster go dark.
+        boolean autoRecover = configuration.autoRecoveryEnabled();
+
         // Check current quorum
         if (recoveryLock.hasQuorum(activeCount, totalCount)) {
-            // STATE 1: Current quorum exists - schedule recovery immediately
-            log.info("Partition {} failed - quorum maintained ({}/{} active). Scheduling recovery",
-                partitionId, activeCount, totalCount);
-            scheduleRecoveryAsync(partitionId);
+            // STATE 1: Current quorum exists - schedule recovery immediately (if auto-recovery is on)
+            if (autoRecover) {
+                log.info("Partition {} failed - quorum maintained ({}/{} active). Scheduling recovery",
+                    partitionId, activeCount, totalCount);
+                scheduleRecoveryAsync(partitionId);
+            } else {
+                log.debug("Partition {} failed - quorum maintained; autoRecoveryEnabled=false, "
+                    + "skipping automatic recovery", partitionId);
+            }
         } else {
             // Check potential quorum (including in-progress recoveries)
             int potentialActive = activeCount + inProgressCount;
 
             if (recoveryLock.hasQuorum(potentialActive, totalCount)) {
                 // STATE 2: Quorum lost NOW but WILL be restored when in-progress recoveries complete
-                log.warn("Partition {} failed - quorum lost but {} in-progress recoveries may restore it ({}/{} active + {}/{} in-progress -> {}/{})",
-                    partitionId, inProgressCount, activeCount, totalCount, inProgressCount, inProgressCount, potentialActive, totalCount);
-                recoveryQueue.offer(partitionId);
-                statsAccumulator.recordRecoveryQueued();
+                if (autoRecover) {
+                    log.warn("Partition {} failed - quorum lost but {} in-progress recoveries may restore it ({}/{} active + {}/{} in-progress -> {}/{})",
+                        partitionId, inProgressCount, activeCount, totalCount, inProgressCount, inProgressCount, potentialActive, totalCount);
+                    recoveryQueue.offer(partitionId);
+                    statsAccumulator.recordRecoveryQueued();
+                } else {
+                    log.warn("Partition {} failed - quorum lost; autoRecoveryEnabled=false, not queueing for recovery",
+                        partitionId);
+                }
             } else {
-                // STATE 3: Quorum permanently lost even with in-progress recoveries
+                // STATE 3: Quorum permanently lost even with in-progress recoveries. Always escalate,
+                // regardless of autoRecoveryEnabled.
                 log.error("QUORUM PERMANENTLY LOST - cannot recover partition {}. System degraded: {}/{} active, {} recovering (potential: {}/{})",
                     partitionId, activeCount, totalCount, inProgressCount, potentialActive, totalCount);
                 statsAccumulator.recordQuorumLoss();
@@ -536,18 +563,38 @@ public class FaultTolerantDistributedForest<Key extends SpatialKey<Key>, ID exte
             .thenAccept(success -> {
                 if (success) {
                     log.info("Async recovery completed successfully for partition {}", partitionId);
+                    recoveryAttempts.remove(partitionId); // reset the retry budget on success
 
                     // Check for queued recoveries when quorum potentially restored
                     synchronized (stateLock) {
                         checkQueuedRecoveries();
                     }
                 } else {
-                    log.warn("Async recovery failed for partition {}", partitionId);
-
-                    // Queue for retry with exponential backoff
-                    if (!recoveryQueue.contains(partitionId)) {
-                        log.debug("Queuing partition {} for retry after failure", partitionId);
-                        recoveryQueue.offer(partitionId);
+                    // Bound retries at configuration.maxRecoveryRetries() RETRIES beyond the initial
+                    // attempt: failedCount counts total failed attempts (1 on the first failure), so
+                    // re-queue while failedCount <= maxRetries (i.e. up to maxRetries retries after the
+                    // initial), otherwise give up loudly rather than retrying forever (Luciferase-ca07y).
+                    // NOTE (Option A): retries are drained ONLY opportunistically by checkQueuedRecoveries()
+                    // when another partition's recovery succeeds. If no other recovery ever succeeds
+                    // (e.g. total cluster failure), a re-queued partition stays queued without consuming
+                    // its budget — the accepted trade-off of the no-timer design. This callback and
+                    // checkQueuedRecoveries() both run on the single-threaded recoveryExecutor, so the
+                    // give-up dequeue cannot race a concurrent drain.
+                    int failedCount = recoveryAttempts.merge(partitionId, 1, Integer::sum);
+                    int maxRetries = configuration.maxRecoveryRetries();
+                    if (failedCount <= maxRetries) {
+                        log.warn("Async recovery failed for partition {} (failure {}, maxRetries {}); queuing for retry",
+                            partitionId, failedCount, maxRetries);
+                        if (!recoveryQueue.contains(partitionId)) {
+                            recoveryQueue.offer(partitionId);
+                        }
+                    } else {
+                        log.error("Async recovery for partition {} gave up after {} failed attempt(s) "
+                                + "(maxRecoveryRetries={}); manual intervention required",
+                            partitionId, failedCount, maxRetries);
+                        recoveryAttempts.remove(partitionId);
+                        recoveryQueue.remove(partitionId);
+                        statsAccumulator.recordRecoveryGivenUp();
                     }
                 }
             })

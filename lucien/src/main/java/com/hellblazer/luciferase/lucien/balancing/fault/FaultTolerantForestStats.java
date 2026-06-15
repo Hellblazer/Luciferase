@@ -38,6 +38,7 @@ public record FaultTolerantForestStats(
         private final AtomicLong recoveriesBlocked = new AtomicLong();
         private final AtomicLong recoveriesQueued = new AtomicLong();  // Queued due to quorum loss
         private final AtomicLong quorumLosses = new AtomicLong();      // Permanent quorum loss events
+        private final AtomicLong recoveriesGivenUp = new AtomicLong(); // Retry budget exhausted (Luciferase-ca07y)
         private final AtomicLong totalDetectionLatency = new AtomicLong();
         private final AtomicLong totalRecoveryLatency = new AtomicLong();
 
@@ -114,6 +115,21 @@ public record FaultTolerantForestStats(
          */
         public void recordQuorumLossEscalation() {
             // Can be used for alerting metrics
+        }
+
+        /**
+         * Record a recovery that exhausted its retry budget (maxRecoveryRetries) and was abandoned.
+         * Distinct from quorum loss — this is recovery-strategy exhaustion (Luciferase-ca07y).
+         */
+        public void recordRecoveryGivenUp() {
+            recoveriesGivenUp.incrementAndGet();
+        }
+
+        /**
+         * Get count of recoveries abandoned after exhausting their retry budget.
+         */
+        public long getRecoveriesGivenUp() {
+            return recoveriesGivenUp.get();
         }
 
         /**
